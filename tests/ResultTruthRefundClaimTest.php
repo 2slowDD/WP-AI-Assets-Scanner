@@ -141,7 +141,7 @@ class ResultTruthRefundClaimTest extends TestCase {
 		// Options store: seed the history row do_build_result will update.
 		WP_Mock::userFunction( 'get_option' )->andReturnUsing(
 			function ( $k, $default = false ) use ( $omit_cu_bypass ) {
-				if ( 'cu_scanner_railway_url' === $k ) { return 'https://cu-scanner-railway-production.up.railway.app'; }
+				if ( 'aias_railway_url' === $k ) { return 'https://cu-scanner-railway-production.up.railway.app'; }
 				if ( 'cu_scanner_api_key' === $k )     { return 'api-key-123'; }
 				// P17: seed the REAL option Settings::get_omit_cu_bypass() reads. Nothing is
 				// passed into do_build_result() — the production config lookup executes, so a

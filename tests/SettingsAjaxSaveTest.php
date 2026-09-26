@@ -200,7 +200,7 @@ final class SettingsAjaxSaveTest extends TestCase {
         $sent = $this->run_handler();
 
         $this->assertSame( [ 'cusk_NEWKEY_111111' ], $this->api_key_writes(), 'a valid new key was not committed exactly once' );
-        $this->assertContains( [ 'cu_scanner_railway_url', self::RAILWAY_URL ], $this->writes );
+        $this->assertContains( [ 'aias_railway_url', self::RAILWAY_URL ], $this->writes );
         $this->assertSame( 'success', $sent->kind );
         $this->assertSame( 42, $sent->payload['credits'] );
         $this->assertSame( self::RAILWAY_URL, $sent->payload['railway_url'] );
@@ -235,7 +235,7 @@ final class SettingsAjaxSaveTest extends TestCase {
         $sent = $this->run_handler();
 
         $this->assertSame( [ 'cusk_NEWKEY_111111' ], $this->api_key_writes(), 'authenticated key was not committed when railway_url was absent' );
-        $this->assertNotContains( 'cu_scanner_railway_url', array_column( $this->writes, 0 ) );
+        $this->assertNotContains( 'aias_railway_url', array_column( $this->writes, 0 ) );
         $this->assertSame( 'success', $sent->kind );
         $this->assertSame( 5, $sent->payload['credits'] );
         $this->assertSame( '', $sent->payload['railway_url'] );
@@ -254,7 +254,7 @@ final class SettingsAjaxSaveTest extends TestCase {
         $sent = $this->run_handler();
 
         $this->assertSame( [ 'cusk_NEWKEY_111111' ], $this->api_key_writes() );
-        $this->assertNotContains( 'cu_scanner_railway_url', array_column( $this->writes, 0 ) );
+        $this->assertNotContains( 'aias_railway_url', array_column( $this->writes, 0 ) );
         $this->assertSame( 'success', $sent->kind );
         $this->assertSame( '', $sent->payload['railway_url'] );
     }
@@ -308,7 +308,7 @@ final class SettingsAjaxSaveTest extends TestCase {
             'the authenticated key must still be committed when the railway_url is rejected'
         );
         $this->assertNotContains(
-            'cu_scanner_railway_url',
+            'aias_railway_url',
             array_column( $this->writes, 0 ),
             'a host outside the allowlist must never be stored'
         );

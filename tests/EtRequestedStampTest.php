@@ -83,7 +83,7 @@ class EtRequestedStampTest extends TestCase {
             'status' => 'complete', 'total' => count( $worker_pages ), 'completed' => count( $worker_pages ), 'pages' => $worker_pages, 'flags' => [],
         ] ) );
         WP_Mock::userFunction( 'get_option' )->andReturnUsing( function ( $k, $default = false ) {
-            if ( 'cu_scanner_railway_url' === $k ) { return 'https://cu-scanner-railway-production.up.railway.app'; }
+            if ( 'aias_railway_url' === $k ) { return 'https://cu-scanner-railway-production.up.railway.app'; }
             if ( 'cu_scanner_api_key' === $k )     { return 'api-key-123'; }
             return array_key_exists( $k, $this->options ) ? $this->options[ $k ] : $default;
         } );

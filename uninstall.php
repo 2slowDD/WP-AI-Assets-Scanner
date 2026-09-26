@@ -9,7 +9,9 @@
  * Names are listed explicitly instead of deleting everything that starts with
  * `cu_scanner_`: the wpservice.pro service plugin uses that prefix for its own
  * options, and a site running both must keep them. Wildcards are used only for
- * this plugin's per-scan keys.
+ * this plugin's per-scan keys. tests/UninstallTest.php holds the list of names
+ * the service plugin owns and fails if any of them would be deleted; check a
+ * new name against it before adding it here.
  *
  * The saved API key is removed too, so no secret stays in the database after
  * the plugin is deleted.
@@ -46,11 +48,11 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 		'cu_scanner_omit_cu_bypass',
 		'cu_scanner_outbox',
 		'cu_scanner_paid_key_claim_token',
-		'cu_scanner_railway_url',
 		'cu_scanner_ratchet_enabled',
 		'cu_scanner_secret',
 		'aias_db_version',
 		'aias_dismissed_warnings',
+		'aias_railway_url',
 		'aias_last_push_sync_undo',
 		'aias_last_result',
 		'aias_last_seen_scan_id',

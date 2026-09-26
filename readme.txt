@@ -90,7 +90,7 @@ All plugin options, scan history, stored results, scheduled tasks and the saved 
 * Updates now come from WordPress.org. The built-in update checker was removed.
 * Free credits are now requested only when you click **Get free credits**. The plugin no longer contacts wpservice.pro on activation.
 * No request is made to wpservice.pro until an API key exists.
-* Uninstall now removes every option, transient and scheduled task, including the API key.
+* Uninstall now removes every option, transient and scheduled task, including the API key, and never touches settings that belong to the wpservice.pro service plugin on a site running both.
 * Coding-standard fixes: text domain, translator comments, prefixed names.
 
 == Upgrade Notice ==

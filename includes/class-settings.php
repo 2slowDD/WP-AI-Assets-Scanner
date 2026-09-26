@@ -79,8 +79,15 @@ class Settings {
         return $base . '?' . $query . '#cu-pricing-inner';
     }
 
+    /**
+     * The worker URL this site received from wpservice.pro /auth, cached under a
+     * key only this plugin uses. It was `cu_scanner_railway_url` up to 1.8.9,
+     * which is also the wpservice.pro service plugin's own configuration key:
+     * on a site running both, uninstalling the scanner wiped the service's
+     * worker URL. An empty value here is refilled from /auth on the next scan.
+     */
     public function get_railway_url(): string {
-        return (string) get_option( 'cu_scanner_railway_url', '' );
+        return (string) get_option( 'aias_railway_url', '' );
     }
 
     /**
@@ -90,7 +97,7 @@ class Settings {
         if ( ! self::is_safe_railway_url( $url ) ) {
             throw new \RuntimeException( 'Refused to store Railway URL: must be HTTPS and on the host allowlist.' );
         }
-        update_option( 'cu_scanner_railway_url', $url );
+        update_option( 'aias_railway_url', $url );
     }
 
     /**

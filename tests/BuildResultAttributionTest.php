@@ -81,7 +81,7 @@ class BuildResultAttributionTest extends TestCase {
 		// other option falls through to its default.
 		WP_Mock::userFunction( 'get_option' )->andReturnUsing(
 			function ( $k, $default = false ) {
-				if ( 'cu_scanner_railway_url' === $k ) {
+				if ( 'aias_railway_url' === $k ) {
 					return 'https://cu-scanner-railway-production.up.railway.app';
 				}
 				if ( 'cu_scanner_api_key' === $k ) {

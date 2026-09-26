@@ -176,7 +176,7 @@ class ScannerAjaxTest extends TestCase {
             ->with( 'cu_scanner_api_key', '' )
             ->andReturn( 'cusk_Freekey_10' );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_railway_url', '' )
+            ->with( 'aias_railway_url', '' )
             ->andReturn( '' );
         WP_Mock::userFunction( 'get_home_url' )->andReturn( 'https://www.example.com' );
         WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( function ( string $url, ?int $component = null ) {
@@ -215,7 +215,7 @@ class ScannerAjaxTest extends TestCase {
             return (string) ( $response['body'] ?? '' );
         } );
         WP_Mock::userFunction( 'update_option' )
-            ->with( 'cu_scanner_railway_url', 'https://cu-scanner-railway-production.up.railway.app' )
+            ->with( 'aias_railway_url', 'https://cu-scanner-railway-production.up.railway.app' )
             ->once();
         WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 11 );
         WP_Mock::userFunction( 'set_transient' )
@@ -249,7 +249,7 @@ class ScannerAjaxTest extends TestCase {
             ->with( 'cu_scanner_api_key', '' )
             ->andReturn( 'cusk_Freekey_10' );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_railway_url', '' )
+            ->with( 'aias_railway_url', '' )
             ->andReturn( 'https://cu-scanner-railway-production.up.railway.app' );
         WP_Mock::userFunction( 'get_home_url' )->andReturn( 'https://www.example.com' );
         WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( function ( string $url, ?int $component = null ) {

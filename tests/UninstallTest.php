@@ -3,6 +3,24 @@
 use WP_Mock\Tools\TestCase;
 
 class UninstallTest extends TestCase {
+    /**
+     * Option names the wpservice.pro service plugin owns, taken from its source.
+     * On a site running both plugins these rows are the service's configuration
+     * and data; AAS must never delete or overwrite them. cu_scanner_railway_url
+     * is the one AAS 1.8.9 got wrong: it was the service's worker URL.
+     */
+    private const SERVICE_PLUGIN_OPTIONS = [
+        'cu_scanner_credit_products',
+        'cu_scanner_db_version',
+        'cu_scanner_free_key_insert_error',
+        'cu_scanner_insert_error',
+        'cu_scanner_limit_events',
+        'cu_scanner_railway_url',
+        'cu_scanner_saas_version',
+        'cu_scanner_schema_version',
+        'cu_scanner_service_secret',
+    ];
+
     public function setUp(): void {
         parent::setUp();
         WP_Mock::setUp();
@@ -79,15 +97,22 @@ class UninstallTest extends TestCase {
             $this->assertContains( $hook, $unscheduled, $hook . ' must be unscheduled' );
         }
 
-        // The wpservice.pro SaaS plugin shares the cu_scanner_ prefix; its options must survive.
-        $this->assertNotContains( 'cu_scanner_db_version', $deleted_options );
+        // The wpservice.pro service plugin shares the cu_scanner_ prefix; its rows must survive.
         $this->assertNotEmpty( $wpdb->queries );
+        $prefixes = [];
         foreach ( $wpdb->queries as $sql ) {
-            $this->assertStringNotContainsString(
-                "LIKE 'cu\\_scanner\\_%'",
-                $sql,
-                'a bare cu_scanner_% wildcard would delete the SaaS plugin options'
-            );
+            $this->assertSame( 1, preg_match( "/LIKE '([^']*)%'/", $sql, $m ), 'every cleanup query is a LIKE prefix match: ' . $sql );
+            $prefixes[] = str_replace( [ '\\_', '\\%' ], [ '_', '%' ], $m[1] );
+        }
+        foreach ( self::SERVICE_PLUGIN_OPTIONS as $theirs ) {
+            $this->assertNotContains( $theirs, $deleted_options, $theirs . ' belongs to the service plugin' );
+            $this->assertNotContains( $theirs, $deleted_transients, $theirs . ' belongs to the service plugin' );
+            foreach ( $prefixes as $prefix ) {
+                $this->assertFalse(
+                    str_starts_with( $theirs, $prefix ),
+                    "LIKE '{$prefix}%' would delete the service plugin's {$theirs}"
+                );
+            }
         }
     }
 }

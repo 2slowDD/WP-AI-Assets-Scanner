@@ -80,7 +80,7 @@ class FreeKeyBootstrapTest extends TestCase {
                 return $parts[ $map[ $component ] ?? '' ] ?? null;
             } );
         WP_Mock::userFunction( 'update_option' )
-            ->with( 'cu_scanner_railway_url', 'https://cu-scanner-railway-production.up.railway.app' )
+            ->with( 'aias_railway_url', 'https://cu-scanner-railway-production.up.railway.app' )
             ->once();
 
         $bootstrap = new FreeKeyBootstrap( null, function ( string $current_key ): object {

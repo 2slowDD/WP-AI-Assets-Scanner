@@ -113,7 +113,7 @@ trait SyncScopeBuildResultFixtures {
             'status' => 'complete', 'total' => count( $pages ), 'completed' => count( $pages ), 'pages' => $pages, 'flags' => [],
         ] ) );
         WP_Mock::userFunction( 'get_option' )->andReturnUsing( function ( $k, $default = false ) use ( &$options ) {
-            if ( 'cu_scanner_railway_url' === $k ) { return 'https://cu-scanner-railway-production.up.railway.app'; }
+            if ( 'aias_railway_url' === $k ) { return 'https://cu-scanner-railway-production.up.railway.app'; }
             if ( 'cu_scanner_api_key' === $k )     { return 'api-key-123'; }
             return array_key_exists( $k, $options ) ? $options[ $k ] : $default;   // ratchet default-ON falls through to $default (true)
         } );

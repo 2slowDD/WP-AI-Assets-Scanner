@@ -33,7 +33,7 @@ class SettingsTest extends TestCase {
 
     public function test_get_railway_url_returns_stored_value(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_railway_url', '' )
+            ->with( 'aias_railway_url', '' )
             ->andReturn( 'https://cu-scanner-railway-production.up.railway.app' );
         $this->assertSame( 'https://cu-scanner-railway-production.up.railway.app', ( new Settings() )->get_railway_url() );
     }
