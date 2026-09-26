@@ -93,14 +93,14 @@ class ExportHistoryAjaxTest extends TestCase {
 
         $this->assertStringContainsString( 'Credits Returned', $out );
         $lines = array_values( array_filter( explode( "\n", trim( $out ) ) ) );
-        $cells = str_getcsv( end( $lines ) );
+        $cells = str_getcsv( end( $lines ), ',', '"', '' );
         $this->assertSame( '2', end( $cells ), 'Credits Returned is the LAST column' );
     }
 
     public function test_csv_row_without_the_field_renders_empty_not_zero(): void {
         $out   = $this->export_csv_for( [ $this->history_row( [ 'credits_used' => 5 ] ) ] );
         $lines = array_values( array_filter( explode( "\n", trim( $out ) ) ) );
-        $cells = str_getcsv( end( $lines ) );
+        $cells = str_getcsv( end( $lines ), ',', '"', '' );
         $this->assertSame( '', end( $cells ) );
     }
 
@@ -108,7 +108,7 @@ class ExportHistoryAjaxTest extends TestCase {
     public function test_existing_csv_columns_keep_their_positions(): void {
         $out   = $this->export_csv_for( [ $this->history_row( [ 'credits_refunded' => 2 ] ) ] );
         $lines = array_values( array_filter( explode( "\n", trim( $out ) ) ) );
-        $cells = str_getcsv( end( $lines ) );
+        $cells = str_getcsv( end( $lines ), ',', '"', '' );
 
         $this->assertSame( '2026-04-24T10:00:00+00:00', $cells[0] );
         $this->assertSame( 'example.com', $cells[1] );

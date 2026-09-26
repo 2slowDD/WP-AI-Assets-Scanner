@@ -1,5 +1,5 @@
 /vendor/
 /node_modules/
 /dist/
-/tools/plugin-check/
+/tools/plugin-check
 .phpunit.result.cache

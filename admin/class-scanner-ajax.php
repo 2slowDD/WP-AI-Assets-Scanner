@@ -1953,7 +1953,7 @@ class ScannerAjax {
     private function write_csv( $resource, array $records ): void {
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- $resource is a caller-supplied stream handle (php://memory or php://output), not a filesystem path; WP_Filesystem does not operate on stream wrappers.
         fwrite( $resource, "\xEF\xBB\xBF" );
-        fputcsv( $resource, [ 'Date', 'Domain', 'Pages', 'Credits', 'Safe Rules', 'Aggressive Rules', 'Status', 'Job ID', 'Credits Returned' ] );
+        fputcsv( $resource, [ 'Date', 'Domain', 'Pages', 'Credits', 'Safe Rules', 'Aggressive Rules', 'Status', 'Job ID', 'Credits Returned' ], ',', '"', '' );
         foreach ( $records as $r ) {
             $row = [
                 (string) ( $r['created_at']       ?? '' ),
@@ -1968,7 +1968,7 @@ class ScannerAjax {
                 // predating the field, matching how the other cells degrade.
                 (string) ( $r['credits_refunded'] ?? '' ),
             ];
-            fputcsv( $resource, array_map( [ $this, 'csv_cell' ], $row ) );
+            fputcsv( $resource, array_map( [ $this, 'csv_cell' ], $row ), ',', '"', '' );
         }
     }
 
