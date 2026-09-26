@@ -1,5 +1,5 @@
 === AI Assets Scanner ===
-Contributors: wpservicepro
+Contributors: dalibord
 Tags: performance, optimization, dequeue, debloat, unused css
 Requires at least: 6.2
 Tested up to: 7.1
