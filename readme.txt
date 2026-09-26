@@ -51,7 +51,7 @@ This plugin connects to two services run by WPservice.pro. Nothing is sent until
 
 The **Buy credits** button opens wpservice.pro with your free key and domain in the address, so the purchase is linked to your site.
 
-Service terms: https://wpservice.pro/terms/
+Service terms: https://wpservice.pro/terms-and-conditions/
 Privacy policy: https://wpservice.pro/privacy-policy/
 
 == Installation ==

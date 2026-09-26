@@ -60,7 +60,7 @@
                         <span class="cu-settings-label"><?php esc_html_e( 'No API key yet?', 'ai-assets-scanner' ); ?></span>
                         <p class="description">
                             <?php esc_html_e( 'Get a free API key with starter scan credits. Clicking the button sends this site\'s domain and the plugin version to wpservice.pro, which creates the key. Nothing is sent until you click.', 'ai-assets-scanner' ); ?>
-                            <a href="https://wpservice.pro/terms/" target="_blank" rel="noopener"><?php esc_html_e( 'Terms', 'ai-assets-scanner' ); ?></a>
+                            <a href="https://wpservice.pro/terms-and-conditions/" target="_blank" rel="noopener"><?php esc_html_e( 'Terms', 'ai-assets-scanner' ); ?></a>
                             &middot;
                             <a href="https://wpservice.pro/privacy-policy/" target="_blank" rel="noopener"><?php esc_html_e( 'Privacy policy', 'ai-assets-scanner' ); ?></a>
                         </p>
