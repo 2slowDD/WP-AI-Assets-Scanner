@@ -62,14 +62,14 @@ namespace CUScanner\Scanner {
     class SnapshotManager {
         public function __construct( private string $repo ) {}
         public function has_active_rules(): bool { return false; }
-        public function snapshot(): true|\WP_Error { return true; }
+        public function snapshot(): bool|\WP_Error { return true; }
         public function rollback(): void {}
         public function commit(): void {}
     }
 
     class GroupVersionManager {
         public function __construct( private string $repo ) {}
-        public function bump_scanner_groups(): true|\WP_Error { return true; }
+        public function bump_scanner_groups(): bool|\WP_Error { return true; }
         public function rollback(): void {}
     }
 }

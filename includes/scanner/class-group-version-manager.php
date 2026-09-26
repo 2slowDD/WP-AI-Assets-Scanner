@@ -40,7 +40,7 @@ class GroupVersionManager {
 	 *
 	 * @return true|\WP_Error  WP_Error on any DB failure.
 	 */
-	public function bump_scanner_groups(): true|\WP_Error {
+	public function bump_scanner_groups(): bool|\WP_Error {
 		$repo       = $this->repo;
 		$all_groups = (array) $repo::get_all_groups();
 
@@ -73,7 +73,7 @@ class GroupVersionManager {
 	/**
 	 * @param  object[] $all_groups  Full group list from RuleRepository.
 	 */
-	private function bump_single( string $repo, array $all_groups, string $base_name ): true|\WP_Error {
+	private function bump_single( string $repo, array $all_groups, string $base_name ): bool|\WP_Error {
 		// Find base group by exact name — no regex, no user input involved.
 		$base = null;
 		foreach ( $all_groups as $g ) {

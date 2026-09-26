@@ -48,7 +48,7 @@ class SnapshotManager {
      *
      * Returns true on success, WP_Error on failure.
      */
-    public function snapshot(): true|\WP_Error {
+    public function snapshot(): bool|\WP_Error {
         $repo         = $this->repo;
         $active_rules = $this->get_active_rules();
 

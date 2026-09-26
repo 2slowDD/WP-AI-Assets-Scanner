@@ -23,6 +23,7 @@ First WordPress.org release (slug `ai-assets-scanner`).
 - `bin/build-zip.sh` builds the WordPress.org ZIP from an allowlist.
 
 ### Fixed
+- PHP 8.0 and 8.1 compatibility, as the `Requires PHP: 8.0` header always promised. The wpservice.pro and worker API clients used `readonly` properties (PHP 8.1+) and the Code Unloader push path used `true` return types (PHP 8.2+), so on PHP 8.0 every balance check, scan and push ended in a fatal error. Declarations only; behavior on PHP 8.2+ is unchanged. CI now runs the tests on PHP 8.0.
 - Plugin Check findings from the 1.8.9 report: text-domain mismatches, a missing translators comment, unprefixed globals in `uninstall.php` and the settings template, invalid license header, missing readme headers.
 - The asset-fingerprint test hashed files as checked out, so it passed on Windows (CRLF) and failed on Linux. It now normalizes line endings; every previously pinned row stays valid.
 

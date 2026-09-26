@@ -7,8 +7,8 @@ defined( 'ABSPATH' ) || exit;
 
 class WpserviceClient {
     public function __construct(
-        private readonly string $base_url,
-        private readonly string $api_key
+        private string $base_url,
+        private string $api_key
     ) {}
 
     public function authenticate(): array {
