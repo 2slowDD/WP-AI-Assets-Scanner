@@ -1,0 +1,12 @@
+{
+  "name": "ai-assets-scanner-dev",
+  "private": true,
+  "description": "Dev tooling for the AI Assets Scanner WordPress plugin. Not shipped: bin/build-zip.sh packages an explicit allowlist that excludes this file.",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 \"tests/js/*.test.js\""
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "GPL-2.0-or-later"
+}

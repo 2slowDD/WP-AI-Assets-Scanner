@@ -1,0 +1,380 @@
+const assert = require('assert');
+const { createHarness } = require('./r3-stage-c-harness');
+
+// FDEG Plan B Task 4 — showProbeOutcomeDialog() forks on TWO conditions, not one:
+//   every host informational AND no security stack -> non-blocking .cu-probe-toast
+//                                                     + immediate resolve(true)
+//   anything else                                  -> today's blocking <dialog>
+//                                                     (the WAF bail-BEFORE-credits gate)
+//
+// The second branch is the load-bearing one: it must stay blocking and must never
+// auto-resolve, or the operator spends credits on a scan a WAF will eat.
+//
+// Why the outcome half of the guard matters: this function has exactly ONE call site
+// and it is gated on warning_needed, and compute_warning_needed() fires on ANY host
+// whose outcome !== 'class_a_clean' — not just on stacks. So a stack-only guard would
+// auto-proceed on probe_failed / no_clue / non_wordpress, i.e. exactly the states the
+// gate exists for. runNonInformationalBlocks() below is the regression guard for that.
+
+// Element text = its OWN assigned text — or, when the node was built with innerHTML instead,
+// the text of that parsed mirror; never both, because the textContent setter writes _html as
+// a mere escaped copy of what it just stored — followed by every appended descendant, in DOM
+// order. So a node that mixes the two sinks (scanner.js:462-464 does: innerHTML for the
+// label, appendChild for the wire-supplied ids) reports both halves, exactly once each.
+//
+// Do NOT seed this from node.textContent: since A2b that getter already aggregates own text
+// with every appendChild'd descendant (r3-stage-c-harness.js), so seeding from it and then
+// recursing into the children counts the appended half twice — which this helper did until
+// the A2b fix round.
+function textOf(node) {
+  if (!node) return '';
+  if (node.nodeType === 3) return node.textContent || '';
+  let s = node._ownText || '';
+  if (!s) { (node._domChildren ? node._domChildren() : []).forEach(function (c) { s += textOf(c); }); }
+  (node.children || []).forEach(function (c) { s += textOf(c); });
+  return s;
+}
+
+// Every innerHTML string in a subtree — used to prove a wire value never reached an
+// HTML sink in the first place (not merely that it failed to parse into an element).
+function htmlOf(node) {
+  if (!node || node.nodeType === 3) return '';
+  let s = node._html || '';
+  (node._kids ? node._kids() : []).forEach(function (c) { s += htmlOf(c); });
+  return s;
+}
+
+function flush() {
+  return new Promise(function (r) { setImmediate(r); });
+}
+
+// (a) Clean detection — no security_stacks anywhere: a toast, no dialog, and the
+// promise resolves true without any operator interaction.
+function runCleanCase() {
+  const h = createHarness();
+  const T = h.sandbox.window.__cuTest;
+  assert.ok(T.showProbeOutcomeDialog, 'showProbeOutcomeDialog must be exposed on __cuTest');
+  const body = h.sandbox.document.body;
+  const before = h.timers.length;
+
+  const p = T.showProbeOutcomeDialog({
+    summary: { uniform_outcome: false },
+    per_host_results: [
+      { host: 'example.com', outcome: 'class_bc_only', detected: [], security_stacks: [] },
+      { host: 'shop.example.com', outcome: 'hybrid_a_plus_bc', detected: [] },
+    ],
+  });
+
+  // Synchronous: the toast is already up and nothing modal was created.
+  const toast = body.querySelector('.cu-probe-toast');
+  assert.ok(toast, 'clean path renders a .cu-probe-toast');
+  assert.strictEqual(body.querySelector('dialog'), null, 'clean path creates no <dialog>');
+  assert.strictEqual(body.querySelector('.cu-probe-outcome-dialog'), null, 'no blocking modal on the clean path');
+
+  // Content comes from the shared builders (per-host list here, since not uniform).
+  const txt = textOf(toast);
+  assert.ok(txt.indexOf('example.com') !== -1, 'toast carries the per-host summary');
+  assert.ok(txt.indexOf('shop.example.com') !== -1, 'toast lists every probed host');
+  // ...exactly ONCE. Every other assertion in this file is a substring test, so all of them
+  // stayed green while the walker double-counted (it seeded from node.textContent, which
+  // since A2b already aggregates the appended descendants, then recursed into them again).
+  // A count is what catches that, and each host genuinely appears once in this toast.
+  assert.strictEqual(txt.split('shop.example.com').length - 1, 1,
+    'textOf must report each host exactly once — a seeded walker double-counts appended nodes');
+  assert.ok(toast.querySelector('ul.cu-probe-host-list'), 'non-uniform summary uses buildPerHostList');
+
+  // Auto-dismiss: fade first, detach at ~10s. Only timers this call scheduled.
+  const mine = h.timers.slice(before).filter(function (t) { return t.type === 'timeout'; });
+  const removeTimer = mine.filter(function (t) { return t.ms === 10000; })[0];
+  const fadeTimer = mine.filter(function (t) { return t.ms > 0 && t.ms < 10000; })[0];
+  assert.ok(removeTimer, 'a 10s removal timer is scheduled');
+  assert.ok(fadeTimer, 'a fade timer fires before the removal');
+  fadeTimer.fn();
+  assert.ok(toast._classes.has('cu-probe-toast-hide'), 'fade timer adds the hide class');
+  removeTimer.fn();
+  assert.strictEqual(body.querySelector('.cu-probe-toast'), null, 'toast detaches itself after ~10s');
+
+  // ...and the scan was never gated on a click.
+  return p.then(function (v) {
+    assert.strictEqual(v, true, 'clean path resolves true with no operator interaction');
+    console.log('OK probe-outcome-toast-clean');
+  });
+}
+
+// (a2) Uniform clean detection — same toast, uniform copy path.
+function runUniformCleanCase() {
+  const h = createHarness();
+  const T = h.sandbox.window.__cuTest;
+  const body = h.sandbox.document.body;
+
+  const p = T.showProbeOutcomeDialog({
+    summary: { uniform_outcome: true },
+    per_host_results: [{ host: 'uniform.example', outcome: 'class_bc_only', detected: [{ name: 'WP Rocket', class: 'B' }], security_stacks: [] }],
+  });
+
+  const toast = body.querySelector('.cu-probe-toast');
+  assert.ok(toast, 'uniform clean path renders a toast');
+  assert.strictEqual(toast.querySelector('ul.cu-probe-host-list'), null, 'uniform summary uses buildUniformMessage, not the list');
+  assert.ok(textOf(toast).indexOf('WP Rocket') !== -1, 'uniform toast carries the detected stack copy');
+  assert.strictEqual(body.querySelector('dialog'), null, 'still no <dialog>');
+
+  return p.then(function (v) {
+    assert.strictEqual(v, true, 'uniform clean path resolves true immediately');
+    console.log('OK probe-outcome-toast-clean-uniform');
+  });
+}
+
+// (b) THE GATE. A detected security stack must still produce today's blocking modal,
+// and the promise must stay pending until the operator actually clicks.
+function runStackDetectedCase() {
+  const h = createHarness();
+  const T = h.sandbox.window.__cuTest;
+  const body = h.sandbox.document.body;
+  const before = h.timers.length;
+
+  let settled = 'PENDING';
+  const p = T.showProbeOutcomeDialog({
+    summary: { uniform_outcome: true },
+    per_host_results: [{ host: 'walled.example', outcome: 'no_clue', detected: [], security_stacks: ['cloudflare'] }],
+  });
+  p.then(function (v) { settled = v; });
+
+  const dialog = body.querySelector('dialog.cu-probe-outcome-dialog');
+  assert.ok(dialog, 'WAF bail-gate: the blocking dialog is still created');
+  assert.strictEqual(dialog.open, true, 'the dialog was opened modally (showModal)');
+  assert.strictEqual(body.querySelector('.cu-probe-toast'), null, 'no toast on the stack path — the gate is not softened');
+  assert.ok(dialog.querySelector('.cu-security-stack-block'), 'the security-stack warning block is present');
+  assert.ok(dialog.querySelector('.cu-probe-cancel'), 'Cancel button present');
+  assert.ok(dialog.querySelector('.cu-probe-continue'), 'Continue button present');
+
+  // No self-dismiss timer may be attached to the gate.
+  const mine = h.timers.slice(before);
+  assert.strictEqual(mine.length, 0, 'the gate schedules NO auto-dismiss timer');
+
+  return flush().then(flush).then(function () {
+    assert.strictEqual(settled, 'PENDING', 'the gate does NOT auto-resolve — it waits for the operator');
+    dialog.querySelector('.cu-probe-continue').click();
+    return flush().then(flush);
+  }).then(function () {
+    assert.strictEqual(settled, true, 'clicking Continue resolves true');
+    console.log('OK probe-outcome-dialog-waf-gate-blocking');
+  });
+}
+
+// (b1b) FU-CF-HOST-INTEGRATION-NOTICE — when Cloudflare AND a CF-integrating host
+// platform are detected on the SAME host, the stack block explains that host-managed
+// Cloudflare usually can't whitelist the scanner (customer report, 2026-08-10: WPE-integrated
+// CF has no whitelisting without a plan upgrade — the exemption instruction alone tells
+// that customer to do something impossible). Gate precision pinned in all four directions.
+function runHostIntegratedCfNote() {
+  const NOTE = 'This site’s Cloudflare appears to come through its hosting platform. '
+    + 'Host-managed Cloudflare usually can’t whitelist individual tools unless the hosting '
+    + 'plan includes custom firewall rules. You can still continue — pages the firewall '
+    + 'blocks are reported as blocked, not silently skipped, and can be rescanned once your '
+    + 'host adds an exception.';
+  // Returns the whole BODY, not the dialog — the WPE-alone case below takes the
+  // informational toast path and renders no dialog at all.
+  const mk = function (rows) {
+    const h = createHarness();
+    h.sandbox.window.__cuTest.showProbeOutcomeDialog({
+      summary: { uniform_outcome: true }, per_host_results: rows,
+    });
+    return h.sandbox.document.body;
+  };
+
+  // CF + WPE on the SAME host → note present, verbatim, inside the stack block.
+  const d1 = mk([{ host: 'wpe.example', outcome: 'no_clue',
+    detected: [{ name: 'WP Engine Page Cache', class: 'B' }], security_stacks: ['cloudflare'] }]);
+  // Simple selector only — the harness's parseSelector has no descendant combinator.
+  // Containment is asserted via parentNode instead.
+  const note = d1.querySelector('.cu-cf-host-note');
+  assert.ok(note, 'CF + WP Engine on one host must render the host-integration note');
+  assert.strictEqual(note.textContent, NOTE, 'note copy is pinned verbatim');
+  assert.strictEqual(note.parentNode && note.parentNode.className, 'cu-security-stack-block',
+    'the note lives inside the security-stack block');
+
+  // CF alone → no note (plain-CF customers keep the unqualified exemption prompt).
+  const d2 = mk([{ host: 'cf.example', outcome: 'no_clue', detected: [], security_stacks: ['cloudflare'] }]);
+  assert.ok(d2.querySelector('.cu-security-stack-block'), 'stack block still renders for plain CF');
+  assert.strictEqual(d2.querySelector('.cu-cf-host-note'), null, 'no host note on plain CF');
+
+  // WPE alone, no CF → informational toast path: no dialog, no block, no note.
+  const d3 = mk([{ host: 'wpe.example', outcome: 'class_bc_only',
+    detected: [{ name: 'WP Engine Page Cache', class: 'B' }], security_stacks: [] }]);
+  assert.strictEqual(d3.querySelector('.cu-cf-host-note'), null, 'no note without CF');
+
+  // Cross-host: CF on host A, WPE on host B → the same-host inference does NOT hold.
+  const d4 = mk([
+    { host: 'a.example', outcome: 'no_clue', detected: [], security_stacks: ['cloudflare'] },
+    { host: 'b.example', outcome: 'class_bc_only',
+      detected: [{ name: 'WP Engine Page Cache', class: 'B' }], security_stacks: [] },
+  ]);
+  assert.ok(d4.querySelector('.cu-security-stack-block'), 'stack block renders (CF on host A)');
+  assert.strictEqual(d4.querySelector('.cu-cf-host-note'), null,
+    'CF on one host + WPE on another must NOT claim host-integrated CF');
+
+  console.log('OK host-integrated-CF note: same-host only, verbatim copy, absent otherwise');
+}
+
+// (b2) Cancel on the gate still resolves false — the bail path is intact.
+function runStackCancelCase() {
+  const h = createHarness();
+  const T = h.sandbox.window.__cuTest;
+  const body = h.sandbox.document.body;
+
+  let settled = 'PENDING';
+  T.showProbeOutcomeDialog({
+    summary: { uniform_outcome: true },
+    per_host_results: [{ host: 'walled.example', outcome: 'no_clue', detected: [], security_stacks: ['sucuri', 'wordfence'] }],
+  }).then(function (v) { settled = v; });
+
+  const dialog = body.querySelector('dialog.cu-probe-outcome-dialog');
+  assert.ok(dialog, 'gate dialog created for a multi-stack result');
+  return flush().then(flush).then(function () {
+    assert.strictEqual(settled, 'PENDING', 'still pending before any click');
+    dialog.querySelector('.cu-probe-cancel').click();
+    return flush().then(flush);
+  }).then(function () {
+    assert.strictEqual(settled, false, 'Cancel bails before credits are spent');
+    console.log('OK probe-outcome-dialog-waf-gate-cancel');
+  });
+}
+
+// (c) security_stacks ids are untrusted wire data. They must land in the DOM as text,
+// never as parsed markup, and must never be concatenated into an innerHTML sink.
+function runUntrustedStackId() {
+  const h = createHarness();
+  const T = h.sandbox.window.__cuTest;
+  const body = h.sandbox.document.body;
+  const payload = '<img src=x onerror="alert(1)">';
+
+  T.showProbeOutcomeDialog({
+    summary: { uniform_outcome: true },
+    per_host_results: [{ host: 'evil.example', outcome: 'no_clue', detected: [], security_stacks: [payload] }],
+  });
+
+  const dialog = body.querySelector('dialog.cu-probe-outcome-dialog');
+  assert.ok(dialog, 'a stack id — however hostile — still opens the gate');
+  const block = dialog.querySelector('.cu-security-stack-block');
+  assert.ok(block, 'stack block rendered');
+
+  assert.ok(textOf(block).indexOf(payload) !== -1, 'the raw id survives verbatim as TEXT');
+  assert.strictEqual(block.querySelector('img'), null, 'the id must not become an <img> element');
+  assert.strictEqual(dialog.querySelector('img'), null, 'no injected element anywhere in the dialog');
+  assert.ok(htmlOf(block).indexOf('<img') === -1, 'the id never reaches an innerHTML sink');
+  console.log('OK probe-outcome-untrusted-stack-id');
+}
+
+// (c2) Same discipline on the toast path: an untrusted host name must not smuggle markup.
+function runUntrustedHostInToast() {
+  const h = createHarness();
+  const T = h.sandbox.window.__cuTest;
+  const body = h.sandbox.document.body;
+  const payload = '<img src=x onerror="alert(1)">';
+
+  T.showProbeOutcomeDialog({
+    summary: { uniform_outcome: true },
+    per_host_results: [{ host: payload, outcome: 'class_bc_only', detected: [], security_stacks: [] }],
+  });
+
+  const toast = body.querySelector('.cu-probe-toast');
+  assert.ok(toast, 'toast rendered');
+  assert.strictEqual(toast.querySelector('img'), null, 'a hostile host name must not become an <img> in the toast');
+  assert.ok(htmlOf(toast).indexOf('&lt;img') !== -1, 'the host name is esc()-escaped before it reaches the DOM');
+  assert.ok(htmlOf(toast).indexOf('<img') === -1, 'no raw markup from wire data in the toast HTML');
+  console.log('OK probe-outcome-toast-untrusted-host');
+}
+
+// (d) REGRESSION GUARD — a non-informational outcome must BLOCK even with no stack.
+// showProbeOutcomeDialog is only reached when warning_needed is true, and
+// compute_warning_needed() fires on any outcome !== 'class_a_clean'. So probe_failed /
+// no_clue / non_wordpress arrive here with security_stacks EMPTY. A stack-only guard
+// would silently auto-proceed and spend credits on a probe that was blocked, on a
+// target that is not WordPress, or on a stack we could not identify. Each of these
+// must still get the blocking modal.
+function runNonInformationalBlocks() {
+  ['probe_failed', 'no_clue', 'non_wordpress'].forEach(function (outcome) {
+    const h = createHarness();
+    const T = h.sandbox.window.__cuTest;
+    const body = h.sandbox.document.body;
+    const before = h.timers.length;
+
+    let settled = 'PENDING';
+    T.showProbeOutcomeDialog({
+      summary: { uniform_outcome: true },
+      per_host_results: [{ host: 'x.example', outcome: outcome, detected: [], security_stacks: [] }],
+    }).then(function (v) { settled = v; });
+
+    assert.ok(body.querySelector('dialog.cu-probe-outcome-dialog'),
+      outcome + ' (no stack) must STILL open the blocking gate');
+    assert.strictEqual(body.querySelector('.cu-probe-toast'), null,
+      outcome + ' must NOT be downgraded to a toast');
+    assert.strictEqual(h.timers.slice(before).length, 0,
+      outcome + ' must schedule no auto-dismiss timer');
+    assert.strictEqual(settled, 'PENDING', outcome + ' must not auto-resolve');
+  });
+
+  // A mixed set is only informational if EVERY host is — one bad host blocks.
+  const h = createHarness();
+  const T = h.sandbox.window.__cuTest;
+  const body = h.sandbox.document.body;
+  T.showProbeOutcomeDialog({
+    summary: { uniform_outcome: false },
+    per_host_results: [
+      { host: 'good.example', outcome: 'class_bc_only', detected: [], security_stacks: [] },
+      { host: 'bad.example', outcome: 'probe_failed', detected: [], security_stacks: [] },
+    ],
+  });
+  assert.ok(body.querySelector('dialog.cu-probe-outcome-dialog'),
+    'one non-informational host blocks the whole set');
+  assert.strictEqual(body.querySelector('.cu-probe-toast'), null,
+    'no toast when any host is non-informational');
+
+  // Unknown/empty state is not informational either — it blocks.
+  const h2 = createHarness();
+  const body2 = h2.sandbox.document.body;
+  h2.sandbox.window.__cuTest.showProbeOutcomeDialog({ summary: {}, per_host_results: [] });
+  assert.ok(body2.querySelector('dialog.cu-probe-outcome-dialog'),
+    'empty per_host_results is unknown state — it must block, not auto-proceed');
+
+  console.log('OK probe-outcome-non-informational-blocks');
+}
+
+// (d) AC-1d — informational outcome + a security stack => STILL BLOCKS.
+// The !hasStack conjunct is load-bearing and nothing else in this file exercises it:
+// every other stack-bearing case also carries a non-informational outcome, so the
+// outcome term fails on its own and the stack term is never tested. A post-fix
+// production shape (class_bc_only + ['cloudflare']) is the first real case in this quadrant.
+// Multi-host on purpose: hasStack is .some() and allInformational is .every() across
+// ALL hosts, so a single-host fixture would not exercise the batch semantics.
+function runInformationalWithStackBlocks() {
+  const h = createHarness();
+  const body = h.sandbox.document.body;
+  h.sandbox.window.__cuTest.showProbeOutcomeDialog({
+    summary: { uniform_outcome: false },
+    per_host_results: [
+      { host: 'clean.example', outcome: 'class_a_clean', detected: [], security_stacks: [] },
+      { host: 'stacked.example', outcome: 'class_bc_only',
+        detected: [{ name: 'WP Engine Page Cache', class: 'B' }],
+        security_stacks: ['cloudflare'] },
+    ],
+  });
+  assert.ok(body.querySelector('dialog.cu-probe-outcome-dialog'),
+    'informational outcomes + a security stack must still BLOCK (the !hasStack conjunct)');
+  assert.strictEqual(body.querySelector('.cu-probe-toast'), null,
+    'no toast when any host reports a security stack');
+  console.log('OK probe-outcome-informational-with-stack-blocks');
+}
+
+Promise.resolve()
+  .then(runCleanCase)
+  .then(runUniformCleanCase)
+  .then(runStackDetectedCase)
+  .then(runHostIntegratedCfNote)
+  .then(runStackCancelCase)
+  .then(runUntrustedStackId)
+  .then(runUntrustedHostInToast)
+  .then(runNonInformationalBlocks)
+  .then(runInformationalWithStackBlocks)
+  .then(function () { console.log('ALL probe-outcome-dialog tests passed'); })
+  .catch(function (e) { console.error(e); process.exit(1); });

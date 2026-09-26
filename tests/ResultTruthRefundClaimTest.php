@@ -1,0 +1,546 @@
+<?php
+namespace CUScanner\Tests;
+
+use CUScanner\Admin\ScannerAjax;
+use WP_Mock;
+use WP_Mock\Tools\TestCase;
+
+/**
+ * AC-8 (refund failure is non-fatal) · AC-16 (the second update_status preserves status).
+ *
+ * ⚠️ AC-16 is driven through the REAL do_build_result() → REAL ScanHistory::update_status(),
+ * with only wp_remote_* and the options store stubbed. A test that calls a ScanHistory
+ * double twice by hand and asserts the second call carried the status it was itself given
+ * is tautological: it cannot fail for the production mistake it exists to catch (the second
+ * call omitting $hist_status). Mutation-proven below.
+ *
+ * P17: Code Unloader is made present the way production sees it — by declaring the real
+ * class name RulePusher resolves by DEFAULT. Nothing is injected into do_build_result().
+ */
+class ResultTruthRefundClaimTest extends TestCase {
+
+	/** Captured [ option_name => value ] from every update_option() call, in order. */
+	private array $option_writes = [];
+	/** Captured refund POST bodies. */
+	private array $refund_posts = [];
+
+	public function setUp(): void {
+		parent::setUp();
+		WP_Mock::setUp();
+		$this->option_writes = [];
+		$this->refund_posts  = [];
+		FakeCuRepo::reset();
+	}
+
+	public function tearDown(): void {
+		WP_Mock::tearDown();
+		parent::tearDown();
+	}
+
+	/**
+	 * One page whose single asset yields one aggressive rule, so by_page has a tally and
+	 * the page is refundable once CU already holds that rule.
+	 */
+	private function page( string $url = 'https://s.com/p', ?array $kept_protection = null ): array {
+		$page = [
+			'url'    => $url,
+			'status' => 'done',
+			'assets' => [ [
+				'handle'  => 'h-one',
+				'type'    => 'style',
+				'desktop' => [ 'loaded' => true, 'coverage' => 0.0, 'bucket' => 'aggressive' ],
+				'mobile'  => [ 'loaded' => true, 'coverage' => 0.0, 'bucket' => 'aggressive' ],
+			] ],
+		];
+		// Train 1 field. Omitted entirely when null, which is also the real pre-Train-1
+		// worker shape — so the absent-key fixture below is the genuine legacy payload.
+		if ( null !== $kept_protection ) {
+			$page['kept_protection'] = $kept_protection;
+		}
+		return $page;
+	}
+
+	/**
+	 * FU-AAS-SYNC-DEVICE-DUPLICATES (spec §5 Fixture E, hand-written twin for the build-time leg):
+	 * one internal page whose assets yield, through the real CuJsonBuilder cell map, two All
+	 * aggressive rules, two Desktop aggressive rules (aggressive,needed), one Mobile aggressive
+	 * rule (needed,aggressive) and one All safe rule (absent,absent) — S 1 / A 5.
+	 */
+	private function device_page( string $url = 'https://s.com/p' ): array {
+		$asset = static fn( string $h, string $d, string $m ) => [
+			'handle' => $h, 'type' => 'style',
+			'desktop' => [ 'loaded' => true, 'coverage' => 0.0, 'bucket' => $d ],
+			'mobile'  => [ 'loaded' => true, 'coverage' => 0.0, 'bucket' => $m ],
+		];
+		return [ 'url' => $url, 'status' => 'done', 'assets' => [
+			$asset( 'a1', 'aggressive', 'aggressive' ), $asset( 'a2', 'aggressive', 'aggressive' ),
+			$asset( 'd1', 'aggressive', 'needed' ),     $asset( 'd2', 'aggressive', 'needed' ),
+			$asset( 'm1', 'needed', 'aggressive' ),
+			$asset( 's1', 'absent', 'absent' ),
+		] ];
+	}
+
+	/** Seed E (spec §5): CU rows as [handle, device, group_id]. Group 11 = Safe, 22 = Aggressive. */
+	private function seed_e(): array {
+		return [ [ 'd1', 'all', 22 ], [ 'a1', 'desktop', 22 ], [ 'a1', 'mobile', 22 ], [ 'm1', 'mobile', 22 ], [ 'a2', 'desktop', 22 ] ];
+	}
+	/** Seed E extended so EVERY Fixture-E rule is covered. */
+	private function seed_e_all_covered(): array {
+		return array_merge( $this->seed_e(), [ [ 'd2', 'all', 22 ], [ 'a2', 'mobile', 22 ], [ 's1', 'all', 11 ] ] );
+	}
+
+	/**
+	 * Drives the real do_build_result(). $refund_response is what the SaaS returns from
+	 * POST /credits/refund-duplicates; null makes the call throw (non-2xx).
+	 *
+	 * ⚠️ $omit_cu_bypass DEFAULTS TRUE — "the ?nowpcu suffix was omitted", i.e. the scan ran with
+	 * Code Unloader's rules LIVE. Operator ruling 2026-08-05 scopes the entire result-truth
+	 * apparatus (dedupe → split counts → netting → credit-back) to that mode: with the suffix
+	 * APPLIED, CU is off for the scan, the scan is a fresh full measurement, and every rule it
+	 * produces is billed. So the default here is the only mode in which this class's subject
+	 * exists. The suffix-applied case has its own explicit tests below.
+	 *
+	 * $page overrides the fixture page entirely (device-mixed fixtures); $seed_rows appends
+	 * additional CU rows, as [handle, device_type, group_id], after the $cu_holds_the_rule seed.
+	 */
+	private function run_build( bool $cu_holds_the_rule, ?array $refund_response, bool $cu_active = true, bool $omit_cu_bypass = true, ?array $kept_protection = null, string $page_url = 'https://s.com/p', ?array $page = null, array $seed_rows = [] ): array {
+		WP_Mock::userFunction( 'wp_parse_url' )
+			->andReturnUsing( fn( $url, $component = -1 ) => parse_url( (string) $url, $component ) );
+		WP_Mock::userFunction( '__' )->andReturnUsing( fn( $t, $d = null ) => $t );
+		WP_Mock::userFunction( 'get_home_url' )->andReturn( 'https://s.com' );
+
+		// Railway boundary.
+		WP_Mock::userFunction( 'wp_remote_get' )->andReturn( [] );
+		WP_Mock::userFunction( 'is_wp_error' )->andReturn( false );
+		WP_Mock::userFunction( 'wp_remote_retrieve_response_code' )->andReturnUsing(
+			fn( $r ) => is_array( $r ) && isset( $r['__refund'] ) ? (int) $r['__code'] : 200
+		);
+		WP_Mock::userFunction( 'wp_remote_retrieve_body' )->andReturnUsing(
+			function ( $r ) use ( $refund_response, $kept_protection, $page_url, $page ) {
+				if ( is_array( $r ) && isset( $r['__refund'] ) ) {
+					return json_encode( $refund_response ?? [ 'message' => 'Not Found' ] );
+				}
+				return json_encode( [
+					'status'    => 'complete',
+					'total'     => 1,
+					'completed' => 1,
+					'pages'     => [ $page ?? $this->page( $page_url, $kept_protection ) ],
+					'flags'     => [],
+				] );
+			}
+		);
+
+		// SaaS boundary — the refund POST.
+		WP_Mock::userFunction( 'wp_remote_post' )->andReturnUsing(
+			function ( $url, $args ) use ( $refund_response ) {
+				$this->refund_posts[] = [ 'url' => $url, 'args' => $args ];
+				return [ '__refund' => true, '__code' => null === $refund_response ? 404 : 200 ];
+			}
+		);
+
+		// Options store: seed the history row do_build_result will update.
+		WP_Mock::userFunction( 'get_option' )->andReturnUsing(
+			function ( $k, $default = false ) use ( $omit_cu_bypass ) {
+				if ( 'cu_scanner_railway_url' === $k ) { return 'https://cu-scanner-railway-production.up.railway.app'; }
+				if ( 'cu_scanner_api_key' === $k )     { return 'api-key-123'; }
+				// P17: seed the REAL option Settings::get_omit_cu_bypass() reads. Nothing is
+				// passed into do_build_result() — the production config lookup executes, so a
+				// wrong option name or a dropped read makes the cu_rules_active tests go red.
+				if ( 'cu_scanner_omit_cu_bypass' === $k ) { return $omit_cu_bypass ? '1' : ''; }
+				if ( 'cu_scanner_history' === $k ) {
+					foreach ( array_reverse( $this->option_writes ) as $w ) {
+						if ( 'cu_scanner_history' === $w[0] ) { return $w[1]; }
+					}
+					return [ [
+						'job_id' => 'job-xyz', 'domain' => 's.com', 'page_count' => 1,
+						'status' => 'queued', 'created_at' => '2026-08-04T00:00:00+00:00',
+						'credits_used' => 0, 'safe_count' => 0, 'aggressive_count' => 0,
+					] ];
+				}
+				return $default;
+			}
+		);
+		WP_Mock::userFunction( 'update_option' )->andReturnUsing(
+			function ( $k, $v, $autoload = null ) { $this->option_writes[] = [ $k, $v ]; return true; }
+		);
+		WP_Mock::userFunction( 'delete_option' )->andReturn( true );
+		WP_Mock::userFunction( 'get_transient' )->andReturn( false );
+		WP_Mock::userFunction( 'set_transient' )->andReturn( true );
+		WP_Mock::userFunction( 'delete_transient' )->andReturn( true );
+		WP_Mock::userFunction( 'wp_json_encode' )->andReturnUsing( fn( $d, $f = 0 ) => json_encode( $d, $f ) );
+		WP_Mock::userFunction( 'apply_filters' )->andReturnUsing( fn( $tag, $value = null ) => $value );
+		WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 1 );
+		WP_Mock::userFunction( 'do_action' )->andReturn( null );
+
+		// CU present. RulePusher's DEFAULT repo is CodeUnloader\Core\RuleRepository, which
+		// this file declares — so can_push() and already_present_by_pattern() run for real.
+		WP_Mock::userFunction( 'is_plugin_active' )->andReturn( $cu_active );
+		FakeCuRepo::$groups = [
+			(object) [ 'id' => 11, 'name' => 'AA Scanner — Safe' ],
+			(object) [ 'id' => 22, 'name' => 'AA Scanner — Aggressive' ],
+		];
+		if ( $cu_holds_the_rule ) {
+			FakeCuRepo::$rules[] = (object) [
+				'url_pattern' => 'https://s.com/p', 'match_type' => 'exact', 'asset_handle' => 'h-one',
+				'asset_type'  => 'css', 'device_type' => 'all', 'group_id' => 22,
+			];
+		}
+		foreach ( $seed_rows as [ $handle, $device, $group_id ] ) {
+			FakeCuRepo::$rules[] = (object) [
+				'url_pattern' => 'https://s.com/p', 'match_type' => 'exact', 'asset_handle' => $handle,
+				'asset_type'  => 'css', 'device_type' => $device, 'group_id' => $group_id,
+			];
+		}
+
+		return ( new ScannerAjax() )->do_build_result( 'job-xyz', 'tok-abc' );
+	}
+
+	/**
+	 * run_build() for the device-mixed page (Fixture E): identical stubs (Ruling A — no
+	 * duplicated stub block), only the page and the CU seed differ. $cu_holds_the_rule is
+	 * false here; the fixture's CU state comes entirely from $seed_rows.
+	 */
+	private function run_build_device_mixed( array $seed_rows, ?array $refund_response, bool $omit_cu_bypass = true ): array {
+		return $this->run_build( false, $refund_response, true, $omit_cu_bypass, null, 'https://s.com/p', $this->device_page(), $seed_rows );
+	}
+
+	/** The history row as it stands after the last write. */
+	private function final_history_record(): array {
+		foreach ( array_reverse( $this->option_writes ) as $w ) {
+			if ( 'cu_scanner_history' === $w[0] ) { return $w[1][0]; }
+		}
+		return [];
+	}
+
+	/** Sanity: the fixture really does produce a refundable page. */
+	public function test_fixture_yields_a_duplicate_only_page(): void {
+		$this->run_build( true, [ 'ok' => true, 'refunded' => 1 ] );
+		$this->assertCount( 1, $this->refund_posts, 'the refund endpoint must have been called' );
+		$this->assertSame( 1, json_decode( $this->refund_posts[0]['args']['body'], true )['refund_pages'],
+			'exactly one page is wholly-duplicate in this fixture' );
+	}
+
+	/**
+	 * AC-16: update_status() ASSIGNS status (class-scan-history.php:36), so the refund
+	 * write must re-pass $hist_status. Driving the real path means dropping it flips the
+	 * persisted status to '' — which a hand-rolled double could never show.
+	 */
+	public function test_refund_write_preserves_the_history_status(): void {
+		$this->run_build( true, [ 'ok' => true, 'refunded' => 1 ] );
+		$record = $this->final_history_record();
+
+		$this->assertSame( 'complete', $record['status'],
+			'the refund write must re-pass the same status — update_status ASSIGNS it' );
+		$this->assertSame( 1, $record['credits_refunded'] );
+	}
+
+	/** credits_used keeps its own meaning — the refund is shown beside it, never netted in. */
+	public function test_credits_used_is_not_netted_by_the_refund(): void {
+		$this->run_build( true, [ 'ok' => true, 'refunded' => 1 ] );
+		$record = $this->final_history_record();
+		$this->assertSame( 1, $record['credits_used'], 'credits_used stays the gross charge' );
+	}
+
+	/** AC-8: a failing refund call must not break the build, and must not write the field. */
+	public function test_refund_failure_is_non_fatal(): void {
+		$out    = $this->run_build( true, null ); // 404 — SaaS older than this plugin
+		$record = $this->final_history_record();
+
+		$this->assertSame( 'complete', $record['status'] );
+		$this->assertArrayNotHasKey( 'credits_refunded', $record, 'no claim landed => no field' );
+		$this->assertArrayHasKey( 'safe_count', $out, 'the screen is still correct without it' );
+	}
+
+	/** No duplicate pages => no HTTP call at all. */
+	public function test_no_duplicates_makes_no_refund_call(): void {
+		$this->run_build( false, [ 'ok' => true, 'refunded' => 1 ] );
+		$this->assertCount( 0, $this->refund_posts );
+		$this->assertArrayNotHasKey( 'credits_refunded', $this->final_history_record() );
+	}
+
+	/** The Bearer MUST be the job_token, not the account api_key (SaaS runs hash_equals). */
+	public function test_refund_is_authed_with_the_job_token(): void {
+		$this->run_build( true, [ 'ok' => true, 'refunded' => 1 ] );
+		$post = $this->refund_posts[0];
+
+		$this->assertStringContainsString( '/cu-scanner/v1/credits/refund-duplicates', $post['url'] );
+		$this->assertSame( 'Bearer tok-abc', $post['args']['headers']['Authorization'],
+			'api_key Bearer would 401 — /credits/release has the same contract' );
+		$body = json_decode( $post['args']['body'], true );
+		$this->assertSame( 'tok-abc', $body['job_token'], 'body repeats the token for hash_equals' );
+		$this->assertSame( 1, $body['refund_pages'] );
+	}
+
+	/** The SaaS response is authoritative — it may clamp below what we asked for. */
+	public function test_saas_reported_count_wins_over_the_requested_one(): void {
+		$this->run_build( true, [ 'ok' => true, 'refunded' => 0 ] );
+		$this->assertSame( 0, $this->final_history_record()['credits_refunded'] );
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────────
+	// AC-4 — the same field NAMES on every payload writer.
+	//
+	// The live return and the aias_last_result option are writers 1 and 2; scanner.js
+	// and menu-badge.js are 3 and 4 and are covered by tests/js/result-truth-display
+	// .test.js. The hazard is real and already in-tree: `aggressive_count` on the wire
+	// vs `agg_count` on the persistence side. These assert the new fields do NOT
+	// reproduce that split.
+	// ─────────────────────────────────────────────────────────────────────────────
+
+	/** The option value as last persisted by do_build_result(). */
+	private function persisted_last_result(): array {
+		foreach ( array_reverse( $this->option_writes ) as $w ) {
+			if ( 'aias_last_result' === $w[0] ) { return $w[1]; }
+		}
+		return [];
+	}
+
+	/** P17: the real do_build_result() with the real dedupe — nothing precomputed. */
+	public function test_live_payload_carries_already_present_and_per_page_all_already(): void {
+		$out = $this->run_build( true, [ 'ok' => true, 'refunded' => 1 ] );
+
+		$this->assertArrayHasKey( 'already_present', $out );
+		$this->assertSame( [ 'safe' => 0, 'aggressive' => 1 ], $out['already_present'] );
+		$this->assertArrayHasKey( 'all_already', $out['pages'][0] );
+		$this->assertTrue(
+			$out['pages'][0]['all_already'],
+			'every rule this page produced was already in CU, so the client must render it as a zero-yield row'
+		);
+		$this->assertSame( 1, $out['credits_refunded'] );
+	}
+
+	/**
+	 * The invariant the display leans on: a page is flagged all_already EXACTLY when it was
+	 * counted for the credit-back. If these two ever diverge the screen shows 0 credits on a
+	 * page the customer actually paid for (or the reverse) — the whole point of deriving the
+	 * flag from the refund loop rather than recomputing it client-side.
+	 */
+	public function test_all_already_pages_match_the_refunded_page_count(): void {
+		$out = $this->run_build( true, [ 'ok' => true, 'refunded' => 1 ] );
+
+		$flagged = count( array_filter( $out['pages'], static fn( $p ) => ! empty( $p['all_already'] ) ) );
+		$this->assertSame( 1, $flagged );
+		$this->assertSame( $flagged, $out['credits_refunded'] );
+	}
+
+	/** A page with a genuinely NEW rule must not be flagged — it delivered value and was billed. */
+	public function test_new_rule_page_is_not_flagged_all_already(): void {
+		$out = $this->run_build( false, null ); // CU active, but does NOT hold the rule
+
+		$this->assertFalse( $out['pages'][0]['all_already'] );
+		$this->assertSame( [ 'safe' => 0, 'aggressive' => 0 ], $out['already_present'] );
+	}
+
+	public function test_persisted_option_carries_the_same_field_names(): void {
+		$out       = $this->run_build( true, [ 'ok' => true, 'refunded' => 1 ] );
+		$persisted = $this->persisted_last_result();
+
+		$this->assertArrayHasKey( 'already_present', $persisted );
+		$this->assertArrayHasKey( 'all_already', $persisted['pages'][0] );
+		$this->assertArrayHasKey( 'cu_rules_active', $persisted );
+		$this->assertSame(
+			$out['already_present'],
+			$persisted['already_present'],
+			'identical shape on every writer — the agg_count/aggressive_count split is the bug class here'
+		);
+		$this->assertSame( $out['credits_refunded'], $persisted['credits_refunded'] );
+		$this->assertSame( $out['cu_rules_active'], $persisted['cu_rules_active'] );
+	}
+
+	/** Direct-action eligibility is present on both live and restored payloads. */
+	public function test_internal_rule_availability_lands_on_both_payload_writers(): void {
+		$internal = $this->run_build( false, null );
+		$this->assertTrue( $internal['has_internal_rules'] );
+		$this->assertTrue( $this->persisted_last_result()['has_internal_rules'] );
+	}
+
+	/** Direct-action eligibility follows the same site-host filter as Push and Sync. */
+	public function test_external_recommendations_are_not_internal_rules(): void {
+		$external = $this->run_build( false, null, true, true, null, 'https://external.example/p' );
+		$this->assertFalse( $external['has_internal_rules'] );
+		$this->assertFalse( $this->persisted_last_result()['has_internal_rules'] );
+	}
+
+	/**
+	 * A1 (challenge-script keeplist), fix round 1 — kept_protection_summary is writers-1-and-2,
+	 * same as every field above it.
+	 *
+	 * This is the bug class this whole section exists for, caught live: A1 first shipped the
+	 * field on the live return ONLY, so a BACKGROUND-completed scan — rebuilt from
+	 * aias_last_result via get_badge_state() — would have rendered the Step-4 screen with no
+	 * keeplist note at all. Driven through the REAL do_build_result(), so it fails for the
+	 * real mistake rather than for a hand-built double.
+	 */
+	public function test_kept_protection_summary_lands_on_both_payload_writers(): void {
+		$out = $this->run_build( true, [ 'ok' => true, 'refunded' => 1 ], true, true, [
+			[ 'id' => 'turnstile', 'display_name' => 'Cloudflare Turnstile', 'handles' => [ 'cf-challenge|script' ] ],
+		] );
+		$persisted = $this->persisted_last_result();
+
+		// R20 / AC-11 — a PROTECTION-ONLY scan. `count` and `vendors` are unchanged; `rows` is
+		// the new per-label breakdown, and this pin is the reason the shape change was caught
+		// at the payload writers rather than on a customer's screen. Both writers must carry it:
+		// rows on the live return but not on the restored one is exactly the bug class above.
+		$expected = [
+			'count'   => 1,
+			'vendors' => [ 'Cloudflare Turnstile' ],
+			'rows'    => [ [ 'label' => 'Cloudflare Turnstile', 'count' => 1, 'category' => 'protection' ] ],
+		];
+		$this->assertArrayHasKey( 'kept_protection_summary', $out, 'writer 1 — the live return' );
+		$this->assertArrayHasKey( 'kept_protection_summary', $persisted, 'writer 2 — the aias_last_result option' );
+		$this->assertSame( $expected, $out['kept_protection_summary'] );
+		$this->assertSame( $expected, $persisted['kept_protection_summary'] );
+		$this->assertSame(
+			$out['kept_protection_summary'],
+			$persisted['kept_protection_summary'],
+			'restore must rebuild byte-identically to what the live screen showed'
+		);
+	}
+
+	/**
+	 * The omit-when-empty half of the same contract: nothing kept => the key is absent from
+	 * BOTH writers, never present-as-zero on one. array_key_exists, not isset/assertArrayNotHasKey
+	 * alone, because the client gates the note on presence of the key.
+	 *
+	 * The fixture omits kept_protection entirely, which is also the genuine pre-Train-1 worker
+	 * payload — so this doubles as the backward-compatibility pin.
+	 */
+	public function test_kept_protection_summary_absent_from_both_writers_when_nothing_kept(): void {
+		$out       = $this->run_build( true, [ 'ok' => true, 'refunded' => 1 ] );
+		$persisted = $this->persisted_last_result();
+
+		$this->assertFalse(
+			array_key_exists( 'kept_protection_summary', $out ),
+			'writer 1 must omit the key entirely when nothing was kept — no "0 scripts kept" path'
+		);
+		$this->assertFalse(
+			array_key_exists( 'kept_protection_summary', $persisted ),
+			'writer 2 must omit it too — present on one writer and absent on the other is the bug class'
+		);
+	}
+
+	/**
+	 * P17 — the ?nowpcu-off signal on the REAL config path. do_build_result() receives no
+	 * override; Settings::get_omit_cu_bypass() reads the option itself. Without this the
+	 * Step-4 copy silently falls back to "please rescan" on exactly the scans that must
+	 * never say it.
+	 *
+	 * ⚠️ One run_build() per test METHOD: WP_Mock keeps the first userFunction('get_option')
+	 * registration for the life of a test, so a second run in the same method would silently
+	 * replay the first seed and the "on" case would assert against the "off" wiring.
+	 */
+	public function test_cu_rules_active_is_false_when_the_suffix_is_applied(): void {
+		$off = $this->run_build( true, [ 'ok' => true, 'refunded' => 1 ], true, false );
+
+		$this->assertFalse( $off['cu_rules_active'], 'suffix applied => CU rules were NOT live' );
+		$this->assertFalse( $this->persisted_last_result()['cu_rules_active'] );
+	}
+
+	/**
+	 * Operator ruling 2026-08-05 — THE GATE. With the `?nowpcu` suffix applied (the DEFAULT
+	 * install state), Code Unloader is switched off for the scan, so the scan is a fresh full
+	 * measurement and what CU already holds is irrelevant to it: no dedupe, no split claim, no
+	 * netting, no credit-back, every A>0 page billed.
+	 *
+	 * This fixture is the WORST case for the gate — CU genuinely DOES hold the rule and the SaaS
+	 * would happily honour a refund. If the gate regresses, all four assertions below flip, so
+	 * this cannot pass vacuously.
+	 */
+	public function test_suffix_applied_disables_the_whole_result_truth_apparatus(): void {
+		$out = $this->run_build( true, [ 'ok' => true, 'refunded' => 1 ], true, false );
+
+		$this->assertNull(
+			$out['already_present'],
+			'no claim in either direction — the summary line must read exactly as it did pre-1.7.88b'
+		);
+		$this->assertFalse( $out['pages'][0]['all_already'], 'no netting: the row keeps its real S/A counts and gross credit' );
+		$this->assertNull( $out['credits_refunded'], 'no credit-back is claimed for a fresh full scan' );
+		$this->assertSame( [], $this->refund_posts, 'and the SaaS refund endpoint is never called at all' );
+	}
+
+	/** The mirror: with the suffix omitted the same fixture DOES refund. Proves the gate is the discriminator. */
+	public function test_suffix_omitted_enables_the_apparatus_on_the_same_fixture(): void {
+		$out = $this->run_build( true, [ 'ok' => true, 'refunded' => 1 ], true, true );
+
+		$this->assertSame( [ 'safe' => 0, 'aggressive' => 1 ], $out['already_present'] );
+		$this->assertTrue( $out['pages'][0]['all_already'] );
+		$this->assertSame( 1, $out['credits_refunded'] );
+		$this->assertCount( 1, $this->refund_posts );
+	}
+
+	public function test_cu_rules_active_is_true_when_the_suffix_is_omitted(): void {
+		$on = $this->run_build( true, [ 'ok' => true, 'refunded' => 1 ], true, true );
+
+		$this->assertTrue( $on['cu_rules_active'], 'suffix omitted => the scan ran with CU rules live' );
+		$this->assertTrue( $this->persisted_last_result()['cu_rules_active'] );
+	}
+
+	/**
+	 * AC-11 on the wire: CU unreachable => null, NOT 0. The UI must be able to tell
+	 * "cannot know" from "nothing is already present".
+	 */
+	public function test_cu_unreachable_emits_null_already_present(): void {
+		$out = $this->run_build( false, null, false ); // CU plugin inactive
+
+		$this->assertNull( $out['already_present'] );
+		// "Cannot know" must never render as a zero-yield row: false, not null, and never true.
+		$this->assertFalse( $out['pages'][0]['all_already'] );
+		$this->assertNull( $this->persisted_last_result()['already_present'] );
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────────
+	// AC-6 — the coverage-subset dedupe answer through the REAL do_build_result(),
+	// on a page whose rules span all three device_type values (spec §5 Fixture E).
+	// ─────────────────────────────────────────────────────────────────────────────
+
+	/** AC-6 — device-covered rules count as present on BOTH payload writers; a partially covered page is NOT refunded. */
+	public function test_ac6_device_covered_rules_count_as_present_and_partial_page_is_not_refunded(): void {
+		$payload = $this->run_build_device_mixed( $this->seed_e(), [ 'ok' => true, 'refunded' => 1 ] );
+		$this->assertSame( [ 'safe' => 0, 'aggressive' => 3 ], $payload['already_present'], 'd1 (All over Desktop), a1 (pair over All), m1 (exact)' );
+		$this->assertSame( 1, $payload['safe_count'] );
+		$this->assertSame( 5, $payload['aggressive_count'] );
+		$this->assertFalse( $payload['pages'][0]['all_already'] );
+		$option = null;
+		foreach ( $this->option_writes as $w ) { if ( 'aias_last_result' === $w[0] ) { $option = $w[1]; } }
+		$this->assertSame( [ 'safe' => 0, 'aggressive' => 3 ], $option['already_present'], 'same answer on the persisted writer' );
+		$this->assertSame( [], $this->refund_posts, 'fail-closed: not every rule of the page is present' );
+	}
+
+	/** AC-6 variant — every rule covered ⇒ the page is all_already and the credit-back is claimed once with refund_pages 1. */
+	public function test_ac6_fully_device_covered_page_is_refunded(): void {
+		$payload = $this->run_build_device_mixed( $this->seed_e_all_covered(), [ 'ok' => true, 'refunded' => 1 ] );
+		$this->assertSame( [ 'safe' => 1, 'aggressive' => 5 ], $payload['already_present'] );
+		$this->assertTrue( $payload['pages'][0]['all_already'] );
+		$this->assertCount( 1, $this->refund_posts, 'non-vacuity: the refund POST actually fired' );
+		$this->assertSame( 1, json_decode( (string) $this->refund_posts[0]['args']['body'], true )['refund_pages'] );
+		$this->assertSame( 1, $payload['credits_refunded'] );
+	}
+
+	/** AC-6 negative — with the bypass APPLIED the apparatus is off: null on both writers, no refund. */
+	public function test_ac6_bypass_applied_makes_no_device_claim(): void {
+		$payload = $this->run_build_device_mixed( $this->seed_e_all_covered(), [ 'ok' => true, 'refunded' => 1 ], false );
+		$this->assertNull( $payload['already_present'] );
+		$this->assertSame( [], $this->refund_posts );
+	}
+}
+
+/**
+ * Stands in for Code Unloader's repository under its REAL class name, so RulePusher's
+ * default resolves to it and the production path executes unmodified.
+ */
+class FakeCuRepo {
+	public static array $rules  = [];
+	public static array $groups = [];
+
+	public static function get_all_rules(): array  { return self::$rules; }
+	public static function get_all_groups(): array { return self::$groups; }
+	public static function reset(): void { self::$rules = []; self::$groups = []; }
+}
+
+// ⚠️ Process-global by necessity: can_push() asks class_exists() for CU's REAL class name,
+// so this is the only way to exercise the production activation path rather than injecting
+// a repo RulePusher would never construct on its own. Every other suite gates on
+// is_plugin_active (stubbed false there), which short-circuits before class_exists.
+if ( ! class_exists( 'CodeUnloader\\Core\\RuleRepository' ) ) {
+	class_alias( FakeCuRepo::class, 'CodeUnloader\\Core\\RuleRepository' );
+}

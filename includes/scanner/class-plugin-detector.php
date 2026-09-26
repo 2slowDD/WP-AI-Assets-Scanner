@@ -1,0 +1,1477 @@
+<?php
+namespace CUScanner\Scanner;
+
+defined( 'ABSPATH' ) || exit;
+
+class PluginDetector {
+    // slug => [label, params[]]
+    private const AUTO_BYPASS = [
+        'wp-rocket/wp-rocket.php'     => [ 'WP Rocket',   [ 'nowprocket' ] ],
+        'autoptimize/autoptimize.php' => [ 'Autoptimize', [ 'ao_noptimize=1' ] ],
+        'litespeed-cache/litespeed-cache.php' => [ 'LiteSpeed Cache', [ 'LSCWP_CTRL=before_optm' ] ],
+        // Live-verified 2026-07-15: disables SWIS optimization per-request AND busts
+        // its page cache (see the OPTIMIZERS entry). Moved here from SOFT_BLOCK in
+        // 1.7.78b — no manual disable needed.
+        'swis-performance/swis-performance.php' => [ 'SWIS Performance', [ 'swis_disable=1' ] ],
+    ];
+
+    private const SOFT_BLOCK = [
+        'nitropack/nitropack.php'                                    => [ 'NitroPack',       'Delays JS loading and strips CSS server-side. Disable optimization features before scanning.' ],
+        'hummingbird-performance/wp-hummingbird.php'                 => [ 'Hummingbird',     'Asset optimization active. Disable before scanning.' ],
+        'w3-total-cache/w3-total-cache.php'                          => [ 'W3 Total Cache',  'Minification may be active. Disable JS/CSS minification before scanning.' ],
+        'swift-performance-lite/swift-performance-lite.php'          => [ 'Swift Performance', 'Asset optimization active. Disable before scanning.' ],
+        'flying-scripts/flying-scripts.php'                          => [ 'Flying Scripts',  'Delays network fetch of scripts until user interaction — passive scan will miss those scripts, producing incorrect Safe rules.' ],
+    ];
+
+    private const SOFT_WARN = [
+        'perfmatters/perfmatters.php'             => [ 'Perfmatters',        'May have dequeued assets already. Scan results may be incomplete.' ],
+        'asset-cleanup/asset-cleanup.php'         => [ 'AssetsCleanUp',      'May have dequeued assets already. Scan results may be incomplete.' ],
+        'scripts-to-footer/scripts-to-footer.php' => [ 'Scripts to Footer',  'Moves scripts — scan still works but results may be incomplete.' ],
+    ];
+
+    private const SECURITY_WARN = [
+        'wordfence/wordfence.php' => [
+            'Wordfence',
+            'Rate limiting or WAF may block the scanner. Temporarily disable rate limiting before scanning.',
+            null,
+        ],
+        'wordfence-login-security/wordfence-login-security.php' => [
+            'Wordfence Login Security',
+            'Rate limiting may block the scanner. Temporarily disable before scanning.',
+            null,
+        ],
+        'cloudflare/cloudflare.php' => [
+            'Cloudflare',
+            'Bot Fight Mode or WAF rules may block the scanner. Set up a permanent bypass rule, or temporarily disable bot protection before scanning.',
+            'cu-cloudflare-waf-bypass',
+        ],
+    ];
+
+    /**
+     * FU-ANTIBLOCK-2 — external-target security-stack fingerprints (spec §3.3/§6.2).
+     * Matched against the SAME probe response as OPTIMIZERS (zero new HTTP).
+     * NO class/bypass_query semantics — detection is UX-gating only (Cancel/Continue
+     * modal); it must never influence outcome/bypass_suffixes (AC-5).
+     * cloudflare/sucuri/akamai signatures mirror includes/cdn/class-detector.php's
+     * registry (local inbound detection) — cross-referenced, intentionally duplicated.
+     * Wordfence/SiteGround rows land in a follow-up task ONLY if live-capture-verified
+     * (spec §6.2 signature bar; unverifiable rows are dropped, not guessed).
+     * Display names live ONLY in stack_display_names() (FU-ANTIBLOCK-STACK-NAMES).
+     */
+    private const SECURITY_STACKS = [
+        'cloudflare' => [
+            'target_headers'      => [ 'cf-ray', 'cf-cache-status' ],
+            'target_body_markers' => [ '/cdn-cgi/' ],
+            'target_body_pattern' => null,
+        ],
+        'sucuri' => [
+            'target_headers'      => [ 'x-sucuri-id', 'x-sucuri-cache' ],
+            'target_body_markers' => [],
+            'target_body_pattern' => null,
+        ],
+        'akamai' => [
+            'target_headers'      => [ 'x-akamai-transformed', 'akamaighost' ],
+            'target_body_markers' => [],
+            'target_body_pattern' => null,
+        ],
+        'imperva' => [
+            'target_headers'      => [ 'x-iinfo', 'incap_ses' ],
+            'target_body_markers' => [ '_Incapsula_Resource' ],
+            'target_body_pattern' => null,
+        ],
+    ];
+
+    /**
+     * Operator-side hosting fingerprint detection (rev-1.4.1).
+     *
+     * MU-plugins and hosting-defined constants don't show up in is_plugin_active().
+     * This table walks per-host detector callables and merges hits into
+     * $result['soft_warn'] via detect(). Informational only (Option I per spec §3.3)
+     * — scans on these hosts work because the AAS scan flow's unique-query-string
+     * suffix auto-bypasses query-aware caches.
+     *
+     * Labels verified disjoint from AUTO_BYPASS / SOFT_BLOCK / SOFT_WARN /
+     * SECURITY_WARN tables (spec §6.4 + d-review Mi6).
+     */
+    private const HOST_FINGERPRINTS = [
+        'kinsta' => [
+            'label'    => 'Kinsta',
+            'detector' => [ self::class, 'detect_kinsta_host' ],
+            'reason'   => 'Kinsta-hosted WordPress detected. AAS auto-bypasses the host page cache via unique-query-string probes; no operator action needed. Manual cache flush: MyKinsta → Sites → Cache.',
+        ],
+        'wp-engine' => [
+            'label'    => 'WP Engine',
+            'detector' => [ self::class, 'detect_wpe_host' ],
+            'reason'   => 'WP Engine-hosted WordPress detected. AAS auto-bypasses the host page cache via unique-query-string probes; no operator action needed. Manual cache flush: WP Engine User Portal → your-site → Caching.',
+        ],
+        'pantheon' => [
+            'label'    => 'Pantheon',
+            'detector' => [ self::class, 'detect_pantheon_host' ],
+            'reason'   => 'Pantheon-hosted WordPress detected. AAS auto-bypasses the edge cache (Fastly via Styx) via unique-query-string probes; no operator action needed. Manual cache flush: Pantheon Dashboard → your-site → Clear Caches.',
+        ],
+    ];
+
+    private const CU_PLUGIN      = 'code-unloader/code-unloader.php';
+    private const CU_MIN_VERSION = '1.3.9';
+
+    /**
+     * §5.5 + §8 row 18 — CPU-bound cap on body-scan haystack.
+     * Bounds substring-scan cost regardless of whether the upstream server
+     * honored the probe's Range: bytes=0-32767 request.
+     */
+    private const BODY_SCAN_MAX_BYTES = 32768;
+
+    // FU-ABSENT-SAFE Slice B1: transient-key schema version. BUMP THIS whenever
+    // OPTIMIZERS / PAGE_CACHE_PLUGINS signatures or probe logic change — the key
+    // change auto-invalidates every host's cached probe result (replaces the manual
+    // v1/v2/v3 literal discipline that let stale pre-upgrade results pin for 24h).
+    // '8': the WPFC wpfc-minified head marker (FU-WPFC-DETECTION-HIT-ONLY-MARKER) —
+    // without the bump, a host with a positive verdict cached pre-upgrade would not
+    // see the new marker for up to 24h (positive_cache_ttl).
+    private const SIGNATURE_SCHEMA_VERSION = '8';
+
+    /**
+     * Rev-2 C1 — injectable-override seams for detector dependencies.
+     * Default null = production fall-through (real WPMU_PLUGIN_DIR / PANTHEON_ENVIRONMENT).
+     * Tests swap via __test_set_*_override() to avoid PHP's define-once semantics.
+     */
+    private static $mu_plugin_dir_override = null;
+    private static $pantheon_env_override  = null;
+
+    /**
+     * AC-N2-SSRF (i) — scheme allowlist for probe URLs.
+     * Rejects file://, javascript:, ftp://, gopher://, etc. before any
+     * wp_remote_get call.
+     */
+    private const ALLOWED_SCHEMES = [ 'http', 'https' ];
+
+    /**
+     * AC-T2-6 hoist-preservation instrumentation. Tests reset + read this counter
+     * to verify extract_non_text_zones is invoked at most once per single_probe_attempt.
+     * Production code does not depend on this value.
+     */
+    public static $extract_call_count = 0;
+
+    /**
+     * FU-AAS-TAIL-MARKER-DETECT — plugin files that are full-page HTML cache layers.
+     *
+     * A cache in this set can serve a warm HIT with PHP never running (file-cache HITs),
+     * so it emits NO x-*-cache header and its ONLY hit-visible signature is an end-of-body
+     * comment sitting PAST Pass 1's 32KB head window (e.g. Breeze's "Cache served by
+     * breeze"). When Pass 1 detects no plugin from this set, probe_target_stack forces one
+     * full-body scan to catch it. Asset-only optimizers (Perfmatters, Autoptimize, Asset
+     * CleanUp) are deliberately EXCLUDED — they are not page caches, so their presence must
+     * not suppress the tail scan. Keep in sync with the cache entries in OPTIMIZERS; a
+     * missing entry only costs one extra harmless full-body fetch (fail-safe direction).
+     */
+    private const PAGE_CACHE_PLUGINS = [
+        'wp-rocket/wp-rocket.php',
+        'litespeed-cache/litespeed-cache.php',
+        'nitropack/main.php',
+        'wp-fastest-cache/wpFastestCache.php',
+        'w3-total-cache/w3-total-cache.php',
+        'breeze/breeze.php',
+        'cache-enabler/cache-enabler.php',
+        'swift-performance-lite/performance.php',
+        'hummingbird-performance/wp-hummingbird.php',
+        'flying-press/flying-press.php',
+        'sg-cachepress/sg-cachepress.php',
+        'swis-performance/swis-performance.php',
+        'kinsta-mu-plugins/kinsta-mu-plugins.php',
+        'wpengine-common/plugin.php',
+        'pantheon-mu-plugin/pantheon.php',
+    ];
+
+    /**
+     * Per-spec §3 optimizer matrix. Keyed by plugin file path.
+     * Hummingbird's class/disable_method are null at the constant level — set
+     * at runtime by detect_typed() based on `wphb_settings.minify.enabled`.
+     */
+    private const OPTIMIZERS = [
+        'wp-rocket/wp-rocket.php' => [
+            'name' => 'WP Rocket', 'class' => 'A', 'bypass_query' => 'nowprocket',
+            'disable_method' => null, 'warning' => null,
+            'target_headers' => ['x-wp-rocket-cache', 'x-rocket-nginx-bypass'],
+            'target_body_markers' => ['This website is like a Rocket'],
+            'target_body_pattern' => '/\bwp[- _]?rocket\b/i',
+        ],
+        'perfmatters/perfmatters.php' => [
+            'name' => 'Perfmatters', 'class' => 'A', 'bypass_query' => 'perfmattersoff',
+            'disable_method' => null, 'warning' => null,
+            'target_headers' => [],
+            'target_body_markers' => ['/wp-content/plugins/perfmatters/'],
+            'target_body_pattern' => '/\bperfmatters\b/i',
+        ],
+        'autoptimize/autoptimize.php' => [
+            'name' => 'Autoptimize', 'class' => 'A', 'bypass_query' => 'ao_noptimize=1',
+            'disable_method' => null, 'warning' => null,
+            'target_headers' => [],
+            'target_body_markers' => ['/wp-content/cache/autoptimize/', '/* autoptimize'],
+            'target_body_pattern' => '/\bautoptimize\b/i',
+        ],
+        'nitropack/main.php' => [
+            'name' => 'NitroPack', 'class' => 'A', 'bypass_query' => 'nonitro',
+            'disable_method' => null, 'warning' => null,
+            'target_headers' => ['x-nitro-cache', 'x-nitro-cache-from', 'x-nitro-rev'],
+            'target_body_markers' => ['nitrocdn.com', 'data-nitro'],
+            'target_body_pattern' => '/\bnitro(?:pack|cdn)\b/i',
+        ],
+        'asset-cleanup/asset-cleanup.php' => [
+            'name' => 'Asset CleanUp', 'class' => 'A', 'bypass_query' => 'wpacu_no_load',
+            'disable_method' => null, 'warning' => null,
+            'target_headers' => [],
+            'target_body_markers' => ['/wp-content/plugins/wp-asset-clean-up/', 'data-wpacu'],
+            'target_body_pattern' => '/\bwpacu\b|\basset[- _]?clean[- _]?up\b/i',
+        ],
+        'litespeed-cache/litespeed-cache.php' => [
+            'name' => 'LiteSpeed Cache', 'class' => 'A_star',
+            'bypass_query' => 'LSCWP_CTRL=before_optm',
+            'disable_method' => null, 'warning' => null,
+            'target_headers' => ['x-litespeed-cache', 'x-litespeed-cache-control'],
+            'target_body_markers' => ['Page generated by LiteSpeed', '/wp-content/cache/litespeed/'],
+            'target_body_pattern' => '/\blitespeed[- _]?cache\b/i',
+        ],
+        'wp-fastest-cache/wpFastestCache.php' => [
+            'name' => 'WP Fastest Cache', 'class' => 'B', 'bypass_query' => null,
+            'disable_method' => null, 'warning' => null,
+            'target_headers' => [],
+            // FU-WPFC-DETECTION-HIT-ONLY-MARKER: 'file was created' is an end-of-body
+            // comment emitted only on a cache HIT (live-measured at byte ~103K — past the
+            // 32KB Pass-1 window; the reason this entry sits in PAGE_CACHE_PLUGINS). The
+            // wpfc-minified hrefs sit in the HEAD on every response (live-measured at byte
+            // 1041), so Pass 1 detects HIT and MISS alike and skips the forced tail fetch —
+            // same path-marker shape as Hummingbird's /wp-content/cache/hummingbird/ below.
+            'target_body_markers' => ['WP Fastest Cache file was created', '/wp-content/cache/wpfc-minified/'],
+            'target_body_pattern' => '/\bwp[- _]?fastest[- _]?cache\b/i',
+        ],
+        'w3-total-cache/w3-total-cache.php' => [
+            'name' => 'W3 Total Cache', 'class' => 'B', 'bypass_query' => null,
+            'disable_method' => null, 'warning' => null,
+            'target_headers' => ['x-w3tc-cached-by', 'x-w3tc-page-cache', 'x-w3tc-cdn', 'x-powered-by: w3 total cache'],
+            'target_body_markers' => ['Performance optimized by W3 Total Cache'],
+            'target_body_pattern' => '/\b(?:w3tc|w3[- _]?total[- _]?cache)\b/i',
+        ],
+        'breeze/breeze.php' => [
+            'name' => 'Breeze', 'class' => 'B', 'bypass_query' => null,
+            'disable_method' => null, 'warning' => null,
+            'target_headers' => ['x-cache-handler: breeze', 'x-breeze-cache-write', 'x-breeze-cache', 'x-breeze-circuit-breaker'],
+            'target_body_markers' => ['Cache served by breeze'],
+            // Phrase-anchored — bare 'breeze' is too generic (common English word). §5.5 note.
+            'target_body_pattern' => '/\bcache[- _]served[- _]by[- _]breeze\b|\bbreeze[- _]cache\b/i',
+        ],
+        'cache-enabler/cache-enabler.php' => [
+            'name' => 'Cache Enabler', 'class' => 'B', 'bypass_query' => null,
+            'disable_method' => null, 'warning' => null,
+            'target_headers' => ['x-cache-handler: cache-enabler-engine'],
+            'target_body_markers' => ['Cache Enabler by KeyCDN'],
+            'target_body_pattern' => '/\bcache[- _]?enabler\b/i',
+        ],
+        'swift-performance-lite/performance.php' => [
+            'name' => 'Swift Performance', 'class' => 'B', 'bypass_query' => null,
+            'disable_method' => null, 'warning' => null,
+            // NOTE: 'swift3: ' carries an INTENTIONAL trailing space — anchors on the header-name
+            // boundary in header_match's "name: value\n" haystack. DO NOT let an editor auto-trim it;
+            // 'swift3:' alone could false-positive on substrings inside arbitrary value fields.
+            'target_headers' => ['swift3: ', 'x-cache-status: identical', 'x-cache-status: changed', 'x-cache-status: not-modified'],
+            'target_body_markers' => ['Cached by Swift Performance', 'swift-performance'],
+            'target_body_pattern' => '/\bswift[- _]?performance\b/i',
+        ],
+        // SWIS Performance (EWWW IO) — full-page disk cache + JS/CSS defer/delay/minify.
+        // Class A (reclassified B->A in 1.7.78b): `?swis_disable=1` disables SWIS's
+        // optimization per-request — LIVE-VERIFIED 2026-07-15 on test-site.example
+        // vs a random cache-buster control: /wp-content/swis/ bundle refs 74->0,
+        // deferred scripts 6->1, scripts un-combined 12->15, body -39KB (undocumented
+        // in SWIS docs; behavioral test is the source of truth). The param also busts
+        // the page cache (not on SWIS's tracking-param whitelist), so one suffix does
+        // both. The header fires in Pass 1; the end-of-body '<!-- SWIS Cache @ ... -->'
+        // comment sits past the 32KB head window and is caught in Pass 2 / the
+        // PAGE_CACHE_PLUGINS full-body scan.
+        'swis-performance/swis-performance.php' => [
+            'name' => 'SWIS Performance', 'class' => 'A', 'bypass_query' => 'swis_disable=1',
+            'disable_method' => null, 'warning' => null,
+            'target_headers' => ['x-cache-handler: swis-cache-engine'],
+            'target_body_markers' => ['SWIS Cache @'],
+            'target_body_pattern' => '/\bswis[- _]?cache\b/i',
+        ],
+        'hummingbird-performance/wp-hummingbird.php' => [
+            'name' => 'Hummingbird', 'class' => null, 'bypass_query' => null,
+            'disable_method' => null, 'warning' => null,
+            'target_headers' => ['hummingbird-cache'],
+            'target_body_markers' => ['/wp-content/cache/hummingbird/', 'Hummingbird-Performance'],
+            'target_body_pattern' => '/\bhummingbird(?:[- _]performance)?\b/i',
+        ],
+        // FlyingPress reclassified C → A per spec §5.2 (changelog v2.3.0 ?no_optimize).
+        // Strategy file + StrategyFactory match arm deleted in Phase 3 per N6 YAGNI decision.
+        'flying-press/flying-press.php' => [
+            'name' => 'FlyingPress', 'class' => 'A', 'bypass_query' => 'no_optimize',
+            'disable_method' => null, 'warning' => null,
+            'target_headers' => ['x-flying-press-cache', 'x-flying-press-source'],
+            // 'Optimized by FlyingPress' kept for legacy plugin versions; 'Powered by FlyingPress' is the
+            // current v2.x footer comment that triggered the 1.4.0 diagnostic. Both literals serve as
+            // defense-in-depth alongside the target_body_pattern regex below.
+            'target_body_markers' => ['Powered by FlyingPress', 'Optimized by FlyingPress', '/wp-content/plugins/flying-press/'],
+            'target_body_pattern' => '/\bflying[- _]?press\b/i',
+        ],
+        'sg-cachepress/sg-cachepress.php' => [
+            'name' => 'SiteGround Optimizer', 'class' => 'C', 'bypass_query' => null,
+            'disable_method' => 'sg_optimizer',
+            'warning' => 'CSS/JS optimization will be paused for the duration of this scan and re-enabled automatically afterward.',
+            'target_headers' => ['sg-f-cache', 'x-powered-by: siteground'],
+            'target_body_markers' => ['Optimized by SG Optimizer'],
+            'target_body_pattern' => '/\b(?:sg|siteground)[- _]?optimizer\b/i',
+        ],
+        // Rev-1.4.1 — Managed host cache (Kinsta). Class B, header-only.
+        // MU-plugin nominal key — never matches is_plugin_active() (see spec §5.4).
+        'kinsta-mu-plugins/kinsta-mu-plugins.php' => [
+            'name' => 'Kinsta Page Cache',
+            'class' => 'B',
+            'bypass_query' => null,
+            'disable_method' => null,
+            'warning' => 'Kinsta page cache detected on target. AAS auto-bypasses it via unique-query-string probes; no operator action needed.',
+            'target_headers' => [ 'x-kinsta-cache' ],
+            'target_body_markers' => [],
+            'target_body_pattern' => null,
+        ],
+        // Rev-1.4.1 — Managed host cache (WP Engine). Class B, header-only.
+        // 4-pattern coverage: WPE emits any of these depending on cache state
+        // (SHORT for short-cached, NO-CACHEABLE for excluded/logged-in/no-cache).
+        // Known F-MISS gap: Cloudflare in front of WPE can strip all 4 patterns
+        // (spec §5.2 + §11 row 1). Operator-side HOST_FINGERPRINTS is fallback
+        // for THIS operator's install, NOT for cross-stack probing.
+        'wpengine-common/plugin.php' => [
+            'name' => 'WP Engine Page Cache',
+            'class' => 'B',
+            'bypass_query' => null,
+            'disable_method' => null,
+            'warning' => 'WP Engine page cache detected on target. AAS auto-bypasses it via unique-query-string probes; no operator action needed.',
+            'target_headers' => [
+                'x-cache-group: normal',
+                'x-cacheable: short',
+                'x-cacheable: no-cacheable',
+                'x-powered-by: wp engine',
+            ],
+            'target_body_markers' => [],
+            'target_body_pattern' => null,
+        ],
+        // Rev-1.4.1 — Managed host cache (Pantheon). Class B, header-only.
+        // 2-pattern: Pantheon always emits both X-Pantheon-Styx-Hostname AND
+        // X-Styx-Req-Id on every response from styx (Fastly via Pantheon edge).
+        'pantheon-mu-plugin/pantheon.php' => [
+            'name' => 'Pantheon Edge Cache',
+            'class' => 'B',
+            'bypass_query' => null,
+            'disable_method' => null,
+            'warning' => 'Pantheon edge cache (Fastly via Styx) detected on target. AAS auto-bypasses it via unique-query-string probes; no operator action needed.',
+            'target_headers' => [
+                'x-pantheon-styx-hostname',
+                'x-styx-req-id',
+            ],
+            'target_body_markers' => [],
+            'target_body_pattern' => null,
+        ],
+    ];
+
+    public function detect(): array {
+        $result = [ 'auto_bypass' => [], 'auto_bypass_labels' => [], 'soft_block' => [], 'soft_warn' => [], 'security_warn' => [], 'cu_missing' => false ];
+
+        foreach ( self::AUTO_BYPASS as $file => [ $label, $params ] ) {
+            if ( is_plugin_active( $file ) ) {
+                $slug = explode( '/', $file )[0];
+                $result['auto_bypass'][ $slug ] = $params;
+                // T7 (EWWW dev feedback): carry the canonical label so the admin JS
+                // doesn't title-case the slug ("swis-performance" -> "Swis Performance").
+                $result['auto_bypass_labels'][ $slug ] = $label;
+            }
+        }
+        foreach ( self::SOFT_BLOCK as $file => [ $label, $reason ] ) {
+            if ( is_plugin_active( $file ) ) {
+                $result['soft_block'][ $label ] = $reason;
+            }
+        }
+        foreach ( self::SOFT_WARN as $file => [ $label, $reason ] ) {
+            if ( is_plugin_active( $file ) ) {
+                $result['soft_warn'][ $label ] = $reason;
+            }
+        }
+
+        foreach ( self::SECURITY_WARN as $file => [ $label, $reason, $anchor ] ) {
+            if ( is_plugin_active( $file ) ) {
+                $base = admin_url( 'admin.php?page=cu-scanner-settings' );
+                $result['security_warn'][ $label ] = [
+                    'reason'       => $reason,
+                    'settings_url' => $anchor ? $base . '#' . $anchor : $base,
+                ];
+            }
+        }
+
+        // Rev-1.4.1 — Operator-side host detection (spec §6.4).
+        // No is_callable guard — HOST_FINGERPRINTS is a private const with
+        // hardcoded [self::class, 'detect_*_host'] callables; always callable
+        // at class load (rev-2 Mi2).
+        foreach ( self::HOST_FINGERPRINTS as $entry ) {
+            if ( call_user_func( $entry['detector'] ) ) {
+                $result['soft_warn'][ $entry['label'] ] = $entry['reason'];
+            }
+        }
+
+        // Code Unloader: flag as missing, auto-bypass if >= 1.3.9, soft-block if older.
+        //
+        // The operator can opt out of the bypass entirely (cu_scanner_omit_cu_bypass).
+        // When they have, Code Unloader is left alone whatever its version: no `nowpcu`
+        // suffix, no auto-bypass notice (the label drives it, so gating here keeps the
+        // UI from announcing a bypass that is not applied), and no upgrade soft-block —
+        // that message exists only to explain why the bypass is unavailable, so it would
+        // be arguing for something the operator has explicitly declined.
+        //
+        // `cu_missing` is deliberately still set: it describes installation, not bypass,
+        // and other surfaces depend on it.
+        //
+        // NB \CUScanner\Settings is fully qualified on purpose — this file is in
+        // namespace CUScanner\Scanner and does not import it.
+        if ( ! is_plugin_active( self::CU_PLUGIN ) ) {
+            $result['cu_missing'] = true;
+        } elseif ( ! ( new \CUScanner\Settings() )->get_omit_cu_bypass() ) {
+            $data    = get_plugin_data( \WP_PLUGIN_DIR . '/' . self::CU_PLUGIN );
+            $version = $data['Version'] ?? '0';
+            if ( version_compare( $version, self::CU_MIN_VERSION, '>=' ) ) {
+                $result['auto_bypass']['code-unloader'] = [ 'nowpcu' ];
+                $result['auto_bypass_labels']['code-unloader'] = 'Code Unloader';
+            } else {
+                $result['soft_block']['Code Unloader'] = "Version {$version} detected. Upgrade to v" . self::CU_MIN_VERSION . "+ for automatic bypass, or disable Code Unloader before scanning.";
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Extract bypass-key suffixes from typed-detector entries.
+     * Only Class A and A_star contribute; B and C return no suffix (B is QS-naive,
+     * C requires plugin-side disable orchestrator).
+     *
+     * @param array<string, array> $typed_entries Output of detect_typed().
+     * @return string[] Bypass keys (bare flag or `key=value`), in detector iteration order.
+     */
+    public static function build_bypass_suffixes( array $typed_entries ): array {
+        $out = [];
+        foreach ( $typed_entries as $entry ) {
+            $class = $entry['class'] ?? null;
+            $key   = $entry['bypass_query'] ?? null;
+            if ( in_array( $class, [ 'A', 'A_star' ], true ) && is_string( $key ) && $key !== '' ) {
+                $out[] = $key;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Map a plugin file path to the optimizer enum used in event fields.
+     *
+     * @param string $file Plugin file path (e.g. 'wp-rocket/wp-rocket.php').
+     * @return string Enum string, or 'unknown' for unmapped paths.
+     */
+    public static function plugin_file_to_enum( string $file ): string {
+        static $map = [
+            'wp-rocket/wp-rocket.php'                    => 'rocket',
+            'perfmatters/perfmatters.php'                => 'perfmatters',
+            'litespeed-cache/litespeed-cache.php'        => 'litespeed',
+            'autoptimize/autoptimize.php'                => 'autoptimize',
+            'nitropack/main.php'                         => 'nitropack',
+            'asset-cleanup/asset-cleanup.php'            => 'asset_cleanup',
+            'wp-fastest-cache/wpFastestCache.php'        => 'wp_fastest_cache',
+            'w3-total-cache/w3-total-cache.php'          => 'w3tc',
+            'breeze/breeze.php'                          => 'breeze',
+            'cache-enabler/cache-enabler.php'            => 'cache_enabler',
+            'swift-performance-lite/performance.php'     => 'swift',
+            'hummingbird-performance/wp-hummingbird.php' => 'hummingbird',
+            'flying-press/flying-press.php'              => 'flying_press',
+            'sg-cachepress/sg-cachepress.php'            => 'sg_optimizer',
+            'swis-performance/swis-performance.php'      => 'swis',
+        ];
+        return $map[ $file ] ?? 'unknown';
+    }
+
+    /**
+     * Returns the spec §3 typed array shape: per-plugin entries for every
+     * currently-active optimizer. Distinct from detect() — this method is
+     * driven by the OPTIMIZERS const, not the legacy AUTO_BYPASS/SOFT_BLOCK/
+     * SOFT_WARN classification.
+     *
+     * @return array<string, array{name:string,class:?string,bypass_query:?string,disable_method:?string,warning:?string,target_headers:string[],target_body_markers:string[]}>
+     */
+    public function detect_typed(): array {
+        $out = [];
+        foreach ( self::OPTIMIZERS as $file => $base ) {
+            if ( ! is_plugin_active( $file ) ) {
+                continue;
+            }
+            // Hummingbird runtime module probe (§4.2.1)
+            if ( $file === 'hummingbird-performance/wp-hummingbird.php' ) {
+                $opts          = get_option( 'wphb_settings', [] );
+                $minify        = is_array( $opts ) && isset( $opts['minify'] ) && is_array( $opts['minify'] )
+                    ? $opts['minify']
+                    : [];
+                $minify_active = ! empty( $minify['enabled'] );
+                $base['class']          = $minify_active ? 'C' : 'B';
+                $base['disable_method'] = $minify_active ? 'hummingbird' : null;
+                $base['warning']        = $minify_active
+                    ? 'CSS/JS minification will be paused for the duration of this scan and re-enabled automatically afterward.'
+                    : null;
+            }
+            $out[ $file ] = $base;
+        }
+        return $out;
+    }
+
+    /**
+     * FU-ANTIBLOCK-2 — match SECURITY_STACKS against an already-fetched probe
+     * response. Pure function over ($headers, $body): no HTTP, no state.
+     * Returns stack ids in table order.
+     *
+     * $scoped_body MUST be the caller's pre-hoisted extract_non_text_zones()
+     * output (AC-T2-6: never recompute here). Null = no scoped body available;
+     * pattern rows are skipped.
+     */
+    public static function detect_security_stacks( array $headers, string $body, bool $use_range, ?string $scoped_body = null ): array {
+        $hits = [];
+        foreach ( self::SECURITY_STACKS as $id => $entry ) {
+            $h = self::header_match( $headers, $entry['target_headers'] ?? [] );
+            $b = self::body_match( $body, $entry['target_body_markers'] ?? [], $use_range );
+            if ( ! $b && null !== ( $entry['target_body_pattern'] ?? null ) && null !== $scoped_body ) {
+                $b = self::body_match_pattern( $scoped_body, $entry['target_body_pattern'] );
+            }
+            if ( $h || $b ) {
+                $hits[] = $id;
+            }
+        }
+        return $hits;
+    }
+
+    /**
+     * FU-ANTIBLOCK-2 — locally active SECURITY_WARN plugins for the same-site
+     * pre-scan check (spec §3.4). Admin-context only (is_plugin_active).
+     */
+    public static function active_security_warn_ids(): array {
+        $out = [];
+        foreach ( self::SECURITY_WARN as $plugin_file => $row ) {
+            if ( function_exists( 'is_plugin_active' ) && is_plugin_active( $plugin_file ) ) {
+                $out[] = [ 'label' => (string) $row[0], 'warning' => (string) $row[1], 'anchor' => $row[2] ?? null ];
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * FU-ANTIBLOCK-STACK-NAMES — CANONICAL stack id -> display-name map (single
+     * source; drift-guard: tests/stack-display-names-test.php pins coverage +
+     * exact strings). Localized to JS as cuReasonCopy.stack_names in
+     * Admin_Pages::enqueue_assets() for TWO scanner.js consumers: the
+     * external-probe modal (buildSecurityStackBlock) over SECURITY_STACKS ids,
+     * and the same-site dialog's CDN leg (showLocalStackDialog) over
+     * Cdn\Detector::detect_cached() ids — each id must match a Detector adapter
+     * name(). The same-site *plugin* legs render via their own p.label
+     * (active_security_warn_ids()), NOT this map. wordfence/siteground_antibot
+     * are unconsumed today (dropped from SECURITY_STACKS per spec §6.2 signature
+     * bar) — reserved display names for a future signature-verified re-add.
+     */
+    public static function stack_display_names(): array {
+        return [
+            // SECURITY_STACKS (probe modal) + Cdn\Detector (same-site CDN leg):
+            'cloudflare'         => __( 'Cloudflare', 'ai-assets-scanner' ),
+            'sucuri'             => __( 'Sucuri', 'ai-assets-scanner' ),
+            'akamai'             => __( 'Akamai', 'ai-assets-scanner' ),
+            'imperva'            => __( 'Imperva/Incapsula', 'ai-assets-scanner' ),
+            // Cdn\Detector-only ids (same-site CDN leg):
+            'bunnycdn'           => __( 'BunnyCDN', 'ai-assets-scanner' ),
+            'fastly'             => __( 'Fastly', 'ai-assets-scanner' ),
+            // Reserved (unconsumed today — see doc block):
+            'wordfence'          => __( 'Wordfence', 'ai-assets-scanner' ),
+            'siteground_antibot' => __( 'SiteGround Antibot', 'ai-assets-scanner' ),
+        ];
+    }
+
+    /**
+     * Match any of $patterns against any header value (case-insensitive substring).
+     * Used by target-probe outcome classification.
+     *
+     * @param array $headers Headers as returned by wp_remote_retrieve_headers (assoc array).
+     * @param array $patterns Patterns to match (case-insensitive substring).
+     * @return bool true if ANY pattern matches ANY header value.
+     */
+    private static function header_match( array $headers, array $patterns ): bool {
+        if ( empty( $patterns ) ) return false;
+        // Flatten header values to a single lowercase string for substring search.
+        // NOTE: patterns must not span lines; \n separator is for substring search only.
+        $haystack = '';
+        foreach ( $headers as $name => $val ) {
+            if ( is_array( $val ) ) $val = implode( ', ', $val );
+            $haystack .= strtolower( (string) $name ) . ': ' . strtolower( (string) $val ) . "\n";
+        }
+        foreach ( $patterns as $pat ) {
+            if ( strpos( $haystack, strtolower( (string) $pat ) ) !== false ) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Match any of $patterns against the body (case-insensitive substring).
+     *
+     * Pass 1 ($use_range=true): scans first BODY_SCAN_MAX_BYTES (32KB) of body.
+     * Pass 2 ($use_range=false): scans the FULL body (already capped at 2MB by limit_response_size
+     * in single_probe_attempt's wp_remote_get args).
+     *
+     * T3 widening (spec §6.3): drops the prior $scan_tail_only / $tail_only param. Pass 2 now sees
+     * full body instead of just the last 8KB tail — closes the dead zone between 32KB head and 8KB
+     * tail for plugins whose markers sit in the body middle (e.g. flying-press script tags at ~byte
+     * 125K on flyingpress.com).
+     *
+     * @param string $body
+     * @param array  $patterns Case-insensitive substring patterns.
+     * @param bool   $use_range True for Pass 1 (32KB head cap), false for Pass 2 (full body).
+     * @return bool
+     */
+    private static function body_match( string $body, array $patterns, bool $use_range ): bool {
+        if ( empty( $patterns ) ) {
+            return false;
+        }
+        $haystack = $use_range
+            ? substr( $body, 0, self::BODY_SCAN_MAX_BYTES )
+            : $body;
+        $haystack_lower = strtolower( $haystack );
+        foreach ( $patterns as $pat ) {
+            if ( strpos( $haystack_lower, strtolower( (string) $pat ) ) !== false ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Classify probe outcome per spec §5.4 decision tree.
+     * Precedence: probe_failed > non_wordpress > optimizer classification.
+     *
+     * @param bool  $probe_failed True if both probe URLs returned WP_Error / 5xx / 403 / 429 / timeout.
+     * @param bool  $is_wordpress True if any WP signal was detected on either probe URL.
+     * @param array $detected     Array of detected entries (each with 'class' key).
+     * @return string Outcome class: probe_failed | non_wordpress | class_a_clean | class_bc_only | hybrid_a_plus_bc | no_clue.
+     */
+    private static function classify_outcome( bool $probe_failed, bool $is_wordpress, array $detected ): string {
+        if ( $probe_failed ) return 'probe_failed';
+        // §5.4 step 3 trust-WP-first: body markers without WP context are unreliable
+        // (regex may match unrelated customer content). Discard any class hits in
+        // favor of 'non_wordpress' when no WP signals present.
+        if ( ! $is_wordpress ) return 'non_wordpress';
+
+        $classes_seen = [];
+        foreach ( $detected as $d ) {
+            $c = $d['class'] ?? null;
+            if ( $c ) $classes_seen[ $c ] = true;
+        }
+        $has_class_a  = isset( $classes_seen['A'] ) || isset( $classes_seen['A_star'] );
+        $has_class_bc = isset( $classes_seen['B'] ) || isset( $classes_seen['C'] );
+
+        if ( $has_class_a && $has_class_bc ) return 'hybrid_a_plus_bc';
+        if ( $has_class_a )                   return 'class_a_clean';
+        if ( $has_class_bc )                  return 'class_bc_only';
+        return 'no_clue';
+    }
+
+    /**
+     * Strip visible body text from HTML; return concatenation of safe-to-match zones.
+     *
+     * Preserved zones (wired across Tasks 2-4): <head> entire content, all HTML comments,
+     * all <script>/<style>/<noscript> blocks, attribute values from a whitelist
+     * (class/id/src/href/data-[*]/rel/type/name/content).
+     *
+     * Best-effort regex extraction (not DOMDocument). On HTML with no <head> AND no <body>,
+     * returns the input unchanged (fallback).
+     *
+     * Per spec §5.3 + d-review Mi3 (name/content) + Mi4 (noscript).
+     *
+     * @param string $html
+     * @return string
+     */
+    private static function extract_non_text_zones( string $html ): string {
+        if ( $html === '' ) {
+            return '';
+        }
+        self::$extract_call_count++;
+        $has_head = (bool) preg_match( '/<head\b[^>]*>/i', $html );
+        $has_body = (bool) preg_match( '/<body\b[^>]*>/i', $html );
+        if ( ! $has_head && ! $has_body ) {
+            return $html; // fallback per AC-T2-3
+        }
+        $parts = [];
+
+        // 1. <head>...</head> wholesale
+        if ( preg_match( '/<head\b[^>]*>([\s\S]*?)<\/head>/i', $html, $m ) ) {
+            $parts[] = $m[1];
+        }
+
+        // 2. HTML comments (entire document)
+        if ( preg_match_all( '/<!--[\s\S]*?-->/', $html, $matches ) ) {
+            foreach ( $matches[0] as $c ) {
+                $parts[] = $c;
+            }
+        }
+
+        // 3. <script>...</script> content
+        if ( preg_match_all( '/<script\b[^>]*>([\s\S]*?)<\/script>/i', $html, $matches ) ) {
+            foreach ( $matches[1] as $c ) {
+                $parts[] = $c;
+            }
+        }
+
+        // 4. <style>...</style> content
+        if ( preg_match_all( '/<style\b[^>]*>([\s\S]*?)<\/style>/i', $html, $matches ) ) {
+            foreach ( $matches[1] as $c ) {
+                $parts[] = $c;
+            }
+        }
+
+        // 5. <noscript>...</noscript> content (d-review Mi4)
+        if ( preg_match_all( '/<noscript\b[^>]*>([\s\S]*?)<\/noscript>/i', $html, $matches ) ) {
+            foreach ( $matches[1] as $c ) {
+                $parts[] = $c;
+            }
+        }
+
+        // 6. Tag attribute values from whitelist (class/id/src/href/data-[*]/rel/type/name/content per d-review Mi3).
+        //    style excluded — inline CSS commonly contains url(...) references unrelated to the plugin
+        //    that would produce false-positive matches against target_body_pattern. Adding style here
+        //    must be paired with the FP-corpus regression test in Task 11.
+        $attr_re = '/\s(?:class|id|src|href|data-[\w\-]+|rel|type|name|content)\s*=\s*(?:"[^"]*"|\'[^\']*\')/i';
+        if ( preg_match_all( $attr_re, $html, $matches ) ) {
+            foreach ( $matches[0] as $a ) {
+                $parts[] = $a;
+            }
+        }
+
+        return implode( "\n", $parts );
+    }
+
+    /**
+     * Match a regex pattern against a pre-scoped body string.
+     * Caller is responsible for context-scoping via extract_non_text_zones (per spec §5.2 + d-review M3 hoist).
+     *
+     * Returns false on empty pattern, null/empty scoped body, malformed PCRE, or no match.
+     *
+     * @param ?string $scoped_body  Output of extract_non_text_zones( $body_slice ). Null = skip.
+     * @param ?string $pattern      PCRE regex, e.g. '/\bflying[- _]?press\b/i'.
+     * @return bool
+     */
+    private static function body_match_pattern( ?string $scoped_body, ?string $pattern ): bool {
+        if ( ! $pattern || $scoped_body === null || $scoped_body === '' ) {
+            return false;
+        }
+        // @ to silence PCRE warnings on bad patterns (defensive; pattern set is internal).
+        $r = @preg_match( $pattern, $scoped_body );
+        // Strict: preg_match returns 1=match, 0=no-match, false=PCRE error. Only match returns true.
+        return $r === 1;
+    }
+
+    /**
+     * Resolve MU-plugin directory path. Production reads WPMU_PLUGIN_DIR;
+     * tests override via __test_set_mu_plugin_dir_override() without touching
+     * PHP's define-once constants (rev-2 C1).
+     */
+    private static function get_mu_plugin_dir(): string {
+        if ( self::$mu_plugin_dir_override !== null ) {
+            return self::$mu_plugin_dir_override;
+        }
+        return defined( 'WPMU_PLUGIN_DIR' ) ? WPMU_PLUGIN_DIR : '';
+    }
+
+    /**
+     * Detect Kinsta-hosted WP install via MU-plugin file existence.
+     * Kinsta auto-installs kinsta-mu-plugins on every site since ~2017; the file
+     * path is stable. Spec §6.2.
+     */
+    private static function detect_kinsta_host(): bool {
+        $dir = self::get_mu_plugin_dir();
+        return $dir !== '' && file_exists( $dir . '/kinsta-mu-plugins/kinsta-mu-plugins.php' );
+    }
+
+    /**
+     * Detect WP Engine-hosted WP install via MU-plugin file existence.
+     * WP Engine auto-installs wpengine-common on every WPE WordPress site.
+     * Spec §6.2.
+     */
+    private static function detect_wpe_host(): bool {
+        $dir = self::get_mu_plugin_dir();
+        return $dir !== '' && file_exists( $dir . '/wpengine-common/plugin.php' );
+    }
+
+    /**
+     * Resolve Pantheon-env signal. Production reads PANTHEON_ENVIRONMENT and requires
+     * a non-empty/non-null value (per rev-2 Mi1 — empty-string defines must NOT
+     * register as a Pantheon site). Tests override via __test_set_pantheon_env_override().
+     */
+    private static function pantheon_env_defined(): bool {
+        if ( self::$pantheon_env_override !== null ) {
+            return self::$pantheon_env_override;
+        }
+        if ( ! defined( 'PANTHEON_ENVIRONMENT' ) ) {
+            return false;
+        }
+        $val = constant( 'PANTHEON_ENVIRONMENT' );
+        return $val !== '' && $val !== null;
+    }
+
+    /**
+     * Detect Pantheon-hosted WP install via PANTHEON_ENVIRONMENT constant.
+     * MU-plugin path varies across Pantheon deployment generations; the constant
+     * is the canonical fingerprint. Spec §6.2.
+     */
+    private static function detect_pantheon_host(): bool {
+        return self::pantheon_env_defined();
+    }
+
+    // --- Test seams (private-method exposure for unit testing) ---
+    public static function __test_header_match( array $headers, array $patterns ): bool {
+        return self::header_match( $headers, $patterns );
+    }
+    public static function __test_body_match( string $body, array $patterns, bool $use_range = true ): bool {
+        return self::body_match( $body, $patterns, $use_range );
+    }
+    public static function __test_classify_outcome( bool $probe_failed, bool $is_wordpress, array $detected ): string {
+        return self::classify_outcome( $probe_failed, $is_wordpress, $detected );
+    }
+    public static function __test_extract_non_text_zones( string $html ): string {
+        return self::extract_non_text_zones( $html );
+    }
+    public static function __test_body_match_pattern( ?string $scoped_body, ?string $pattern ): bool {
+        return self::body_match_pattern( $scoped_body, $pattern );
+    }
+    public static function __test_single_probe_attempt(
+        string $url,
+        int $timeout_seconds,
+        bool $use_range = true
+    ): array {
+        return self::single_probe_attempt( $url, $timeout_seconds, $use_range );
+    }
+    public static function __test_set_mu_plugin_dir_override( ?string $dir ): void {
+        self::$mu_plugin_dir_override = $dir;
+    }
+    public static function __test_set_pantheon_env_override( ?bool $val ): void {
+        self::$pantheon_env_override = $val;
+    }
+    public static function __test_detect_kinsta_host(): bool {
+        return self::detect_kinsta_host();
+    }
+    public static function __test_detect_wpe_host(): bool {
+        return self::detect_wpe_host();
+    }
+    public static function __test_detect_pantheon_host(): bool {
+        return self::detect_pantheon_host();
+    }
+
+    /**
+     * AC-N2-SSRF (iv) — sanitize WP_Error / HTTP-error reason messages before returning to client.
+     * Redacts IPs + server-internal paths; length-caps to 120.
+     * Per d-review-r1 N2: redact only common server-internal path prefixes (not probed URL paths).
+     */
+    private static function sanitize_reason( string $reason ): string {
+        $reason = preg_replace( '/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?\b/', '<ip-redacted>', $reason );
+        $reason = preg_replace( '#(?:^|\s)(/(?:home|var|usr|srv|etc|opt|root|tmp)/[^\s]*)#i', ' <internal-path-redacted>', $reason );
+        return substr( $reason, 0, 120 );
+    }
+
+    /**
+     * WordPress-detection signals per spec §5.1 last row.
+     * Case-insensitive substring match against headers + first 32KB of body.
+     */
+    private static function is_wordpress_target( array $headers, string $body ): bool {
+        $body_lower = strtolower( substr( $body, 0, self::BODY_SCAN_MAX_BYTES ) );
+        if ( strpos( $body_lower, '<meta name="generator" content="wordpress' ) !== false ) return true;
+        if ( strpos( $body_lower, 'wp-content/' )  !== false ) return true;
+        if ( strpos( $body_lower, 'wp-includes/' ) !== false ) return true;
+        if ( strpos( $body_lower, 'wp-json/' )     !== false ) return true;
+        foreach ( $headers as $name => $val ) {
+            $lname = strtolower( (string) $name );
+            if ( $lname === 'x-pingback' ) return true;
+            // WP core's REST API discovery link (rest_output_link_header(), wp-includes/rest-api.php)
+            // emits: Link: <https://host/wp-json/>; rel="https://api.w.org/"
+            // The api.w.org rel URI is WordPress-specific and survives the two conditions that push
+            // body markers past BODY_SCAN_MAX_BYTES: a script-bloated <head> and CDN asset rewriting.
+            // $val may be a string or an array: single_probe_attempt() normalises the header bag via
+            // $headers->getAll() at :980-981, and a repeated header (WP core emits three Link headers)
+            // arrives as an array. Flattened with the same idiom header_match() uses at :598.
+            if ( $lname === 'link' ) {
+                $flat = is_array( $val ) ? implode( ', ', $val ) : (string) $val;
+                if ( stripos( $flat, 'api.w.org' ) !== false ) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Single probe attempt — one wp_remote_get + classify what was returned.
+     * Returns inconclusive on transient inconclusive result so caller can retry on URL #2.
+     *
+     * @param string $url             validated URL (caller responsible for SSRF gate)
+     * @param int    $timeout_seconds wp_remote_get timeout
+     * @param bool   $use_range       Pass 1 (true): send Range: bytes=0-32767 header; body_match
+     *                                scans first 32KB head.
+     *                                Pass 2 (false): NO Range header + 2MB limit_response_size cap;
+     *                                body_match scans FULL body (T3 widening, spec §6.3).
+     * @return array probe result; see class docblock for shape
+     */
+    private static function single_probe_attempt(
+        string $url,
+        int $timeout_seconds,
+        bool $use_range = true
+    ): array {
+        $start_ms = (int) round( microtime( true ) * 1000 );
+
+        $parts  = wp_parse_url( $url );
+        $scheme = strtolower( $parts['scheme'] ?? '' );
+        if ( ! in_array( $scheme, self::ALLOWED_SCHEMES, true ) ) {
+            return [
+                'outcome'             => 'probe_failed',
+                'reason'              => 'invalid_scheme',
+                'is_wordpress'        => false,
+                'detected'            => [],
+                'bypass_suffixes'     => [],
+                'security_stacks'     => [],
+                'probed_url'          => $url,
+                'probe_duration_ms'   => 0,
+                'protocol_downgrade'  => false,
+                'redirect_final'      => null,
+                'canonical_link'      => null,
+            ];
+        }
+
+        $request_headers = [
+            'User-Agent' => 'CU-Scanner-Probe/1.0 (target-stack-detection)',
+            // Browser-style Accept. Some origin WAFs return 415 to requests with no Accept (or
+            // Accept: */*); sending a real Accept yields a usable response instead of a reject.
+            'Accept'     => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        ];
+        if ( $use_range ) {
+            $request_headers['Range'] = 'bytes=0-32767';
+        }
+
+        $request_args = [
+            'timeout'     => $timeout_seconds,
+            'redirection' => 3,
+            'sslverify'   => true,
+            'headers'     => $request_headers,
+        ];
+        if ( ! $use_range ) {
+            // Pass 2 (full-body fetch): cap response size at 2MB to bound memory.
+            // wp_remote_get truncates body to this limit; oversized responses don't fault.
+            $request_args['limit_response_size'] = 2 * 1024 * 1024;
+        }
+
+        $response = wp_remote_get( $url, $request_args );
+
+        $duration_ms = ( (int) round( microtime( true ) * 1000 ) ) - $start_ms;
+
+        if ( is_wp_error( $response ) ) {
+            return [
+                'outcome'             => 'probe_failed',
+                'reason'              => self::sanitize_reason( $response->get_error_message() ?: 'unreachable' ),
+                'is_wordpress'        => false,
+                'detected'            => [],
+                'bypass_suffixes'     => [],
+                'security_stacks'     => [],
+                'probed_url'          => $url,
+                'probe_duration_ms'   => $duration_ms,
+                'protocol_downgrade'  => false,
+                'redirect_final'      => null,
+                'canonical_link'      => null,
+            ];
+        }
+
+        $status  = (int) wp_remote_retrieve_response_code( $response );
+        $headers = wp_remote_retrieve_headers( $response );
+        if ( is_object( $headers ) && method_exists( $headers, 'getAll' ) ) {
+            $headers = $headers->getAll();
+        } elseif ( ! is_array( $headers ) ) {
+            $headers = (array) $headers;
+        }
+        $body = (string) wp_remote_retrieve_body( $response );
+
+        if ( $status >= 500 || $status === 403 || $status === 429 ) {
+            // FU-ANTIBLOCK-FAILURE-SHAPE-FINGERPRINT — block-shaped failure ($headers +
+            // $body already fetched above): name the security stack that blocked us
+            // (cf-ray / x-sucuri-id / ...) so the modal shows the stack alongside "HTTP 403"
+            // instead of a bare status. Pure header/body match, no new HTTP. $scoped_body is
+            // not hoisted on this path (all SECURITY_STACKS body-pattern rows are null → no
+            // loss); header + body-marker signatures still fire. The other-4xx path below
+            // stays [] on purpose: a 404/401 is inconclusive, not a block.
+            return [
+                'outcome'             => 'probe_failed',
+                'reason'              => 'HTTP ' . $status,
+                'is_wordpress'        => false,
+                'detected'            => [],
+                'bypass_suffixes'     => [],
+                'security_stacks'     => self::detect_security_stacks( $headers, $body, $use_range ),
+                'probed_url'          => $url,
+                'probe_duration_ms'   => $duration_ms,
+                'protocol_downgrade'  => false,
+                'redirect_final'      => null,
+                'canonical_link'      => null,
+            ];
+        }
+
+        // 4xx other than 403/429 → inconclusive; caller may retry URL #2.
+        if ( $status >= 400 ) {
+            return [
+                'outcome'             => 'inconclusive',
+                'reason'              => 'HTTP ' . $status,
+                'is_wordpress'        => false,
+                'detected'            => [],
+                'bypass_suffixes'     => [],
+                'security_stacks'     => [],
+                'probed_url'          => $url,
+                'probe_duration_ms'   => $duration_ms,
+                'protocol_downgrade'  => false,
+                'redirect_final'      => null,
+                'canonical_link'      => null,
+            ];
+        }
+
+        // Tier 2 hoist (d-review M3 + AC-T2-6): pre-compute scoped body ONCE per probe.
+        // Pass 1 ($use_range=true) caps the slice at 32KB; Pass 2 uses the full body
+        // (already capped at 2MB by limit_response_size). The scoped output feeds
+        // every plugin's regex match in the loop below — DO NOT move this call inside
+        // the loop, AC-T2-6 will fail and the cost analysis in spec §6.4.2 breaks.
+        $body_slice  = $use_range ? substr( $body, 0, self::BODY_SCAN_MAX_BYTES ) : $body;
+        $scoped_body = self::extract_non_text_zones( $body_slice );
+
+        // Scan headers + body for each optimizer signature.
+        $detected = [];
+        $page_cache_detected = false;
+        foreach ( self::OPTIMIZERS as $plugin_file => $entry ) {
+            $h_pat = $entry['target_headers']      ?? [];
+            $b_pat = $entry['target_body_markers'] ?? [];
+            $h_match = self::header_match( $headers, $h_pat );
+            $b_match = self::body_match( $body, $b_pat, $use_range )
+                    || self::body_match_pattern( $scoped_body, $entry['target_body_pattern'] ?? null );
+            if ( $h_match || $b_match ) {
+                $detected[] = [
+                    'name'         => (string) $entry['name'],
+                    'class'        => (string) ( $entry['class'] ?? '' ),
+                    'bypass_query' => $entry['bypass_query'] ?? null,
+                    'source'       => $h_match ? 'header' : 'body',
+                ];
+                // FU-AAS-TAIL-MARKER-DETECT: note whether any detected plugin is a full-page
+                // cache layer, so probe_target_stack can decide whether an end-of-body tail
+                // scan is still needed.
+                if ( in_array( $plugin_file, self::PAGE_CACHE_PLUGINS, true ) ) {
+                    $page_cache_detected = true;
+                }
+            }
+        }
+        $security_stacks = self::detect_security_stacks( $headers, $body, $use_range, $scoped_body );
+        $is_wordpress = self::is_wordpress_target( $headers, $body );
+
+        $outcome = self::classify_outcome( false, $is_wordpress, $detected );
+
+        // Build bypass_suffixes (only class A / A_star emit keys; mirrors build_bypass_suffixes contract).
+        $bypass = [];
+        foreach ( $detected as $d ) {
+            $cls = $d['class'] ?? '';
+            $key = $d['bypass_query'] ?? null;
+            if ( in_array( $cls, [ 'A', 'A_star' ], true ) && is_string( $key ) && $key !== '' ) {
+                $bypass[] = $key;
+            }
+        }
+
+        return [
+            // 'inconclusive' is a transient label only inside single_probe_attempt; the wrapper
+            // resolves it to 'no_clue' / 'non_wordpress' per §5.4 step 4 if BOTH probes are inconclusive.
+            'outcome'             => $outcome === 'no_clue' ? 'inconclusive' : $outcome,
+            'reason'              => null,
+            'is_wordpress'        => $is_wordpress,
+            'detected'            => $detected,
+            'page_cache_detected' => $page_cache_detected,
+            'bypass_suffixes'     => $bypass,
+            'security_stacks'     => $security_stacks,
+            'probed_url'          => $url,
+            'probe_duration_ms'   => $duration_ms,
+            'protocol_downgrade'  => false,
+            'redirect_final'      => self::extract_final_url( $response ),
+            'canonical_link'      => self::extract_canonical_link( $body, self::extract_final_url( $response ) ?? $url ),
+        ];
+    }
+
+    /**
+     * Fail-closed: same host, or differ only by a leading "www." (no eTLD+1).
+     *
+     * Returns true iff (case-insensitive) the two URLs share the same host, or
+     * one host is exactly "www." prepended to the other. Multi-part TLDs (e.g.
+     * foo.co.uk vs bar.co.uk) are intentionally rejected — no eTLD+1 / last-two-
+     * labels logic, which would fail OPEN on ccSLDs.
+     */
+    private static function same_site( string $submitted, string $candidate ): bool {
+        $hs = strtolower( (string) ( wp_parse_url( $submitted, PHP_URL_HOST ) ?? '' ) );
+        $hc = strtolower( (string) ( wp_parse_url( $candidate, PHP_URL_HOST ) ?? '' ) );
+        if ( $hs === '' || $hc === '' ) return false;
+        if ( $hs === $hc ) return true;
+        return ( 'www.' . $hs === $hc ) || ( 'www.' . $hc === $hs );
+    }
+    /** @internal test seam */
+    public static function __test_same_site( string $a, string $b ): bool { return self::same_site( $a, $b ); }
+
+    /** Final URL after redirects from a wp_remote_get result. Null on any structural miss (AC-RC-6). */
+    private static function extract_final_url( $response ): ?string {
+        if ( ! is_array( $response ) || empty( $response['http_response'] ) ) return null;
+        $hr = $response['http_response'];
+        if ( ! is_object( $hr ) || ! method_exists( $hr, 'get_response_object' ) ) return null;
+        $ro = $hr->get_response_object();
+        $url = is_object( $ro ) && isset( $ro->url ) ? (string) $ro->url : '';
+        return $url !== '' ? $url : null;
+    }
+
+    /** First <link rel=canonical>, absolutized against $base (never null base). Logged-only in v1. */
+    private static function extract_canonical_link( string $body, string $base ): ?string {
+        if ( $body === '' || ! preg_match( '/<link[^>]+rel=["\']?canonical["\']?[^>]*>/i', $body, $m ) ) return null;
+        if ( ! preg_match( '/href=["\']([^"\']+)["\']/i', $m[0], $h ) ) return null;
+        $href = trim( $h[1] );
+        if ( $href === '' ) return null;
+        if ( preg_match( '#^https?://#i', $href ) ) return $href;
+        $b = wp_parse_url( $base );
+        if ( empty( $b['scheme'] ) || empty( $b['host'] ) ) return null;
+        $origin = $b['scheme'] . '://' . $b['host'] . ( isset( $b['port'] ) ? ':' . $b['port'] : '' );
+        return $href[0] === '/' ? $origin . $href : $origin . '/' . ltrim( $href, '/' );
+    }
+
+    /** @internal seams */
+    public static function __test_extract_final_url( $r ): ?string { return self::extract_final_url( $r ); }
+    public static function __test_extract_canonical( string $b, string $base ): ?string { return self::extract_canonical_link( $b, $base ); }
+
+    /**
+     * Given the original-submitted $url and a winning probe $result, attach
+     * resolved_url / submitted_url / resolution_source.
+     * Same-site redirect (www-variant accepted) → resolved_url = redirect_final.
+     * Cross-domain redirect → rejected, resolved_url stays $url (resolution_source = cross_domain_reject).
+     * No redirect / same URL → resolved_url = $url (resolution_source = none).
+     */
+    private static function attach_resolution( string $url, array $result ): array {
+        $cand = $result['redirect_final'] ?? null;
+        if ( $cand && self::same_site( $url, $cand ) && $cand !== $url ) {
+            $result['resolved_url']      = $cand;
+            $result['resolution_source'] = 'redirect_final';
+        } else {
+            $result['resolved_url']      = $url;
+            $result['resolution_source'] = ( $cand && ! self::same_site( $url, $cand ) ) ? 'cross_domain_reject' : 'none';
+        }
+        $result['submitted_url'] = $url;
+        return $result;
+    }
+    /** @internal test seam */
+    public static function __test_attach_resolution( string $url, array $r ): array { return self::attach_resolution( $url, $r ); }
+
+    /**
+     * Emit a debug-mode resolution log line (CU_SCANNER_DEBUG-gated). Fires on BOTH
+     * return paths of probe_target_stack() — the cache miss below and every cache-hit
+     * return — so all five values resolution_source can take are visible in the log.
+     *
+     * Reading the field: attach_resolution() mints 'redirect_final', 'cross_domain_reject'
+     * and 'none'; the §4.2 hit-path ladder adds 'not_probed' (identity, deliberately never
+     * probed); persist_url_resolution() mints 'probe_failed'. Note that ONE failed probe is
+     * labelled by both of the latter two writers: 'probe_failed' on the per-URL entry (so it
+     * takes the short TTL tier), but 'none' on the host entry and therefore on this line
+     * whenever the miss path emits it — a failed request produces no redirect candidate,
+     * which attach_resolution() cannot distinguish from "the origin reported no redirect".
+     * So treat a 'none' as "no redirect seen, possibly because the request failed", and read
+     * 'probe_failed' (which reaches this line from the per-URL store — a warm entry on step 1,
+     * or the entry step 2 has just written) as the sharper of the two. Note the corollary:
+     * 'probe_failed' does NOT imply zero HTTP, because step 2 mints it from a request it just
+     * spent. Deliberate, and out of scope for the §4 cache split (spec §8).
+     */
+    private static function debug_log_resolution( array $r ): void {
+        if ( ! aias_debug_enabled() ) {
+            return;
+        }
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- intentional server-side debug log; never rendered to browser.
+        error_log( 'cu_scanner.resolution ' . wp_json_encode( [
+            'submitted_url'     => $r['submitted_url']      ?? null,
+            'redirect_final'    => $r['redirect_final']     ?? null,
+            'canonical_link'    => $r['canonical_link']     ?? null,
+            'resolved_url'      => $r['resolved_url']       ?? null,
+            'resolution_source' => $r['resolution_source']  ?? null,
+            'cache_hit'         => $r['cache_hit']          ?? false,
+        ] ) );
+    }
+
+    /**
+     * FU-ABSENT-SAFE Slice B1 — build the per-host probe transient key.
+     * Salted with SIGNATURE_SCHEMA_VERSION so bumping that const auto-invalidates every
+     * cached result (replaces the old manual v1/v2/v3 literal discipline). Cache key
+     * includes scheme + port to avoid collision (spec §5.3 + d-review M5).
+     */
+    private static function build_cache_key( string $scheme, string $host, string $port ): string {
+        return 'cu_scanner_target_stack_v' . self::SIGNATURE_SCHEMA_VERSION . '_' . md5( $scheme . '://' . $host . ':' . $port );
+    }
+    /** @internal test seam */
+    public static function __test_build_cache_key( string $scheme, string $host, string $port ): string {
+        return self::build_cache_key( $scheme, $host, $port );
+    }
+
+    /**
+     * Per-URL resolution transient key (spec §4.1). Distinct from build_cache_key():
+     * that one is host-keyed (detection); this one is URL-keyed (resolution), so a
+     * different path on the same host never inherits another path's resolved_url.
+     * Salted with SIGNATURE_SCHEMA_VERSION so bumping that const auto-invalidates
+     * every cached entry. THE single normalisation site — do not re-implement inline
+     * elsewhere; a one-character divergence would silently break the cache.
+     * Normalised form: "{$scheme}://{$host}:{$port}{$path}?{$query}" — scheme and
+     * host lowercased, port always explicit (defaulted from the scheme when absent),
+     * path and query byte-verbatim, "?" omitted entirely when there is no query,
+     * fragment stripped. '/pricing' and '/pricing/' are deliberately different keys.
+     */
+    private static function build_url_resolution_key( string $url ): string {
+        $parts  = wp_parse_url( $url );
+        $scheme = strtolower( $parts['scheme'] ?? 'https' );
+        $host   = strtolower( $parts['host']   ?? '' );
+        $port   = (string) ( $parts['port']    ?? ( $scheme === 'http' ? '80' : '443' ) );
+        $path   = $parts['path']  ?? '';
+        $query  = $parts['query'] ?? '';
+
+        $normalised = "{$scheme}://{$host}:{$port}{$path}" . ( $query === '' ? '' : "?{$query}" );
+
+        return 'cu_scanner_url_res_v' . self::SIGNATURE_SCHEMA_VERSION . '_' . md5( $normalised );
+    }
+    /** @internal test seam */
+    public static function __test_build_url_resolution_key( string $url ): string {
+        return self::build_url_resolution_key( $url );
+    }
+
+    /**
+     * TTL tier for the per-URL resolution transient (spec §4.1). A confident
+     * resolution (settled redirect, no redirect, or a rejected cross-domain hop)
+     * is stable for longer; anything else (e.g. a failed probe) is revisited sooner.
+     */
+    private static function url_resolution_ttl( string $resolution_source ): int {
+        return in_array( $resolution_source, [ 'redirect_final', 'none', 'cross_domain_reject' ], true )
+            ? 2 * HOUR_IN_SECONDS
+            : 15 * MINUTE_IN_SECONDS;
+    }
+    /** @internal test seam */
+    public static function __test_url_resolution_ttl( string $src ): int {
+        return self::url_resolution_ttl( $src );
+    }
+
+    /**
+     * Write the per-URL resolution entry for $url from an already-resolved probe $result
+     * (spec §4.2). Both writers — the cache-miss path and the cross-path hit's step 2 —
+     * go through here, so the entry shape, the key builder and the TTL tiering have
+     * exactly one implementation.
+     *
+     * Stores EXACTLY the two keys §4.1 defines; deliberately NOT a copy of the host
+     * detection verdict, because duplicating detection into a second key is how the two
+     * stores would drift. A probe that errored (any non-null reason: 4xx, 5xx, timeout,
+     * unreachable) learned nothing about resolution, so it is recorded as 'probe_failed'
+     * and takes the short 15-min tier rather than masquerading as a definitive 'none'
+     * — attach_resolution() reports 'none' for "no redirect seen", which a failed request
+     * technically satisfies but did not establish (§4.1 TTL table, 4th state).
+     *
+     * @return array The stored entry, so the caller merges the same values it persisted.
+     */
+    private static function persist_url_resolution( string $url, array $result ): array {
+        $source = ( ( $result['reason'] ?? null ) !== null )
+            ? 'probe_failed'
+            : (string) ( $result['resolution_source'] ?? 'probe_failed' );
+
+        $entry = [
+            'resolved_url'      => (string) ( $result['resolved_url'] ?? $url ),
+            'resolution_source' => $source,
+        ];
+
+        set_transient( self::build_url_resolution_key( $url ), $entry, self::url_resolution_ttl( $source ) );
+
+        return $entry;
+    }
+
+    /**
+     * Public wrapper — 2-attempt probe with 24h per-host transient cache.
+     * Cache key includes scheme + port to avoid collision (spec §5.3 + d-review M5).
+     */
+    public static function probe_target_stack( string $url, ?string $fallback_url = null, int $timeout_seconds = 12 ): array {
+        $parts  = wp_parse_url( $url );
+        $scheme = strtolower( $parts['scheme'] ?? 'https' );
+        $host   = strtolower( $parts['host']   ?? '' );
+        $port   = (string) ( $parts['port']    ?? ( $scheme === 'http' ? '80' : '443' ) );
+        $cache_key = self::build_cache_key( $scheme, $host, $port );
+
+        $cached = get_transient( $cache_key );
+        if ( $cached !== false && is_array( $cached ) ) {
+            // Host-keyed cache: DETECTION is host-scoped and is honoured as-is. RESOLUTION is
+            // URL-scoped, so the cached resolved_url is honoured ONLY for the exact same
+            // submitted URL. For any other path it describes a different resource — serving it
+            // (or the identity fallback that replaced it) alongside this host's bypass_suffixes
+            // is what dispatched an unresolved URL carrying an optimizer-bypass query, which a
+            // query-blind 301 rule at the origin answers with a hard 404. Spec §4.2.
+            if ( ( $cached['submitted_url'] ?? null ) !== $url ) {
+                $per_url = get_transient( self::build_url_resolution_key( $url ) );
+
+                if ( is_array( $per_url ) && isset( $per_url['resolved_url'], $per_url['resolution_source'] ) ) {
+                    // Step 1 — this path already has its own resolution. Zero HTTP.
+                    $cached['resolved_url']      = (string) $per_url['resolved_url'];
+                    $cached['resolution_source'] = (string) $per_url['resolution_source'];
+                } elseif ( ! empty( $cached['bypass_suffixes'] ) ) {
+                    // Step 2 — a bypass suffix WILL be appended to this URL, so dispatching it
+                    // unresolved is the exact defect this split exists to prevent: spend ONE
+                    // request to learn where it actually lands. Detection is never re-derived —
+                    // the cached outcome / detected / security_stacks / is_wordpress /
+                    // bypass_suffixes / page_cache_detected stand untouched even if this probe
+                    // disagrees; only the two resolution keys are merged (spec §4.2 step 2).
+                    $probe = self::attach_resolution( $url, self::single_probe_attempt( $url, $timeout_seconds ) );
+                    $entry = self::persist_url_resolution( $url, $probe );
+
+                    $cached['resolved_url']      = $entry['resolved_url'];
+                    $cached['resolution_source'] = $entry['resolution_source'];
+                } else {
+                    // Step 3 — no suffix will be appended, so the dispatched URL is bare, the
+                    // origin's own 301 applies normally and the worker follows it: a request here
+                    // buys nothing. Identity, as today, but labelled honestly. NOTHING is
+                    // persisted: a cached 'not_probed' would short-circuit step 2 via step 1 for
+                    // a full TTL, so a host whose suffix list later filled in would reproduce the
+                    // original defect and cache it for 2 h (spec §4.2 step 3 / r1-C4b).
+                    $cached['resolved_url']      = $url;
+                    $cached['resolution_source'] = 'not_probed';
+                }
+
+                // Steps 1-3 only. The cached redirect_final describes $url1's probe, and
+                // debug_log_resolution() logs the field — leaving it would put one URL's redirect
+                // target on another URL's telemetry line. The SAME-path return below keeps its
+                // redirect_final: there it describes exactly the right URL.
+                $cached['redirect_final'] = null;
+            } elseif ( ! isset( $cached['resolved_url'] ) ) {
+                // Same path, pre-feature entry with no resolution recorded — unchanged behaviour.
+                $cached['resolved_url']      = $url;
+                $cached['resolution_source'] = 'none';
+            }
+            $cached['submitted_url'] = $url;
+            $cached['cache_hit']     = true;
+            // Spec §6 / AC-13 — every branch above funnels through this single return, so
+            // one call here covers steps 1-3 AND the same-path return. Without it the whole
+            // hit path is silent and 'not_probed', which is produced nowhere else, is a
+            // state the log can never show. Emitted after submitted_url/cache_hit are set so
+            // the line describes what is actually returned; the miss path keeps its own call
+            // below and is unreachable from here, so nothing is logged twice.
+            self::debug_log_resolution( $cached );
+            return $cached;
+        }
+
+        $result = self::single_probe_attempt( $url, $timeout_seconds );
+        if ( $result['outcome'] === 'inconclusive' && $fallback_url ) {
+            $r2 = self::single_probe_attempt( $fallback_url, $timeout_seconds );
+            if ( $r2['outcome'] !== 'inconclusive' ) {
+                $result = $r2;
+                $result['probed_url_2'] = $fallback_url;
+            }
+        }
+
+        // FU-NEW-7: Pass 2 orchestration. Fires when Pass 1 (head-area scan) was inconclusive
+        // AND the response was healthy (reason === null, i.e. not an HTTP/transport error).
+        // Retries each URL with a full-body fetch (use_range=false) — T3 widening (spec §6.3)
+        // scans the entire body up to the 2MB limit_response_size cap, closing the dead zone
+        // between 32KB head and end-of-body for markers at any byte offset.
+        // Spec rev 2.1 §3.2 + §3.3 + §3.8.
+        $full_body_scanned = false;
+        if ( $result['outcome'] === 'inconclusive' && ( $result['reason'] ?? null ) === null ) {
+            $full_body_scanned = true;
+            // Pass 2a: URL1 full body scan.
+            $p2_url1 = self::single_probe_attempt(
+                $url,
+                $timeout_seconds,
+                false  /* use_range — Pass 2: full body */
+            );
+            if ( $p2_url1['outcome'] !== 'inconclusive' ) {
+                $final = $p2_url1;
+            } elseif ( $fallback_url ) {
+                // Pass 2b: URL2 full body scan.
+                $p2_url2 = self::single_probe_attempt(
+                    $fallback_url,
+                    $timeout_seconds,
+                    false  /* use_range — Pass 2: full body */
+                );
+                $final = $p2_url2['outcome'] !== 'inconclusive' ? $p2_url2 : $result;
+            } else {
+                $final = $result;
+            }
+            $result = $final;
+        }
+
+        // FU-AAS-TAIL-MARKER-DETECT: a headerless warm-HIT page cache (e.g. Breeze on a
+        // file-cache HIT — PHP never runs, so no x-*-cache header) leaves its ONLY signature
+        // as an end-of-body comment, PAST Pass 1's 32KB head window. When Pass 1 returned a
+        // healthy, CONCLUSIVE-POSITIVE verdict but detected no page-cache layer, run one
+        // full-body scan to catch it. Reuses the full-body Pass-2 fetch (no Range header — a
+        // ranged tail fetch is unreliable on compressed origins: the server serves the range
+        // against the gzip stream and a partial-gzip suffix cannot be decompressed). Additive-
+        // upgrade only: the full-body result replaces Pass 1 ONLY if it stays positive AND
+        // newly reveals a cache, so a transient failure on the extra request can never
+        // downgrade an existing detection. Guarded by $full_body_scanned so a full-body scan
+        // never fires twice.
+        if ( ! $full_body_scanned
+             && ( $result['reason'] ?? null ) === null
+             && empty( $result['page_cache_detected'] )
+             && in_array( $result['outcome'], [ 'class_a_clean', 'class_bc_only', 'hybrid_a_plus_bc' ], true ) ) {
+            $p_full = self::single_probe_attempt( $url, $timeout_seconds, false /* full body, no Range */ );
+            if ( ! empty( $p_full['page_cache_detected'] )
+                 && in_array( $p_full['outcome'], [ 'class_a_clean', 'class_bc_only', 'hybrid_a_plus_bc' ], true ) ) {
+                $result = $p_full;
+            }
+        }
+
+        // Resolve transient 'inconclusive' per §5.4 step 4. A non-null reason means the probe was
+        // rejected/errored (4xx, etc.) — resolve to 'probe_failed' (an honest "couldn't read the
+        // site"), NOT a positive 'non_wordpress' claim. A null reason is a healthy response with no
+        // signal → genuine no_clue/non_wordpress (unchanged). This is downstream of the url2-fallback
+        // + Pass-2 logic, so 4xx retry behavior is preserved.
+        if ( $result['outcome'] === 'inconclusive' ) {
+            if ( ( $result['reason'] ?? null ) !== null ) {
+                $result['outcome'] = 'probe_failed';
+            } else {
+                $result['outcome'] = $result['is_wordpress'] ? 'no_clue' : 'non_wordpress';
+            }
+        }
+
+        $result['probed_url_1'] = $url;
+        $result['cache_hit']    = false;
+
+        // Attach resolved_url / submitted_url / resolution_source against the ORIGINAL $url.
+        // Must run before set_transient so resolution is persisted in the cache entry.
+        $result = self::attach_resolution( $url, $result );
+        self::debug_log_resolution( $result );
+
+        // Tiered TTL (FU-ABSENT-SAFE B1): see positive_cache_ttl() docblock.
+        $ttl = self::positive_cache_ttl( $result );
+        set_transient( $cache_key, $result, $ttl );
+
+        // …and the per-URL resolution entry for the URL we just probed (spec §4.2, r1-C4a).
+        // Zero extra HTTP — the probe already happened. This is the writer that fires on a
+        // host's FIRST probe, which is when most entries are born, and it is what lets a
+        // rescan of the same URL resolve from cache instead of re-probing.
+        self::persist_url_resolution( $url, $result );
+
+        return $result;
+    }
+
+    /**
+     * FU-ABSENT-SAFE Slice B1 — tiered TTL decision. 24h ONLY for detections that produced
+     * a usable bypass suffix. A positive-render-but-suffixless outcome (e.g. class_bc_only —
+     * the Class-A-miss shape, Perfmatters detected-present but no Class-A bypass suffix
+     * produced) self-heals in 15 min instead of pinning the miss for a day. Negative/
+     * indeterminate verdicts (non_wordpress / no_clue / probe_failed) also get 15 min so a
+     * transient block (rate-limit, bot-challenge, momentary WAF) self-heals on the next scan
+     * instead of being pinned. Positive set is an allowlist → any unknown outcome gets the
+     * short TTL. Extracted as its own static method (behavior-preserving) so the tiering rule
+     * is unit-testable without stubbing the full probe_target_stack() call chain.
+     */
+    private static function positive_cache_ttl( array $result ): int {
+        $positive = in_array( $result['outcome'], [ 'class_a_clean', 'class_bc_only', 'hybrid_a_plus_bc' ], true )
+            && is_array( $result['bypass_suffixes'] ?? null ) && count( $result['bypass_suffixes'] ) > 0;
+        return $positive ? DAY_IN_SECONDS : 15 * MINUTE_IN_SECONDS;
+    }
+    /** @internal test seam */
+    public static function __test_positive_cache_ttl( array $result ): int {
+        return self::positive_cache_ttl( $result );
+    }
+}

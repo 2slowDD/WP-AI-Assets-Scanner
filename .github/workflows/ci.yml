@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  php-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.0', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - run: vendor/bin/phpunit
+
+  js-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+
+  plugin-check:
+    runs-on: ubuntu-latest
+    env:
+      # Pinned Plugin Check revision whose PHPCS rulesets and sniffs the check mirrors.
+      PLUGIN_CHECK_REF: 2f273b7c5f7f56ddba5c226d72eb6d0036e37502
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          tools: composer
+      - name: Fetch Plugin Check rulesets and sniffs
+        run: |
+          git init -q tools/plugin-check
+          git -C tools/plugin-check fetch -q --depth 1 https://github.com/WordPress/plugin-check.git "$PLUGIN_CHECK_REF"
+          git -C tools/plugin-check checkout -q FETCH_HEAD
+      - name: Install PHPCS standards
+        run: |
+          composer global config --no-plugins allow-plugins.dealerdirect/phpcodesniffer-composer-installer true
+          composer global require --no-interaction --no-progress wp-coding-standards/wpcs:^3 phpcompatibility/phpcompatibility-wp:*
+          P="$(composer global config home)/vendor"
+          "$P/bin/phpcs" --config-set installed_paths "$P/wp-coding-standards/wpcs,$P/phpcsstandards/phpcsutils,$P/phpcsstandards/phpcsextra,$P/phpcompatibility/php-compatibility,$P/phpcompatibility/phpcompatibility-wp,$P/phpcompatibility/phpcompatibility-paragonie,$PWD/tools/plugin-check/phpcs-sniffs"
+          echo "$P/bin" >> "$GITHUB_PATH"
+      - name: Build release ZIP
+        run: bin/build-zip.sh
+      - name: Plugin Check (static sniffs) on the release contents
+        run: phpcs --standard=tools/plugin-check.xml --runtime-set testVersion 8.0- --exclude=PHPCompatibility.FunctionNameRestrictions.ReservedFunctionNames dist/ai-assets-scanner

@@ -1,0 +1,23 @@
+{
+    "name": "2slowdd/ai-assets-scanner",
+    "description": "AI Assets Scanner WordPress plugin (development dependencies only; nothing from vendor/ is shipped).",
+    "license": "GPL-2.0-or-later",
+    "type": "wordpress-plugin",
+    "require-dev": {
+        "phpunit/phpunit": "^9.6",
+        "10up/wp_mock": "^1.1"
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "CUScanner\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "config": {
+        "platform": {
+            "php": "8.0.30"
+        }
+    }
+}

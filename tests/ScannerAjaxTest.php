@@ -1,0 +1,1485 @@
+<?php
+namespace CUScanner\Tests;
+
+use CUScanner\Admin\ScannerAjax;
+use WP_Mock;
+use WP_Mock\Tools\TestCase;
+
+class ScannerAjaxTest extends TestCase {
+    public function setUp(): void { parent::setUp(); WP_Mock::setUp(); \WP_Query::$next_posts = []; }
+    public function tearDown(): void { \WP_Query::$next_posts = []; WP_Mock::tearDown(); parent::tearDown(); }
+
+    private function mockCheck(): void {
+        WP_Mock::userFunction( 'check_ajax_referer' )->andReturn( true );
+        WP_Mock::userFunction( 'current_user_can' )->with( 'manage_options' )->andReturn( true );
+    }
+
+    public function test_cancel_job_keeps_state_and_errors_when_backend_unreachable(): void {
+        // FU-AAS-CANCEL-RELEASE-RESILIENCE: a RETRYABLE worker-cancel failure (backend
+        // unreachable) must NOT mark the scan cancelled, delete the transient, or report
+        // success — it returns a retryable error and leaves local state intact so the user
+        // can retry (otherwise the still-active reservation strands → post-cancel 409).
+        $this->mockCheck();
+        WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 5 );
+        WP_Mock::userFunction( 'get_transient' )->with( 'cu_scanner_job_5' )->andReturn( [
+            'job_id'      => 'job-abc',
+            'job_token'   => 'tok-xyz',
+            'railway_url' => 'https://cu-scanner-railway-production.up.railway.app',
+        ] );
+        WP_Mock::userFunction( 'get_option' )->with( 'cu_scanner_api_key', '' )->andReturn( 'test-key' );
+        WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( function ( string $url, ?int $component = null ) {
+            $parts = parse_url( $url );
+            if ( null === $component ) { return $parts; }
+            $map = [ PHP_URL_SCHEME => 'scheme', PHP_URL_HOST => 'host', PHP_URL_PORT => 'port', PHP_URL_USER => 'user', PHP_URL_PASS => 'pass' ];
+            return $parts[ $map[ $component ] ?? '' ] ?? null;
+        } );
+        // Backend unreachable → wp_remote_post returns WP_Error → RailwayClient::parse throws
+        // HttpException(status 0) → Outbox::is_retryable() === true.
+        WP_Mock::userFunction( 'wp_remote_post' )->andReturn( new \WP_Error( 'http_request_failed', 'cURL error 7: connection refused' ) );
+        // State MUST be preserved + no false success.
+        WP_Mock::userFunction( 'delete_transient' )->never();
+        WP_Mock::userFunction( 'wp_send_json_success' )->never();
+        $captured = null;
+        WP_Mock::userFunction( 'wp_send_json_error' )->once()->andReturnUsing( function ( $data ) use ( &$captured ) { $captured = $data; } );
+
+        ( new ScannerAjax() )->cancel_job();
+
+        $this->assertConditionsMet();
+        $this->assertIsArray( $captured );
+        $this->assertTrue( $captured['retryable'] ?? false );
+    }
+
+    public function test_friendly_error_maps_409_to_scan_already_active(): void {
+        // Group C: a 409 (gate / SaaS reserve "scan_already_active") → friendly message +
+        // machine code + non-retryable. Any other status → the fallback detail string +
+        // the Phase O retryable flag (no `error` code).
+        $m = new \ReflectionMethod( ScannerAjax::class, 'friendly_error' );
+        $m->setAccessible( true );
+
+        $r409 = $m->invoke( null, new \CUScanner\Api\HttpException( 'HTTP 409: scan_already_active', 409 ), 'raw-detail' );
+        $this->assertSame( 'scan_already_active', $r409['error'] );
+        $this->assertFalse( $r409['retryable'] );
+        $this->assertStringContainsStringIgnoringCase( 'already', $r409['message'] );
+
+        $r503 = $m->invoke( null, new \CUScanner\Api\HttpException( 'HTTP 503: queue_full', 503 ), 'raw-detail' );
+        $this->assertArrayNotHasKey( 'error', $r503 );          // no friendly code for non-409
+        $this->assertSame( 'raw-detail', $r503['message'] );    // fallback detail preserved
+        $this->assertTrue( $r503['retryable'] );                // 5xx is retryable (Phase O)
+
+        $r402 = $m->invoke( null, new \CUScanner\Api\HttpException( 'Insufficient credits', 402 ), 'no-credits' );
+        $this->assertArrayNotHasKey( 'error', $r402 );
+        $this->assertFalse( $r402['retryable'] );                // 402 terminal
+    }
+
+    public function test_check_job_returns_error_when_no_transient(): void {
+        $this->mockCheck();
+        WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 1 );
+        WP_Mock::userFunction( 'get_transient' )
+            ->with( 'cu_scanner_job_1' )
+            ->andReturn( false );
+        WP_Mock::userFunction( 'wp_send_json_error' )
+            ->once()
+            ->with( 'No active job' );
+
+        ( new ScannerAjax() )->check_job();
+        $this->assertConditionsMet();
+    }
+
+    public function test_check_job_returns_job_data_when_transient_exists(): void {
+        $this->mockCheck();
+        WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 1 );
+        WP_Mock::userFunction( 'get_transient' )
+            ->with( 'cu_scanner_job_1' )
+            ->andReturn( [
+                'job_id'       => 'abc123',
+                'job_token'    => 'tok456',
+                'railway_url'  => 'https://cu-scanner-railway-production.up.railway.app',
+                'bypass_token' => 'byp789',
+            ] );
+        WP_Mock::userFunction( 'wp_send_json_success' )
+            ->once()
+            ->with( [
+                'job_id'      => 'abc123',
+                'job_token'   => 'tok456',
+                'railway_url' => 'https://cu-scanner-railway-production.up.railway.app',
+            ] );
+
+        ( new ScannerAjax() )->check_job();
+        $this->assertConditionsMet();
+    }
+
+    public function test_detect_plugins_returns_null_balance_when_api_fails(): void {
+        $this->mockCheck();
+        WP_Mock::userFunction( 'is_plugin_active' )->andReturn( false );
+        WP_Mock::userFunction( 'get_option' )
+            ->with( 'cu_scanner_api_key', '' )->andReturn( 'test-key' );
+        WP_Mock::userFunction( 'get_home_url' )->andReturn( 'https://example.com' );
+        WP_Mock::userFunction( 'wp_parse_url' )->andReturn( 'example.com' );
+        // CDN detection: transient cache-hit → Detector::detect() returns null; get_acknowledged_cdn stub silences cdn_notice path.
+        WP_Mock::userFunction( 'get_transient' )
+            ->with( 'cu_scanner_cdn_detected' )
+            ->andReturn( '' );
+        WP_Mock::userFunction( 'get_option' )
+            ->with( 'cu_scanner_cdn_exemption_ack', '' )
+            ->andReturn( '' );
+        WP_Mock::userFunction( 'wp_remote_get' )
+            ->andReturn( new \WP_Error( 'http_failure', 'Connection refused' ) );
+
+        $captured = null;
+        WP_Mock::userFunction( 'wp_send_json_success' )
+            ->once()
+            ->andReturnUsing( function ( $data ) use ( &$captured ) { $captured = $data; } );
+
+        ( new ScannerAjax() )->detect_plugins();
+        $this->assertConditionsMet();
+        $this->assertArrayHasKey( 'balance', $captured );
+        $this->assertNull( $captured['balance'] );
+    }
+
+    public function test_detect_plugins_returns_balance_when_api_succeeds(): void {
+        $this->mockCheck();
+        WP_Mock::userFunction( 'is_plugin_active' )->andReturn( false );
+        WP_Mock::userFunction( 'get_option' )
+            ->with( 'cu_scanner_api_key', '' )->andReturn( 'test-key' );
+        WP_Mock::userFunction( 'get_home_url' )->andReturn( 'https://example.com' );
+        WP_Mock::userFunction( 'wp_parse_url' )->andReturn( 'example.com' );
+        // CDN detection: transient cache-hit → Detector::detect() returns null; get_acknowledged_cdn stub silences cdn_notice path.
+        WP_Mock::userFunction( 'get_transient' )
+            ->with( 'cu_scanner_cdn_detected' )
+            ->andReturn( '' );
+        WP_Mock::userFunction( 'get_option' )
+            ->with( 'cu_scanner_cdn_exemption_ack', '' )
+            ->andReturn( '' );
+        WP_Mock::userFunction( 'wp_remote_get' )->andReturn( [ 'response' => [ 'code' => 200 ] ] );
+        WP_Mock::userFunction( 'wp_remote_retrieve_response_code' )->andReturn( 200 );
+        WP_Mock::userFunction( 'wp_remote_retrieve_body' )->andReturn( '{"balance":42}' );
+
+        $captured = null;
+        WP_Mock::userFunction( 'wp_send_json_success' )
+            ->once()
+            ->andReturnUsing( function ( $data ) use ( &$captured ) { $captured = $data; } );
+
+        ( new ScannerAjax() )->detect_plugins();
+        $this->assertConditionsMet();
+        $this->assertArrayHasKey( 'balance', $captured );
+        $this->assertSame( 42, $captured['balance'] );
+    }
+
+    public function test_reserve_job_hydrates_missing_railway_url_before_reserving(): void {
+        $this->mockCheck();
+        $_POST['page_count'] = '1';
+
+        WP_Mock::userFunction( 'absint' )->andReturnUsing( function ( $value ) {
+            return max( 0, (int) $value );
+        } );
+        WP_Mock::userFunction( 'get_option' )
+            ->with( 'cu_scanner_api_key', '' )
+            ->andReturn( 'cusk_Freekey_10' );
+        WP_Mock::userFunction( 'get_option' )
+            ->with( 'cu_scanner_railway_url', '' )
+            ->andReturn( '' );
+        WP_Mock::userFunction( 'get_home_url' )->andReturn( 'https://www.example.com' );
+        WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( function ( string $url, ?int $component = null ) {
+            $parts = parse_url( $url );
+            if ( null === $component ) {
+                return $parts;
+            }
+            $map = [
+                PHP_URL_SCHEME => 'scheme',
+                PHP_URL_HOST   => 'host',
+                PHP_URL_PORT   => 'port',
+                PHP_URL_USER   => 'user',
+                PHP_URL_PASS   => 'pass',
+            ];
+            return $parts[ $map[ $component ] ?? '' ] ?? null;
+        } );
+        WP_Mock::userFunction( 'wp_remote_post' )->andReturnUsing( function ( string $url ) {
+            if ( str_contains( $url, '/cu-scanner/v1/auth' ) ) {
+                return [
+                    'response' => [ 'code' => 200 ],
+                    'body'     => '{"railway_url":"https://cu-scanner-railway-production.up.railway.app","balance":3}',
+                ];
+            }
+            if ( str_contains( $url, '/cu-scanner/v1/jobs/reserve' ) ) {
+                return [
+                    'response' => [ 'code' => 200 ],
+                    'body'     => '{"job_token":"plain-token","balance_after":2}',
+                ];
+            }
+            return [ 'response' => [ 'code' => 404 ], 'body' => '{"message":"not found"}' ];
+        } );
+        WP_Mock::userFunction( 'wp_remote_retrieve_response_code' )->andReturnUsing( function ( array $response ) {
+            return (int) ( $response['response']['code'] ?? 0 );
+        } );
+        WP_Mock::userFunction( 'wp_remote_retrieve_body' )->andReturnUsing( function ( array $response ) {
+            return (string) ( $response['body'] ?? '' );
+        } );
+        WP_Mock::userFunction( 'update_option' )
+            ->with( 'cu_scanner_railway_url', 'https://cu-scanner-railway-production.up.railway.app' )
+            ->once();
+        WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 11 );
+        WP_Mock::userFunction( 'set_transient' )
+            ->with( 'cu_scanner_pending_token_11', 'plain-token', 3600 )
+            ->once();
+
+        $captured = null;
+        WP_Mock::userFunction( 'wp_send_json_success' )
+            ->once()
+            ->andReturnUsing( function ( $data ) use ( &$captured ) { $captured = $data; } );
+
+        ( new ScannerAjax() )->reserve_job();
+
+        unset( $_POST['page_count'] );
+        $this->assertConditionsMet();
+        $this->assertSame( [ 'reserved' => true, 'job_token' => 'plain-token' ], $captured );
+    }
+
+    public function test_reserve_job_forwards_extra_time_count_from_post_to_reserve_body(): void {
+        // FU-AAS-EXTRA-TIME — end-to-end: the AJAX handler must read
+        // $_POST['extra_time_count'] and forward it through WpserviceClient into
+        // the SaaS /jobs/reserve POST body (the "M" of the N+M reserve gate).
+        $this->mockCheck();
+        $_POST['page_count']       = '4';
+        $_POST['extra_time_count'] = '2';
+
+        WP_Mock::userFunction( 'absint' )->andReturnUsing( function ( $value ) {
+            return max( 0, (int) $value );
+        } );
+        WP_Mock::userFunction( 'get_option' )
+            ->with( 'cu_scanner_api_key', '' )
+            ->andReturn( 'cusk_Freekey_10' );
+        WP_Mock::userFunction( 'get_option' )
+            ->with( 'cu_scanner_railway_url', '' )
+            ->andReturn( 'https://cu-scanner-railway-production.up.railway.app' );
+        WP_Mock::userFunction( 'get_home_url' )->andReturn( 'https://www.example.com' );
+        WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( function ( string $url, ?int $component = null ) {
+            $parts = parse_url( $url );
+            if ( null === $component ) {
+                return $parts;
+            }
+            $map = [
+                PHP_URL_SCHEME => 'scheme',
+                PHP_URL_HOST   => 'host',
+                PHP_URL_PORT   => 'port',
+                PHP_URL_USER   => 'user',
+                PHP_URL_PASS   => 'pass',
+            ];
+            return $parts[ $map[ $component ] ?? '' ] ?? null;
+        } );
+
+        $reserve_body = null;
+        WP_Mock::userFunction( 'wp_remote_post' )->andReturnUsing( function ( string $url, array $args ) use ( &$reserve_body ) {
+            if ( str_contains( $url, '/cu-scanner/v1/jobs/reserve' ) ) {
+                $reserve_body = json_decode( $args['body'], true );
+                return [
+                    'response' => [ 'code' => 200 ],
+                    'body'     => '{"job_token":"plain-token","balance_after":2}',
+                ];
+            }
+            return [ 'response' => [ 'code' => 404 ], 'body' => '{"message":"not found"}' ];
+        } );
+        WP_Mock::userFunction( 'wp_remote_retrieve_response_code' )->andReturnUsing( function ( array $response ) {
+            return (int) ( $response['response']['code'] ?? 0 );
+        } );
+        WP_Mock::userFunction( 'wp_remote_retrieve_body' )->andReturnUsing( function ( array $response ) {
+            return (string) ( $response['body'] ?? '' );
+        } );
+        WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 11 );
+        WP_Mock::userFunction( 'set_transient' )
+            ->with( 'cu_scanner_pending_token_11', 'plain-token', 3600 )
+            ->once();
+        WP_Mock::userFunction( 'wp_send_json_success' )->once();
+
+        ( new ScannerAjax() )->reserve_job();
+
+        unset( $_POST['page_count'], $_POST['extra_time_count'] );
+        $this->assertConditionsMet();
+        $this->assertIsArray( $reserve_body );
+        $this->assertSame( 4, $reserve_body['page_count'] );
+        $this->assertArrayHasKey( 'extra_time_count', $reserve_body );
+        $this->assertSame( 2, $reserve_body['extra_time_count'] );
+    }
+
+    public function test_format_submit_error_detail_short_message_is_untruncated(): void {
+        $result = ScannerAjax::format_submit_error_detail( 'Railway HTTP 401: no such token' );
+        $this->assertSame( 'Scan submission failed: Railway HTTP 401: no such token', $result );
+    }
+
+    public function test_format_submit_error_detail_truncates_at_80_chars_with_ellipsis(): void {
+        $long   = str_repeat( 'x', 200 );
+        $result = ScannerAjax::format_submit_error_detail( $long );
+
+        // Prefix is fixed literal text
+        $this->assertStringStartsWith( 'Scan submission failed: ', $result );
+
+        // Detail portion = first 80 chars of input + ellipsis
+        $detail = mb_substr( $result, mb_strlen( 'Scan submission failed: ' ) );
+        $this->assertSame( str_repeat( 'x', 80 ) . '…', $detail );
+    }
+
+    public function test_format_submit_error_detail_at_exactly_80_chars_no_ellipsis(): void {
+        $exact  = str_repeat( 'x', 80 );
+        $result = ScannerAjax::format_submit_error_detail( $exact );
+        $this->assertSame( 'Scan submission failed: ' . $exact, $result );
+        $this->assertStringEndsNotWith( '…', $result );
+    }
+
+    public function test_format_reserve_error_detail_short_message_is_untruncated(): void {
+        $result = ScannerAjax::format_reserve_error_detail( 'HTTP 429: rate limited' );
+        $this->assertSame( 'Could not reserve credits: HTTP 429: rate limited', $result );
+    }
+
+    public function test_format_reserve_error_detail_truncates_at_80_chars_with_ellipsis(): void {
+        $long   = str_repeat( 'y', 200 );
+        $result = ScannerAjax::format_reserve_error_detail( $long );
+
+        $this->assertStringStartsWith( 'Could not reserve credits: ', $result );
+
+        $detail = mb_substr( $result, mb_strlen( 'Could not reserve credits: ' ) );
+        $this->assertSame( str_repeat( 'y', 80 ) . '…', $detail );
+    }
+
+    public function test_format_reserve_error_detail_at_exactly_80_chars_no_ellipsis(): void {
+        $exact  = str_repeat( 'y', 80 );
+        $result = ScannerAjax::format_reserve_error_detail( $exact );
+        $this->assertSame( 'Could not reserve credits: ' . $exact, $result );
+        $this->assertStringEndsNotWith( '…', $result );
+    }
+
+    public function test_billable_credit_total_excludes_origin_unavailable(): void {
+        $pages = [
+            [ 'status' => 'done' ],
+            [ 'status' => 'done' ],
+            [ 'status' => 'origin_unavailable' ],   // skipped — 0 credits
+            [ 'status' => 'error' ],                 // error w/o ET — 0 credits
+        ];
+        // 1 + 1 + 0 + 0 = 2 (unchanged from the old page-count semantics for non-ET pages).
+        $this->assertSame( 2, ScannerAjax::billable_credit_total( $pages ) );
+    }
+
+    // FU-AAS-ET-CREDIT-DISPLAY (2026-06-13): the scan-history Credits TOTAL must include the
+    // per-page Extra-Time +1, matching the per-URL Step-4 column (and the SaaS-billed amount).
+    public function test_billable_credit_total_adds_extra_time_charged(): void {
+        $pages = [
+            [ 'status' => 'done', 'extra_time_charged' => true ], // base 1 + ET 1 = 2
+        ];
+        $this->assertSame( 2, ScannerAjax::billable_credit_total( $pages ) );
+    }
+
+    public function test_billable_credit_total_mixed_et_and_plain(): void {
+        $pages = [
+            [ 'status' => 'done' ],                                // 1
+            [ 'status' => 'done', 'extra_time_charged' => true ],  // 2
+            [ 'status' => 'origin_unavailable', 'extra_time_charged' => true ], // 0 (skipped)
+            [ 'status' => 'error', 'extra_time_charged' => true ], // 1 (ET-only on errored page)
+        ];
+        // 1 + 2 + 0 + 1 = 4
+        $this->assertSame( 4, ScannerAjax::billable_credit_total( $pages ) );
+    }
+
+    // FU-AAS-HISTORY-RULE-COUNT (2026-06-13): the scan-history Safe/Aggressive counts must equal
+    // the SUM of the per-URL Step-4 table (its `by_page` tally), NOT count(cu_json['rules']). On an
+    // ET ratchet merge the rule list can include rules whose url_pattern is not in the rescan's
+    // pages (recompute_by_page attributes them to no page), so count(rules) over-reports vs the
+    // table. Sourcing both from by_page makes the documented invariant the live contract.
+    public function test_rule_counts_by_group_sums_per_page(): void {
+        $by_page = [
+            0 => [ 'safe' => 1, 'aggressive' => 5, 'needed' => 10 ],
+            1 => [ 'safe' => 2, 'aggressive' => 3, 'needed' => 4 ],
+        ];
+        $this->assertSame( [ 'safe' => 3, 'aggressive' => 8 ], ScannerAjax::rule_counts_by_group( $by_page ) );
+    }
+
+    public function test_rule_counts_by_group_matches_per_url_on_ratchet_scan(): void {
+        // The live bug: single rescanned URL showed S:0 A:17 in the table but the
+        // history counted the post-merge rule list (1 safe / 48 agg). History must follow by_page.
+        $by_page = [ 0 => [ 'safe' => 0, 'aggressive' => 17, 'needed' => 45 ] ];
+        $this->assertSame( [ 'safe' => 0, 'aggressive' => 17 ], ScannerAjax::rule_counts_by_group( $by_page ) );
+    }
+
+    public function test_rule_counts_by_group_empty_is_zero(): void {
+        $this->assertSame( [ 'safe' => 0, 'aggressive' => 0 ], ScannerAjax::rule_counts_by_group( [] ) );
+    }
+
+    // FU-AAS-RATCHET-ABSENT-PAGE-RESTORE (2026-06-13): diagnostic that fires when the by_page tally
+    // disagrees with the rule-list group counts (only possible after an ET ratchet merge restores
+    // rules for pages absent from the rescan). Returns null when consistent; a payload otherwise.
+    private function aggRule( string $pattern ): array {
+        return [ 'url_pattern' => $pattern, 'group_id' => 2, 'asset_handle' => 'h', 'asset_type' => 'css', 'device_type' => 'all' ];
+    }
+
+    public function test_count_divergence_diag_null_when_consistent(): void {
+        $by_page = [ 0 => [ 'safe' => 0, 'aggressive' => 2, 'needed' => 5 ] ];
+        $rules   = [ $this->aggRule( 'https://wpservice.pro/' ), $this->aggRule( 'https://wpservice.pro/' ) ];
+        $pages   = [ [ 'url' => 'https://wpservice.pro/?nowprocket' ] ];
+        $this->assertNull( ScannerAjax::count_divergence_diag( $by_page, $rules, $pages ) );
+    }
+
+    public function test_count_divergence_diag_reports_absent_page_rules(): void {
+        // Per-URL table sees 17 agg on the rescanned homepage; rule list has 48 agg across 2 patterns
+        // (17 homepage + 31 for a page NOT in this rescan) — the live 48-vs-17 shape.
+        $rules = [];
+        for ( $i = 0; $i < 17; $i++ ) { $rules[] = $this->aggRule( 'https://wpservice.pro/' ); }
+        for ( $i = 0; $i < 31; $i++ ) { $rules[] = $this->aggRule( 'https://wpservice.pro/about' ); }
+        $by_page = [ 0 => [ 'safe' => 0, 'aggressive' => 17, 'needed' => 45 ] ];
+        $pages   = [ [ 'url' => 'https://wpservice.pro/?nowprocket&nowpcu&perfmattersoff' ] ];
+
+        $diag = ScannerAjax::count_divergence_diag( $by_page, $rules, $pages );
+        $this->assertNotNull( $diag );
+        $this->assertSame( [ 'safe' => 0, 'aggressive' => 17 ], $diag['by_page'] );
+        $this->assertSame( [ 'safe' => 0, 'aggressive' => 48 ], $diag['rule_total'] );
+        $this->assertSame( 17, $diag['rule_patterns']['https://wpservice.pro/']['aggressive'] );
+        $this->assertSame( 31, $diag['rule_patterns']['https://wpservice.pro/about']['aggressive'] );
+        $this->assertSame( [ 'https://wpservice.pro/?nowprocket&nowpcu&perfmattersoff' ], $diag['rescan_urls'] );
+    }
+
+    // FU-AAS-EXTRA-TIME (UI Task 4) — per-URL extra_time flag threaded into the job payload.
+
+    public function test_build_pages_array_threads_extra_time_flag(): void {
+        WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( function ( string $url, ?int $component = null ) {
+            $parts = parse_url( $url );
+            return ( PHP_URL_HOST === $component ) ? ( $parts['host'] ?? null ) : $parts;
+        } );
+
+        $et_set = array_flip( [ 'https://x/b' ] );
+        $pages  = ScannerAjax::__test_build_pages_array(
+            [ 'https://x/a', 'https://x/b' ], [], [], 'https://x/', $et_set
+        );
+
+        $this->assertFalse( $pages[0]['extra_time'], 'URL not in ET set → false' );
+        $this->assertTrue(  $pages[1]['extra_time'], 'URL in ET set → true' );
+    }
+
+    public function test_ratchet_enabled_defaults_on_in_beta(): void {
+        // Default-ON (beta): absent option → get_option returns the `true` default.
+        WP_Mock::userFunction( 'get_option' )
+            ->with( 'cu_scanner_ratchet_enabled', true )
+            ->andReturn( true );
+
+        $this->assertTrue( ( new ScannerAjax() )->__test_ratchet_enabled() );
+        $this->assertConditionsMet();
+    }
+
+    public function test_ratchet_enabled_opt_out_when_option_false(): void {
+        // Opt-out kill switch: option set to a falsy value → disabled.
+        WP_Mock::userFunction( 'get_option' )
+            ->with( 'cu_scanner_ratchet_enabled', true )
+            ->andReturn( false );
+
+        $this->assertFalse( ( new ScannerAjax() )->__test_ratchet_enabled() );
+        $this->assertConditionsMet();
+    }
+
+    /**
+     * The reshaping array_map in submit_job() hardcodes a fixed key set
+     * (url/bypass_token/bypass_suffixes). An extra_time key added only in
+     * build_pages_array() is SILENTLY DROPPED there unless the map carries it.
+     * This test is RED until the reshape carries extra_time through.
+     */
+
+    public function test_reshape_page_specs_carries_extra_time_through(): void {
+        $specs = [
+            [ 'url' => 'https://x/a', 'bypass_suffixes' => [], 'extra_time' => false ],
+            [ 'url' => 'https://x/b', 'bypass_suffixes' => [], 'extra_time' => true ],
+        ];
+        $build_scan_url = static fn( string $u, array $s ): string => $u;
+        $pages = ScannerAjax::__test_reshape_page_specs( $specs, $build_scan_url, 'tok' );
+
+        $this->assertArrayHasKey( 'extra_time', $pages[0], 'reshape must carry extra_time' );
+        $this->assertFalse( $pages[0]['extra_time'] );
+        $this->assertTrue(  $pages[1]['extra_time'] );
+        // Existing keys preserved.
+        $this->assertSame( 'https://x/a', $pages[0]['url'] );
+        $this->assertSame( 'tok', $pages[0]['bypass_token'] );
+        $this->assertSame( [], $pages[0]['bypass_suffixes'] );
+    }
+
+    // FDEG Plan B Task 3 — is_external flag on pages[]. The worker uses this as the
+    // island_expected denominator: distinguishes "plugin didn't deliver a dependency
+    // island" from "we never asked, because this page is on someone else's host".
+    // Must be emitted as an int (0|1), never a bool — the worker's telemetry coercion
+    // has no bool branch and would silently drop a true/false.
+
+    public function test_build_pages_array_threads_is_external_flag(): void {
+        WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( function ( string $url, ?int $component = null ) {
+            $parts = parse_url( $url );
+            return ( PHP_URL_HOST === $component ) ? ( $parts['host'] ?? null ) : $parts;
+        } );
+
+        $pages = ScannerAjax::__test_build_pages_array(
+            [ 'https://x/a', 'https://external.example/b' ], [], [], 'https://x/'
+        );
+
+        $this->assertSame( 0, $pages[0]['is_external'], 'same-host URL → is_external 0' );
+        $this->assertSame( 1, $pages[1]['is_external'], 'external URL → is_external 1' );
+        $this->assertIsInt( $pages[0]['is_external'], 'must be int, not bool' );
+        $this->assertIsInt( $pages[1]['is_external'], 'must be int, not bool' );
+    }
+
+    /**
+     * Same hardcoded-key-seam hazard as extra_time (see comment above
+     * test_reshape_page_specs_carries_extra_time_through): a key added only in
+     * build_pages_array() is SILENTLY DROPPED by the reshape array_map unless the
+     * map carries it through explicitly. This test is RED until the reshape
+     * carries is_external through.
+     */
+    public function test_reshape_page_specs_carries_is_external_through(): void {
+        $specs = [
+            [ 'url' => 'https://x/a', 'bypass_suffixes' => [], 'is_external' => 0 ],
+            [ 'url' => 'https://external.example/b', 'bypass_suffixes' => [], 'is_external' => 1 ],
+        ];
+        $build_scan_url = static fn( string $u, array $s ): string => $u;
+        $pages = ScannerAjax::__test_reshape_page_specs( $specs, $build_scan_url, 'tok' );
+
+        $this->assertArrayHasKey( 'is_external', $pages[0], 'reshape must carry is_external' );
+        $this->assertSame( 0, $pages[0]['is_external'] );
+        $this->assertSame( 1, $pages[1]['is_external'] );
+        $this->assertIsInt( $pages[0]['is_external'], 'must be int, not bool' );
+        $this->assertIsInt( $pages[1]['is_external'], 'must be int, not bool' );
+        // Existing keys preserved.
+        $this->assertSame( 'https://x/a', $pages[0]['url'] );
+        $this->assertSame( 'tok', $pages[0]['bypass_token'] );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // ET Result Ratchet — B2 + B3
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * B2 — non-ET scan: persist_r_orig calls set_transient once with the
+     * correct key, rule-key array, and HOUR_IN_SECONDS TTL.
+     */
+    public function test_b2_persist_r_orig_calls_set_transient_on_non_et_scan(): void {
+        WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( function ( string $url, ?int $component = null ) {
+            $parts = parse_url( $url );
+            if ( null === $component ) { return $parts; }
+            $map = [ PHP_URL_SCHEME => 'scheme', PHP_URL_HOST => 'host', PHP_URL_PATH => 'path' ];
+            return $parts[ $map[ $component ] ?? '' ] ?? null;
+        } );
+        WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 7 );
+
+        $cu_json = [
+            'rules' => [
+                [
+                    'url_pattern'  => 'https://s.com/p',
+                    'asset_handle' => 'h',
+                    'asset_type'   => 'css',
+                    'device_type'  => 'all',
+                    'group_id'     => 2,
+                    'match_type'   => 'exact',
+                    'source_label' => 'AA Scanner',
+                ],
+            ],
+            'by_page' => [],
+        ];
+        $pages_raw = [
+            [ 'url' => 'https://s.com/p', 'status' => 'done', 'assets' => [] ],
+        ];
+
+        $captured_key  = null;
+        $captured_data = null;
+        $captured_ttl  = null;
+        WP_Mock::userFunction( 'set_transient' )
+            ->once()
+            ->andReturnUsing( function ( $key, $data, $ttl ) use ( &$captured_key, &$captured_data, &$captured_ttl ) {
+                $captured_key  = $key;
+                $captured_data = $data;
+                $captured_ttl  = $ttl;
+            } );
+
+        ( new ScannerAjax() )->__test_persist_r_orig( $cu_json, $pages_raw );
+        $this->assertConditionsMet();
+
+        $this->assertSame( 'cu_scanner_r_orig_7', $captured_key );
+        $this->assertSame( HOUR_IN_SECONDS, $captured_ttl );
+        $this->assertIsArray( $captured_data );
+        $this->assertArrayHasKey( 'urls', $captured_data );
+        $this->assertArrayHasKey( 'rules', $captured_data );
+        $this->assertContains( 'https://s.com/p', $captured_data['urls'] );
+        $this->assertCount( 1, $captured_data['rules'] );
+        $this->assertSame( 'h', $captured_data['rules'][0]['asset_handle'] );
+    }
+
+    /**
+     * B2 — ratchet_enabled=false: __test_should_persist_r_orig returns false,
+     * so persist_r_orig (and therefore set_transient) must never be called.
+     */
+    public function test_b2_no_persist_when_ratchet_disabled(): void {
+        WP_Mock::userFunction( 'get_option' )
+            ->with( 'cu_scanner_ratchet_enabled', true )
+            ->andReturn( false );
+
+        $pages_raw = [
+            [ 'url' => 'https://s.com/p', 'status' => 'done', 'assets' => [] ],
+        ];
+
+        $ajax = new ScannerAjax();
+        // ratchet_enabled()=false short-circuits before resolve_is_et_rescan → job_id unused.
+        $this->assertFalse( $ajax->__test_should_persist_r_orig( $pages_raw, 'job-x' ), 'ratchet disabled → should_persist_r_orig false' );
+    }
+
+    /**
+     * FU-ET-STAMP-SEVERS-RATCHET — the ratchet gate must ENGAGE on an ET rescan whose
+     * pages carry NO extra_time_charged (a zero-yield continuation, worker 7a4a161/W1),
+     * via the job-keyed submit-time marker. Regression it fixes: is_et_rescan() keyed
+     * only on the billing stamp, so a zero-yield rescan silently skipped the ratchet.
+     */
+    public function test_b4_marker_engages_gate_without_billing_stamp(): void {
+        $unstamped = [ [ 'url' => 'https://s.com/p', 'status' => 'done', 'assets' => [] ] ];
+        $ajax = new ScannerAjax();
+
+        // Marker present for this job → gate TRUE even though no page is billing-stamped.
+        WP_Mock::userFunction( 'get_transient' )->with( 'cu_scanner_et_rescan_job-et' )->andReturn( 1 );
+        $this->assertTrue(
+            $ajax->__test_resolve_is_et_rescan( $unstamped, 'job-et' ),
+            'marker set + unstamped pages → gate TRUE (the fix)'
+        );
+
+        // No marker → a normal scan; gate stays false.
+        WP_Mock::userFunction( 'get_transient' )->with( 'cu_scanner_et_rescan_job-normal' )->andReturn( false );
+        $this->assertFalse(
+            $ajax->__test_resolve_is_et_rescan( $unstamped, 'job-normal' ),
+            'no marker + unstamped pages → gate false (normal scan)'
+        );
+    }
+
+    /**
+     * FU-ET-STAMP-SEVERS-RATCHET — persist_r_orig must be SKIPPED for a marked ET
+     * rescan, so the (often degraded) rescan result cannot clobber the baseline R_orig.
+     */
+    public function test_b4_no_persist_for_marked_et_rescan(): void {
+        WP_Mock::userFunction( 'get_option' )->with( 'cu_scanner_ratchet_enabled', true )->andReturn( true );
+        WP_Mock::userFunction( 'get_transient' )->with( 'cu_scanner_et_rescan_job-et' )->andReturn( 1 );
+
+        $unstamped = [ [ 'url' => 'https://s.com/p', 'status' => 'done', 'assets' => [] ] ];
+        $ajax = new ScannerAjax();
+        $this->assertFalse(
+            $ajax->__test_should_persist_r_orig( $unstamped, 'job-et' ),
+            'marked ET rescan → do NOT persist (no baseline clobber)'
+        );
+    }
+
+    /**
+     * FU-ET-STAMP-SEVERS-RATCHET — the key writer and reader share one helper, so the
+     * submit-side marker and the build-side lookup can never drift (bypass_map lesson).
+     */
+    public function test_b4_marker_key_shape_and_intent_predicate(): void {
+        $this->assertSame( 'cu_scanner_et_rescan_abc', ScannerAjax::et_rescan_marker_key( 'abc' ) );
+        $this->assertTrue(  ScannerAjax::intent_requests_extra_time( [ 'extra_time_urls' => [ 'https://s.com/p' ] ] ) );
+        $this->assertFalse( ScannerAjax::intent_requests_extra_time( [ 'extra_time_urls' => [] ] ) );
+        $this->assertFalse( ScannerAjax::intent_requests_extra_time( [] ) );
+    }
+
+    /**
+     * B3 — ratchet_enabled=false: no merge fires even on ET rescan.
+     * is_et_rescan + r_orig_matches helpers exercised via seams; confirm
+     * that r_orig_matches returns false when transient is false.
+     */
+    public function test_b3_gated_off_ratchet_disabled_no_merge(): void {
+        // Verify is_et_rescan detects extra_time_charged.
+        $pages_et = [
+            [ 'url' => 'https://s.com/p', 'status' => 'done', 'assets' => [], 'extra_time_charged' => true ],
+        ];
+        $pages_normal = [
+            [ 'url' => 'https://s.com/p', 'status' => 'done', 'assets' => [] ],
+        ];
+        $ajax = new ScannerAjax();
+        $this->assertTrue(  $ajax->__test_is_et_rescan( $pages_et ),     'extra_time_charged=true → ET rescan' );
+        $this->assertFalse( $ajax->__test_is_et_rescan( $pages_normal ), 'no extra_time_charged → not ET rescan' );
+
+        // When get_transient returns false, r_orig_matches must return false.
+        $this->assertFalse( $ajax->__test_r_orig_matches( false, $pages_et ), 'false transient → r_orig_matches false' );
+    }
+
+    /**
+     * AC-ETR-9 staleness: r_orig_matches returns false when transient URL set
+     * does not contain all scanned URLs.
+     */
+    public function test_b3_ac_etr9_staleness_guard_different_url_set(): void {
+        $ajax = new ScannerAjax();
+
+        // Transient covers only page A; rescan covers A + B → mismatch.
+        $r_orig = [
+            'urls'  => [ 'https://s.com/a' ],
+            'rules' => [ [ 'url_pattern' => 'https://s.com/a', 'asset_handle' => 'h', 'asset_type' => 'css', 'device_type' => 'all', 'group_id' => 2 ] ],
+        ];
+        $pages_raw = [
+            [ 'url' => 'https://s.com/a', 'status' => 'done', 'assets' => [] ],
+            [ 'url' => 'https://s.com/b', 'status' => 'done', 'assets' => [] ],
+        ];
+        $this->assertFalse( $ajax->__test_r_orig_matches( $r_orig, $pages_raw ), 'URL set mismatch → r_orig_matches false' );
+
+        // Transient covers same URL set → matches.
+        $r_orig_match = [
+            'urls'  => [ 'https://s.com/a', 'https://s.com/b' ],
+            'rules' => $r_orig['rules'],
+        ];
+        $this->assertTrue( $ajax->__test_r_orig_matches( $r_orig_match, $pages_raw ), 'Same URL set → r_orig_matches true' );
+    }
+
+    /**
+     * B3 restore: ET rescan + ratchet_enabled + fresh matching R_orig containing
+     * a rule the rescan benignly dropped → merged rules include the restored rule
+     * and safe_count reflects it.
+     *
+     * Tests recompute_by_page + merge-gate directly via seams.
+     */
+    public function test_b3_restore_et_rescan_merges_and_recomputes_by_page(): void {
+        WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( function ( string $url, ?int $component = null ) {
+            $parts = parse_url( $url );
+            if ( null === $component ) { return $parts; }
+            $map = [ PHP_URL_SCHEME => 'scheme', PHP_URL_HOST => 'host', PHP_URL_PATH => 'path' ];
+            return $parts[ $map[ $component ] ?? '' ] ?? null;
+        } );
+
+        $pat = 'https://s.com/p';
+
+        // R_orig has one safe desktop rule that the ET rescan drops (benign demotion).
+        $r_orig = [
+            'urls'  => [ $pat ],
+            'rules' => [
+                [
+                    'url_pattern'  => $pat,
+                    'asset_handle' => 'orig-h',
+                    'asset_type'   => 'css',
+                    'device_type'  => 'desktop',
+                    'group_id'     => 1,
+                    'match_type'   => 'exact',
+                    'source_label' => 'AA Scanner',
+                ],
+            ],
+        ];
+
+        // ET rescan: asset loaded with zero coverage → aggressive rule emitted by builder.
+        // orig-h is loaded but covered (needed) with benign demote_class → benign drop.
+        $rescan_pages = [
+            [
+                'url'               => $pat,
+                'status'            => 'done',
+                'extra_time_charged' => true,
+                'assets'            => [
+                    [
+                        'handle'  => 'new-h',
+                        'type'    => 'style',
+                        'desktop' => [ 'loaded' => true, 'coverage' => 0.0, 'bucket' => 'aggressive' ],
+                        'mobile'  => [ 'loaded' => true, 'coverage' => 0.0, 'bucket' => 'aggressive' ],
+                    ],
+                    [
+                        'handle'       => 'orig-h',
+                        'type'         => 'style',
+                        'demote_class' => 'benign',
+                        'desktop'      => [ 'loaded' => true, 'coverage' => 0.001, 'bucket' => 'needed' ],
+                        'mobile'       => [ 'loaded' => true, 'coverage' => 0.001, 'bucket' => 'needed' ],
+                    ],
+                ],
+            ],
+        ];
+
+        // Build R_et via RatchetMerger::merge (the same path the production code takes).
+        $merger       = new \CUScanner\Scanner\RatchetMerger();
+        $merged_rules = $merger->merge( $r_orig['rules'], $rescan_pages );
+
+        // Confirm orig-h (benign) is restored in merged rules.
+        $has_orig = false;
+        foreach ( $merged_rules as $r ) {
+            if ( 'orig-h' === $r['asset_handle'] && 1 === $r['group_id'] ) {
+                $has_orig = true;
+                break;
+            }
+        }
+        $this->assertTrue( $has_orig, 'Benign-dropped orig rule must be restored by merge' );
+
+        // recompute_by_page invariant: safe count matches group_id=1 total.
+        $orig_by_page = [ 0 => [ 'safe' => 0, 'aggressive' => 0, 'needed' => 2 ] ];
+        $ajax         = new ScannerAjax();
+        $by_page      = $ajax->__test_recompute_by_page( $merged_rules, $rescan_pages, $orig_by_page );
+
+        $safe_from_rules = count( array_filter( $merged_rules, fn( $r ) => 1 === $r['group_id'] ) );
+        $agg_from_rules  = count( array_filter( $merged_rules, fn( $r ) => 2 === $r['group_id'] ) );
+        $safe_from_by_page = array_sum( array_column( $by_page, 'safe' ) );
+        $agg_from_by_page  = array_sum( array_column( $by_page, 'aggressive' ) );
+
+        $this->assertSame( $safe_from_rules, $safe_from_by_page, 'by_page safe sum must equal group_id=1 rule count' );
+        $this->assertSame( $agg_from_rules,  $agg_from_by_page,  'by_page aggressive sum must equal group_id=2 rule count' );
+        // needed preserved from orig_by_page.
+        $this->assertSame( 2, $by_page[0]['needed'], 'needed count must be preserved from original by_page' );
+    }
+
+    /**
+     * by_page invariant sanity: recompute_by_page with zero merged rules
+     * yields all-zero safe/aggressive per page.
+     */
+    public function test_b3_by_page_invariant_zero_rules(): void {
+        WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( function ( string $url, ?int $component = null ) {
+            $parts = parse_url( $url );
+            if ( null === $component ) { return $parts; }
+            $map = [ PHP_URL_SCHEME => 'scheme', PHP_URL_HOST => 'host', PHP_URL_PATH => 'path' ];
+            return $parts[ $map[ $component ] ?? '' ] ?? null;
+        } );
+
+        $pages_raw    = [
+            [ 'url' => 'https://s.com/p', 'status' => 'done', 'assets' => [] ],
+        ];
+        $orig_by_page = [ 0 => [ 'safe' => 1, 'aggressive' => 1, 'needed' => 3 ] ];
+        $by_page      = ( new ScannerAjax() )->__test_recompute_by_page( [], $pages_raw, $orig_by_page );
+
+        $this->assertSame( 0, $by_page[0]['safe'],       'zero rules → safe=0' );
+        $this->assertSame( 0, $by_page[0]['aggressive'], 'zero rules → aggressive=0' );
+        $this->assertSame( 3, $by_page[0]['needed'],     'needed preserved from orig' );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // B4 — ratchet_recovered in pages_payload
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * B4 — ratchet ran + benign restore: pages_payload row for the matching
+     * page must have ratchet_recovered >= 1.
+     *
+     * Exercises the __test_inject_ratchet_recovered seam to isolate B4 logic
+     * from Railway/do_build_result I/O.
+     */
+    public function test_b4_ratchet_recovered_stamped_when_ratchet_ran(): void {
+        WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( function ( string $url, ?int $component = null ) {
+            $parts = parse_url( $url );
+            if ( null === $component ) { return $parts; }
+            $map = [ PHP_URL_SCHEME => 'scheme', PHP_URL_HOST => 'host', PHP_URL_PATH => 'path' ];
+            return $parts[ $map[ $component ] ?? '' ] ?? null;
+        } );
+
+        $pat = 'https://s.com/p';
+
+        // R_orig: one benign-demoted rule.
+        $r_orig_rules = [
+            [
+                'url_pattern'  => $pat,
+                'asset_handle' => 'orig-h',
+                'asset_type'   => 'css',
+                'device_type'  => 'desktop',
+                'group_id'     => 1,
+                'match_type'   => 'exact',
+                'source_label' => 'AA Scanner',
+            ],
+        ];
+        $rescan_pages = [
+            [
+                'url'                => $pat,
+                'status'             => 'done',
+                'extra_time_charged' => true,
+                'assets'             => [
+                    [
+                        'handle'       => 'orig-h',
+                        'type'         => 'style',
+                        'demote_class' => 'benign',
+                        'desktop'      => [ 'loaded' => true, 'coverage' => 0.001, 'bucket' => 'needed' ],
+                        'mobile'       => [ 'loaded' => true, 'coverage' => 0.001, 'bucket' => 'needed' ],
+                    ],
+                ],
+            ],
+        ];
+
+        // Run merge — this populates recovered_by_pattern.
+        $merger = new \CUScanner\Scanner\RatchetMerger();
+        $merger->merge( $r_orig_rules, $rescan_pages );
+
+        // Simulate pages_payload as built by AIAS_Scan_Status::build_pages.
+        $pages_payload = [
+            [
+                'n'            => 1,
+                'url'          => $pat,
+                'status_class' => 'ok',
+                'status_label' => 'Done',
+                'credits'      => 1,
+                'safe'         => 1,
+                'aggressive'   => 0,
+                'needed'       => 0,
+                'et_candidate' => false,
+            ],
+        ];
+
+        // Stamp ratchet_recovered via the seam.
+        $ajax   = new ScannerAjax();
+        $result = $ajax->__test_inject_ratchet_recovered( $pages_payload, $rescan_pages, $merger );
+
+        $this->assertArrayHasKey( 'ratchet_recovered', $result[0], 'ratchet_recovered key must be present' );
+        $this->assertGreaterThanOrEqual( 1, $result[0]['ratchet_recovered'], 'restored rule → ratchet_recovered >= 1' );
+    }
+
+    /**
+     * B4 — ratchet did NOT run (merger null): ratchet_recovered is absent / 0
+     * on all page rows.
+     *
+     * When $merger === null the production code skips the stamp loop entirely,
+     * so pages rows simply lack the key (treated as 0 by JS).
+     */
+    public function test_b4_ratchet_recovered_absent_when_ratchet_did_not_run(): void {
+        $pages_payload = [
+            [
+                'n'            => 1,
+                'url'          => 'https://s.com/p',
+                'status_class' => 'ok',
+                'status_label' => 'Done',
+                'credits'      => 1,
+                'safe'         => 2,
+                'aggressive'   => 1,
+                'needed'       => 0,
+                'et_candidate' => false,
+            ],
+        ];
+
+        // $merger = null → stamp loop does not run → key absent.
+        $ajax   = new ScannerAjax();
+        $result = $ajax->__test_inject_ratchet_recovered(
+            $pages_payload,
+            [ [ 'url' => 'https://s.com/p', 'status' => 'done', 'assets' => [] ] ],
+            null
+        );
+
+        $recovered = $result[0]['ratchet_recovered'] ?? 0;
+        $this->assertSame( 0, $recovered, 'no ratchet → ratchet_recovered must be 0/absent' );
+    }
+
+    /**
+     * AC-3 — ratchet_skip_reason returns the exact diagnostic reason for each path.
+     */
+    public function test_ac3_ratchet_skip_reason_selection(): void {
+        $ajax = new ScannerAjax();
+
+        // enabled + ET + r_orig absent/empty + no match → r_orig_absent_or_empty
+        $this->assertSame( 'r_orig_absent_or_empty',
+            $ajax->__test_ratchet_skip_reason( true, true, null, false ) );
+        $this->assertSame( 'r_orig_absent_or_empty',
+            $ajax->__test_ratchet_skip_reason( true, true, [ 'rules' => [] ], false ) );
+
+        // enabled + ET + r_orig present + no match → url_set_mismatch
+        $this->assertSame( 'url_set_mismatch',
+            $ajax->__test_ratchet_skip_reason( true, true, [ 'rules' => [ [ 'x' => 1 ] ], 'urls' => [ 'u' ] ], false ) );
+
+        // ET + ratchet disabled → ratchet_disabled
+        $this->assertSame( 'ratchet_disabled',
+            $ajax->__test_ratchet_skip_reason( false, true, null, false ) );
+
+        // enabled + ET + matches → null (merge runs, no skip)
+        $this->assertNull(
+            $ajax->__test_ratchet_skip_reason( true, true, [ 'rules' => [ [ 'x' => 1 ] ] ], true ) );
+
+        // not an ET rescan → null (N/A)
+        $this->assertNull(
+            $ajax->__test_ratchet_skip_reason( true, false, null, false ) );
+    }
+
+    /**
+     * AC-3b — log gate is a no-op when WP_DEBUG_LOG is not enabled (test env).
+     */
+    public function test_ac3b_ratchet_debug_gate_off_by_default(): void {
+        $ajax = new ScannerAjax();
+        $this->assertFalse( $ajax->__test_ratchet_debug_enabled() );
+    }
+
+    /**
+     * AC-ET1-1 — build_pages_array stamps extra_time=true when the ET selection
+     * was keyed on the ORIGINAL url but the page is scanned under its RESOLVED url
+     * (the resolved-vs-unresolved mismatch that broke the heavy-site ET ratchet).
+     */
+    public function test_ac_et1_1_extra_time_matches_via_submitted_url_backstop(): void {
+        WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( function ( string $url, ?int $component = null ) {
+            $parts = parse_url( $url );
+            return ( PHP_URL_HOST === $component ) ? ( $parts['host'] ?? null ) : $parts;
+        } );
+
+        $ajax = new ScannerAjax();
+        $resolved  = 'https://getkush.cc/';
+        $original  = 'https://getkush.cc';
+        $pages = $ajax->__test_build_pages_array(
+            [ $resolved ],                 // selected_urls = RESOLVED (what we scan)
+            [],                            // host_bypass
+            [],                            // target_bypass_per_url
+            'https://example.org',         // home_url (different host → external path)
+            [ $original => 0 ],            // et_set keyed on the ORIGINAL (array_flip shape)
+            [ $resolved => $original ]     // submitted_url_per_url: resolved → original
+        );
+        $this->assertCount( 1, $pages );
+        $this->assertTrue( $pages[0]['extra_time'], 'extra_time must be true via the submitted_url backstop' );
+
+        // Control: a normal match (et_set keyed on the same url, no resolution) still works.
+        $pages2 = $ajax->__test_build_pages_array(
+            [ $resolved ], [], [], 'https://example.org',
+            [ $resolved => 0 ], []
+        );
+        $this->assertTrue( $pages2[0]['extra_time'], 'direct match still works' );
+
+        // Control: a URL NOT in et_set stays false.
+        $pages3 = $ajax->__test_build_pages_array(
+            [ $resolved ], [], [], 'https://example.org', [], []
+        );
+        $this->assertFalse( $pages3[0]['extra_time'], 'non-ET url stays false' );
+
+        // Control: identity submitted_url (no redirect) + url in et_set → still true, no double-anything.
+        $pages4 = $ajax->__test_build_pages_array(
+            [ $resolved ], [], [], 'https://example.org',
+            [ $resolved => 0 ], [ $resolved => $resolved ]
+        );
+        $this->assertTrue( $pages4[0]['extra_time'], 'identity submitted_url still matches' );
+    }
+
+    /**
+     * AC-DG-1 — the AAS debug gate is OFF by default (CU_SCANNER_DEBUG undefined in test env).
+     */
+    public function test_ac_dg_1_debug_gate_off_by_default(): void {
+        require_once dirname( __DIR__ ) . '/includes/debug.php';
+        $this->assertFalse( aias_debug_enabled(), 'CU_SCANNER_DEBUG undefined → gate false' );
+    }
+
+    /**
+     * AC-DG-2 — ratchet_debug_enabled() now routes through the AAS gate (off by default).
+     */
+    public function test_ac_dg_2_ratchet_debug_routes_through_gate(): void {
+        require_once dirname( __DIR__ ) . '/includes/debug.php';
+        $ajax = new ScannerAjax();
+        $this->assertFalse( $ajax->__test_ratchet_debug_enabled(), 'ratchet diagnostic gated off by default' );
+    }
+
+    // ── R2 partial-stamp + response-flags tests ──────────────────────────────
+
+    /**
+     * R2-1 — hist_status is 'partial' when completed < total.
+     */
+    public function test_r2_hist_status_is_partial_when_completed_lt_total(): void {
+        $ajax = new ScannerAjax();
+        $this->assertSame(
+            'partial',
+            $ajax->__test_compute_hist_status( 3, 5 ),
+            'completed < total must yield partial'
+        );
+    }
+
+    /**
+     * R2-2 — hist_status is 'complete' when completed === total.
+     */
+    public function test_r2_hist_status_is_complete_when_completed_eq_total(): void {
+        $ajax = new ScannerAjax();
+        $this->assertSame(
+            'complete',
+            $ajax->__test_compute_hist_status( 5, 5 ),
+            'completed === total must yield complete'
+        );
+    }
+
+    /**
+     * R2-3 — is_partial flag in the response mirrors the completed < total condition.
+     *         has_active_cu_rules is a bool (requires is_plugin_active WP_Mock stub).
+     */
+    public function test_r2_result_flags_is_partial_true_and_has_active_cu_rules_is_bool(): void {
+        \WP_Mock::userFunction( 'is_plugin_active' )
+            ->with( 'code-unloader/code-unloader.php' )
+            ->andReturn( false );
+
+        $ajax   = new ScannerAjax();
+        $flags  = $ajax->__test_result_flags( 2, 4 );
+
+        $this->assertTrue( $flags['is_partial'], 'is_partial must be true when completed < total' );
+        $this->assertIsBool( $flags['has_active_cu_rules'], 'has_active_cu_rules must be a bool' );
+    }
+
+    /**
+     * R2-4 — is_partial is false when completed === total (full scan).
+     */
+    public function test_r2_result_flags_is_partial_false_when_complete(): void {
+        \WP_Mock::userFunction( 'is_plugin_active' )
+            ->with( 'code-unloader/code-unloader.php' )
+            ->andReturn( false );
+
+        $ajax  = new ScannerAjax();
+        $flags = $ajax->__test_result_flags( 5, 5 );
+
+        $this->assertFalse( $flags['is_partial'], 'is_partial must be false when completed === total' );
+    }
+
+    /**
+     * R2-5 — boundary: completed > total (malformed worker response) still yields 'complete'.
+     * Pins the `<` operator: only strictly-less-than is partial; over-reporting is not partial.
+     */
+    public function test_r2_hist_status_is_complete_when_completed_gt_total(): void {
+        $ajax = new ScannerAjax();
+        $this->assertSame(
+            'complete',
+            $ajax->__test_compute_hist_status( 7, 5 ),
+            'completed > total (malformed worker response) must yield complete, not partial'
+        );
+    }
+
+    /**
+     * R2-6 — fallback: when $status is missing completed/total keys, both default to
+     * count($pages_raw) so completed === total → 'complete'.
+     * Verifies the `?? count($pages_raw)` fallback in do_build_result indirectly: when
+     * both sides default to the same value the `<` condition is false.
+     */
+    public function test_r2_hist_status_complete_when_both_default_to_page_count(): void {
+        $ajax = new ScannerAjax();
+        // Both sides default → equal → not partial.
+        $page_count = 4;
+        $this->assertSame(
+            'complete',
+            $ajax->__test_compute_hist_status( $page_count, $page_count ),
+            'when both completed and total default to count(pages_raw) the result must be complete'
+        );
+    }
+
+    /**
+     * A1-1 — kept_protection aggregation, DISTINCT-HANDLE count semantics.
+     *
+     * Train 1 (worker) now sends kept_protection[] on each page object. The count is the
+     * number of distinct wire-handle strings, deduped on the FULL '<handle>|<type>'
+     * composite — the composite IS the identity. One script kept on N pages is ONE script,
+     * not N (operator-confirmed 2026-08-14; supersedes the plan's original per-entry tally).
+     */
+    public function test_aggregate_kept_protection_counts_and_dedupes(): void {
+        $pages = [
+            [ 'url' => 'https://example.com/a/', 'kept_protection' => [
+                [ 'id' => 'turnstile', 'display_name' => 'Cloudflare Turnstile', 'handles' => [ 'h|script' ] ] ] ],
+            [ 'url' => 'https://example.com/b/', 'kept_protection' => [
+                [ 'id' => 'turnstile', 'display_name' => 'Cloudflare Turnstile', 'handles' => [ 'h|script' ] ] ] ],
+        ];
+        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+        // DISTINCT-HANDLE semantics: the SAME composite handle 'h|script' on two pages is
+        // ONE script kept, not two — one script kept on two pages is one script.
+        $this->assertSame( 1, $out['count'] );
+        $this->assertSame( [ 'Cloudflare Turnstile' ], $out['vendors'] );
+    }
+
+    /**
+     * A1-2 — one vendor entry carrying MULTIPLE handles, one of them repeating on a
+     * second page. Pins that the unit of the count is the handle, not the page entry
+     * and not the raw handle occurrence.
+     */
+    public function test_aggregate_kept_protection_counts_distinct_handles_per_entry(): void {
+        // Real Gravity Forms shape observed on scan 305305e6b2c0: ONE vendor entry carrying
+        // TWO handles, with one of them repeating on a second page.
+        $pages = [
+            [ 'url' => 'https://example.com/contact/', 'kept_protection' => [
+                [ 'id' => 'gravityforms', 'display_name' => 'Gravity Forms',
+                  'handles' => [ 'gform_json|script', 'gform_gravityforms|script' ] ] ] ],
+            [ 'url' => 'https://example.com/quote/', 'kept_protection' => [
+                [ 'id' => 'gravityforms', 'display_name' => 'Gravity Forms',
+                  'handles' => [ 'gform_json|script' ] ] ] ],
+        ];
+        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+        $this->assertSame( 2, $out['count'] ); // 2 distinct composites, NOT 3 handle occurrences / 2 page entries
+        $this->assertSame( [ 'Gravity Forms' ], $out['vendors'] );
+    }
+
+    /**
+     * A1-3 — D5 guarding. kept_protection arrives from the Railway worker, a remote
+     * service (WP Compliance Rule 1: third-party API responses are untrusted), so every
+     * level is is_array-guarded and junk must never fatal nor inflate the count.
+     */
+    public function test_aggregate_kept_protection_malformed_is_d5_safe(): void {
+        $pages = [
+            [ 'url' => 'https://example.com/', 'kept_protection' => 'junk' ],
+            [ 'url' => 'https://example.com/x/', 'kept_protection' => [ [ 'display_name' => 123 ] ] ],
+            [ 'url' => 'https://example.com/y/' ], // absent
+        ];
+        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+        $this->assertSame( 0, $out['count'] );   // NO handles anywhere ⇒ malformed entries never raise the count
+        $this->assertSame( [], $out['vendors'] ); // and contribute no vendor string
+    }
+
+    /**
+     * A1-4 — the FULL composite is the dedupe key: the SAME handle name under two
+     * different rule types is TWO scripts, not one.
+     *
+     * Added beyond the brief's three fixtures because none of them discriminate against
+     * an explode( '|', … ) implementation — on those fixtures a split-on-pipe version
+     * returns the same numbers, so the brief's emphatic "do NOT split on '|'" was
+     * unpinned (P17: a guard no test can turn red is decorative). This is the one shape
+     * that separates the two. Splitting is task A3's concern, never the counter's.
+     */
+    public function test_aggregate_kept_protection_composite_not_handle_name_is_the_key(): void {
+        $pages = [
+            [ 'url' => 'https://example.com/a/', 'kept_protection' => [
+                [ 'id' => 'vendor', 'display_name' => 'Vendor',
+                  // The '' is the empty-handle guard's fixture: dropping `'' === $h` makes it
+                  // a third key and a phantom kept script the note could never name.
+                  'handles' => [ 'h|script', '', 'h|style' ] ] ] ],
+        ];
+        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+        // explode( '|', … )[0] would collapse both to 'h' and report 1.
+        $this->assertSame( 2, $out['count'] );
+        $this->assertSame( [ 'Vendor' ], $out['vendors'] );
+    }
+
+    /**
+     * A1-5 — a valid display_name lists even when its entry contributed NO usable handles.
+     *
+     * The brief states this semantic and the helper's comment claims it, but none of the
+     * four fixtures above exercised it: A1-3's only name-bearing entry has an INVALID name
+     * (123), and A1-1/2/4 all carry valid handles. So moving the display_name block inside
+     * `if ( is_array( $hs ) )` left every test green — the semantic was asserted in prose
+     * and pinned by nothing.
+     *
+     * 'handles' => 'junk' (a string, not an array) is also the hard fixture for the
+     * is_array( $hs ) guard: without it, foreach over a string is a TypeError, not a skip.
+     */
+    public function test_aggregate_kept_protection_lists_vendor_with_no_usable_handles(): void {
+        $pages = [
+            [ 'url' => 'https://example.com/a/', 'kept_protection' => [
+                [ 'id' => 'lone', 'display_name' => 'LoneVendor', 'handles' => 'junk' ] ] ],
+        ];
+        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+        $this->assertSame( 0, $out['count'] );              // nothing countable
+        $this->assertSame( [ 'LoneVendor' ], $out['vendors'] ); // ...but still nameable
+    }
+
+    /**
+     * A1-6 — the remaining D5 guards, swept the same way. kept_protection is Railway worker
+     * output (WP Compliance Rule 1: untrusted), so each of these is a shape a malformed
+     * payload can actually take, and each guard here was previously unfalsifiable:
+     *
+     *   - a non-array page               → is_array( $page )
+     *   - a non-array entry              → is_array( $entry )
+     *   - non-string handles (int/array/null/bool) → is_string( $h )
+     *   - an empty-string display_name   → '' !== $name
+     *
+     * Only 'real|script' is countable and only 'Vendor' is nameable, so any guard that
+     * regresses either raises the count, adds an empty vendor, or fatals.
+     */
+    public function test_aggregate_kept_protection_survives_every_hostile_shape(): void {
+        $pages = [
+            'not-an-array-page',
+            [ 'url' => 'https://example.com/a/', 'kept_protection' => [
+                'not-an-array-entry',
+                [ 'display_name' => '',       'handles' => [ 'real|script' ] ],
+                [ 'display_name' => 'Vendor', 'handles' => [ 123, [ 'nested' ], null, true ] ],
+            ] ],
+        ];
+        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+        $this->assertSame( 1, $out['count'] );
+        $this->assertSame( [ 'Vendor' ], $out['vendors'] );
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // R20 — the aggregation reads BOTH keep fields and returns per-label rows.
+    //
+    // `count` and `vendors` keep their existing meanings exactly (the note's headline and the
+    // vendor list); `rows` is new: one {label, count, category} per distinct display_name,
+    // zero-count labels omitted (AC-12), sorted case-insensitively by label so the render order
+    // is deterministic rather than payload-order-dependent.
+    //
+    // Core entries are NOT collapsed here. They arrive carrying member-only display_names
+    // ("wp.hooks", not "WordPress Core: wp.hooks", worker commit 25b80821) and category 'core';
+    // the renderer groups them into "WordPress core (4): …". Doing it here would throw away the
+    // member names the grouped row has to expand.
+    // ---------------------------------------------------------------------------------------
+
+    private function keptKnown( string $id, string $name, string $category, array $handles ): array {
+        return [ 'id' => $id, 'display_name' => $name, 'category' => $category, 'handles' => $handles ];
+    }
+
+    /**
+     * The R20 reference shape: the 9 keeps of spec §11's approved copy, on one page.
+     * Turnstile 1 (protection), Gravity Forms 2, Fathom 1, Stripe 1, WordPress core 4.
+     */
+    private function r20ReferencePage(): array {
+        return [
+            'url'             => 'https://example.test/compare/',
+            'kept_protection' => [
+                [ 'display_name' => 'Cloudflare Turnstile', 'handles' => [ 'cf-challenge|script' ] ],
+            ],
+            'kept_known_assets' => [
+                $this->keptKnown( 'gravity-forms', 'Gravity Forms', 'form',
+                    [ 'gform_gravityforms|script', 'gform_json|script' ] ),
+                $this->keptKnown( 'fathom-analytics', 'Fathom Analytics', 'analytics', [ 'fathom|script' ] ),
+                $this->keptKnown( 'stripe-payments', 'Stripe payments', 'payment', [ 'stripe|script' ] ),
+                $this->keptKnown( 'wp-dom-ready', 'wp.domReady', 'core', [ 'wp-dom-ready|script' ] ),
+                $this->keptKnown( 'wp-hooks', 'wp.hooks', 'core', [ 'wp-hooks|script' ] ),
+                $this->keptKnown( 'wp-i18n', 'wp.i18n', 'core', [ 'wp-i18n|script' ] ),
+                $this->keptKnown( 'underscore', 'Underscore.js', 'core', [ 'underscore|script' ] ),
+            ],
+        ];
+    }
+
+    /** AC-1 shape — the headline is 9 and every label carries its own count and category. */
+    public function test_aggregate_reports_every_keep_not_just_protection(): void {
+        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( [ $this->r20ReferencePage() ] );
+
+        $this->assertSame( 9, $out['count'], 'headline spans both fields' );
+        $this->assertSame(
+            [
+                [ 'label' => 'Cloudflare Turnstile', 'count' => 1, 'category' => 'protection' ],
+                [ 'label' => 'Fathom Analytics',     'count' => 1, 'category' => 'analytics' ],
+                [ 'label' => 'Gravity Forms',        'count' => 2, 'category' => 'form' ],
+                [ 'label' => 'Stripe payments',      'count' => 1, 'category' => 'payment' ],
+                [ 'label' => 'Underscore.js',        'count' => 1, 'category' => 'core' ],
+                [ 'label' => 'wp.domReady',          'count' => 1, 'category' => 'core' ],
+                [ 'label' => 'wp.hooks',             'count' => 1, 'category' => 'core' ],
+                [ 'label' => 'wp.i18n',              'count' => 1, 'category' => 'core' ],
+            ],
+            $out['rows']
+        );
+    }
+
+    /** AC-9 — one assertion that catches the whole cross-label collision class. */
+    public function test_aggregate_row_counts_sum_to_the_headline(): void {
+        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( [
+            $this->r20ReferencePage(),
+            [ 'url' => 'https://example.test/other/', 'kept_known_assets' => [
+                // Same composite under a DIFFERENT label. The producer resolves collisions, but
+                // if one ever reaches here it must not be counted under both labels - that is
+                // exactly how the per-label numbers stop adding up to the headline on screen.
+                $this->keptKnown( 'imposter', 'Imposter Analytics', 'analytics', [ 'fathom|script' ] ),
+                $this->keptKnown( 'lottie', 'LottieFiles Web Player', 'media', [ 'lottie|script' ] ),
+            ] ],
+        ] );
+
+        $this->assertSame( 10, $out['count'] );
+        $this->assertSame( $out['count'], array_sum( array_column( $out['rows'], 'count' ) ),
+            'AC-9: the per-label counts must add up to the headline the note prints' );
+    }
+
+    /** AC-12 — a label that contributed no countable handle must not render as "(0)". */
+    public function test_aggregate_omits_zero_count_labels_but_still_names_the_vendor(): void {
+        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( [
+            [ 'url' => 'https://example.test/', 'kept_protection' => [
+                [ 'display_name' => 'Cloudflare Turnstile', 'handles' => [ 'cf|script' ] ],
+                [ 'display_name' => 'Nameless Vendor' ], // valid name, no usable handle
+            ] ],
+        ] );
+
+        $this->assertSame( [ 'Cloudflare Turnstile' ], array_column( $out['rows'], 'label' ),
+            'AC-12: a zero-count label must not become a row' );
+        $this->assertContains( 'Nameless Vendor', $out['vendors'],
+            'vendors keeps its existing meaning - the name-only vendor is still listed there' );
+    }
+
+    /** H3 — the same asset kept on 10 pages is "(2)", never "(20)". */
+    public function test_aggregate_dedupes_the_same_asset_across_pages(): void {
+        $pages = [];
+        for ( $i = 0; $i < 10; $i++ ) {
+            $pages[] = [ 'url' => "https://example.test/$i/", 'kept_known_assets' => [
+                $this->keptKnown( 'gravity-forms', 'Gravity Forms', 'form',
+                    [ 'gform_gravityforms|script', 'gform_json|script' ] ),
+            ] ];
+        }
+        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+        $this->assertSame( 2, $out['count'] );
+        $this->assertSame( [ [ 'label' => 'Gravity Forms', 'count' => 2, 'category' => 'form' ] ], $out['rows'] );
+    }
+
+    /** AC-11 — a protection-only scan keeps count and vendors byte-identical, and gains rows. */
+    public function test_aggregate_protection_only_scan_is_unchanged_except_for_rows(): void {
+        $pages = [ [ 'url' => 'https://example.test/', 'kept_protection' => [
+            [ 'display_name' => 'Cloudflare Turnstile', 'handles' => [ 'cf-challenge|script' ] ],
+        ] ] ];
+        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+
+        $this->assertSame( 1, $out['count'] );
+        $this->assertSame( [ 'Cloudflare Turnstile' ], $out['vendors'] );
+        $this->assertSame( [ [ 'label' => 'Cloudflare Turnstile', 'count' => 1, 'category' => 'protection' ] ],
+            $out['rows'], 'protection rows are tagged so the renderer can annotate "(protection)"' );
+    }
+
+    /**
+     * DELIBERATE, pinned so it is a decision and not a surprise: an entry with handles but NO
+     * display_name contributes to the headline (existing behaviour, and the per-row chip agrees
+     * with it) but can produce no row, because the only per-member strings available are raw WP
+     * handles and naming rule R3 forbids those in customer copy. This is the ONE shape where
+     * the rows do not sum to the headline; every real worker entry carries a display_name.
+     */
+    public function test_aggregate_nameless_entry_counts_but_cannot_become_a_row(): void {
+        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( [
+            [ 'url' => 'https://example.test/', 'kept_known_assets' => [
+                [ 'id' => 'mystery', 'category' => 'analytics', 'handles' => [ 'mystery|script' ] ],
+            ] ],
+        ] );
+        $this->assertSame( 1, $out['count'] );
+        $this->assertSame( [], $out['rows'] );
+        $this->assertSame( [], $out['vendors'] );
+    }
+
+    /** D5 / Rule 1 — kept_known_assets is untrusted worker data, same as kept_protection. */
+    public function test_aggregate_known_assets_survives_hostile_shapes(): void {
+        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( [
+            [ 'url' => 'https://example.test/', 'kept_known_assets' => 'not-an-array' ],
+            [ 'url' => 'https://example.test/2/', 'kept_known_assets' => [
+                'not-an-entry',
+                [ 'display_name' => 'Real', 'category' => 'analytics', 'handles' => [ 'real|script' ] ],
+                [ 'display_name' => 'Bad handles', 'category' => 'analytics', 'handles' => [ 123, null, [ 'x' ], '' ] ],
+                [ 'display_name' => 'Bad category', 'category' => 42, 'handles' => [ 'ok|script' ] ],
+            ] ],
+        ] );
+        $this->assertSame( 2, $out['count'] );
+        $this->assertSame( [ 'Bad category', 'Real' ], array_column( $out['rows'], 'label' ) );
+        $this->assertSame( 'other', $out['rows'][0]['category'], 'a non-string category degrades, never fatals' );
+    }
+
+    /** Common wiring for discover_pages: nonce/cap, sitemap with HOME LAST, normalisers, id → permalink/type maps. */
+    private function wire_discover( array $sitemap_locs, array $id_to_permalink, array $id_to_type ): array {
+        $this->mockCheck();
+        WP_Mock::userFunction( 'get_home_url' )->andReturn( 'https://site.test' );
+        WP_Mock::userFunction( 'trailingslashit' )->andReturnUsing( fn( string $s ): string => rtrim( $s, '/' ) . '/' );
+        WP_Mock::userFunction( 'set_url_scheme' )->andReturnUsing(
+            fn( string $url, string $scheme = 'https' ): string => preg_replace( '#^https?://#i', $scheme . '://', $url )
+        );
+        WP_Mock::userFunction( 'wp_remote_get' )->andReturn( [] );
+        WP_Mock::userFunction( 'is_wp_error' )->andReturn( false );
+        WP_Mock::userFunction( 'wp_remote_retrieve_response_code' )->andReturn( 200 );
+        $xml = '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';
+        foreach ( $sitemap_locs as $loc ) { $xml .= '<url><loc>' . $loc . '</loc></url>'; }
+        $xml .= '</urlset>';
+        WP_Mock::userFunction( 'wp_remote_retrieve_body' )->andReturn( $xml );
+        WP_Mock::userFunction( 'wp_unslash' )->andReturnUsing( fn( $v ) => $v );
+        WP_Mock::userFunction( 'sanitize_url' )->andReturnUsing( fn( $v ) => $v );
+        WP_Mock::userFunction( 'get_post_types' )->andReturn( [ 'page' => 'page', 'post' => 'post' ] );
+        WP_Mock::userFunction( 'get_permalink' )->andReturnUsing( fn( int $id ) => $id_to_permalink[ $id ] ?? false );
+        WP_Mock::userFunction( 'get_post_type' )->andReturnUsing( fn( int $id ) => $id_to_type[ $id ] ?? 'post' );
+        \WP_Query::$next_posts = array_keys( $id_to_permalink );
+        $captured = [];
+        WP_Mock::userFunction( 'wp_send_json_success' )->once()->andReturnUsing( function ( $data ) use ( &$captured ) { $captured = $data; } );
+        unset( $_POST['excluded_urls'] );
+        ( new ScannerAjax() )->discover_pages();
+        $this->assertConditionsMet();
+        return $captured;
+    }
+
+    /** AC-B2 — static front page: home is a page's permalink; sitemap lists it LAST. */
+    public function test_discover_pages_puts_home_first_overall_and_first_in_pages_on_a_static_front_page_site(): void {
+        $out = $this->wire_discover(
+            [ 'https://site.test/about/', 'https://site.test/post-1/', 'https://site.test/contact/', 'https://site.test/' ],
+            [ 11 => 'https://site.test/about/', 12 => 'https://site.test/contact/', 13 => 'https://site.test/', 21 => 'https://site.test/post-1/' ],
+            [ 11 => 'page', 12 => 'page', 13 => 'page', 21 => 'post' ]
+        );
+        $this->assertSame( 'https://site.test/', $out['urls'][0] );
+        $this->assertSame( [ 'https://site.test/', 'https://site.test/about/', 'https://site.test/contact/' ], $out['groups']['page'] );
+        $this->assertSame( [ 'https://site.test/post-1/' ], $out['groups']['post'] );
+        $this->assertSame( [], $out['groups']['other'] );
+        $this->assertSame( 4, $out['count'] );
+    }
+
+    /** AC-B2 — posts-index front page: home is nobody's permalink → top of OTHER; pages order unchanged (ruling B1). */
+    public function test_discover_pages_puts_home_at_the_top_of_other_on_a_posts_index_site(): void {
+        $out = $this->wire_discover(
+            [ 'https://site.test/about/', 'https://site.test/feed-thing/', 'https://site.test/post-1/', 'https://site.test/' ],
+            [ 11 => 'https://site.test/about/', 21 => 'https://site.test/post-1/' ],
+            [ 11 => 'page', 21 => 'post' ]
+        );
+        $this->assertSame( 'https://site.test/', $out['urls'][0] );
+        $this->assertSame( [ 'https://site.test/about/' ], $out['groups']['page'] );
+        $this->assertSame( [ 'https://site.test/post-1/' ], $out['groups']['post'] );
+        $this->assertSame( [ 'https://site.test/', 'https://site.test/feed-thing/' ], $out['groups']['other'] );
+    }
+
+    /**
+     * AC-B2 — the sitemap spells home as http://site.test (no slash): ONE normaliser must both GROUP it
+     * (as the static front page) AND PROMOTE it. This leg carries the shared-normaliser property — do not trim it.
+     */
+    public function test_discover_pages_groups_and_promotes_a_scheme_and_slash_mismatched_home(): void {
+        $out = $this->wire_discover(
+            [ 'https://site.test/about/', 'http://site.test' ],
+            [ 11 => 'https://site.test/about/', 13 => 'https://site.test/' ],
+            [ 11 => 'page', 13 => 'page' ]
+        );
+        $this->assertSame( 'http://site.test', $out['urls'][0] );
+        $this->assertSame( [ 'http://site.test', 'https://site.test/about/' ], $out['groups']['page'] );
+        $this->assertSame( [], $out['groups']['other'] );
+    }
+}

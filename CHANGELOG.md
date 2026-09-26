@@ -1,0 +1,2355 @@
+# Changelog
+
+All notable changes to AI Assets Scanner are documented here.
+
+---
+
+## 1.9.0 — 2026-09-26
+
+First WordPress.org release (slug `ai-assets-scanner`).
+
+### Changed
+- License: GPLv2 or later (was proprietary source-available). The wpservice.pro API and the scanning worker are hosted services and are not part of the plugin.
+- Updates come from WordPress.org. The built-in update checker (`PrivateUpdater`, `updates.wpservice.pro`) was removed; uninstall also deletes its cached manifest.
+- Free credits are opt-in. The plugin no longer registers a free key on activation or on `admin_init`; an administrator clicks **Get free credits** in Settings, next to a note on what is sent. The request, endpoint and payload are unchanged, and sites that already have a key see no difference.
+- No request reaches wpservice.pro while no API key is saved: the Settings balance refresh and the Scanner page's readiness check skip the balance call.
+- Uninstall removes every option, transient and scheduled event the plugin creates, including the API key, the scanner secret and the paid-key claim token. Options owned by the wpservice.pro service plugin (same `cu_scanner_` prefix) are never touched.
+- Text domain is `ai-assets-scanner` everywhere. Constants renamed from `CU_SCANNER_*` to `AIAS_*`, and the debug gate from `cu_scanner_debug_enabled()` to `aias_debug_enabled()`, to satisfy Plugin Check's prefix rule. The `CU_SCANNER_DEBUG` wp-config switch is unchanged.
+- Admin asset cache key 1.9.0.
+
+### Added
+- `readme.txt` for WordPress.org, with an External services section describing exactly what is sent to wpservice.pro and the scanning worker.
+- CI: PHP tests on 8.0 and 8.3, JavaScript tests, and the static part of Plugin Check on the release contents.
+- `bin/build-zip.sh` builds the WordPress.org ZIP from an allowlist.
+
+### Fixed
+- Plugin Check findings from the 1.8.9 report: text-domain mismatches, a missing translators comment, unprefixed globals in `uninstall.php` and the settings template, invalid license header, missing readme headers.
+- The asset-fingerprint test hashed files as checked out, so it passed on Windows (CRLF) and failed on Linux. It now normalizes line endings; every previously pinned row stays valid.
+
+---
+
+## 1.8.9 — 2026-09-22
+
+### Fixed
+- A WordPress automatic-update run no longer fails with a fatal error when another plugin's update entry carries no download link. The plugin's update handler runs on every package WordPress downloads, and an entry without a link stopped the whole automatic-update run — which could leave a site showing "Briefly unavailable for scheduled maintenance". The handler now hands such an entry back to WordPress untouched. Affected every release from 1.7.8 on.
+
+### Changed
+- Tested up to WordPress 7.1.2.
+- **Run Another Scan** on the results screen is now the primary (blue) button.
+
+## 1.8.8 — 2026-09-14
+
+### Security
+- A request carrying an invalid scan token no longer writes to the database on every hit. The security event for invalid tokens is now recorded at most once every 10 minutes.
+
+### Added
+- **Regenerate** button next to the scanner secret in Settings (administrators only). It creates a new secret. Your CDN / firewall rule keeps accepting the old value until you replace it there, and scans may be blocked until the rule has the new value.
+
+### Changed
+- After an Extra Time scan, pages that were sent with Extra Time no longer show the "Needs Extra Time — rescan with Rescan ET Candidates" note. The ET candidate column, the Extra Time checkbox and the **Rescan ET Candidates** button are unchanged.
+
+### Internal
+- Result rows carry `et_requested`, taken from the URLs submitted with Extra Time (stored per job for 2 hours).
+- Admin asset cache key `1.8.8.1`; scanner.js banner `1.0.11.12`.
+
+## 1.8.7 — 2026-09-11
+
+### Added
+- While a **Sync with Code Unloader** or **Push to Code Unloader** is running, a line under the buttons shows a spinner and "Syncing with Code Unloader… This can take a while for large rule sets." (or "Pushing to Code Unloader…"). It clears as soon as the request finishes, fails, or Push asks for confirmation. Screen readers announce it; with reduced motion the spinner pulses instead of spinning.
+
+### Changed
+- Sync and Push are both disabled while either one is running; before, the other button stayed clickable mid-request. Once the request ends, both buttons behave exactly as before.
+- The results table's **Extra Time** tooltip now reads "+1 credit only if Extra Time actually runs".
+
+### Internal
+- The busy line is an always-present `role="status"` region in the page markup, so its text is announced when it appears. Each Sync / Push request clears it through one `finally()`, so every way a request can end clears it.
+- Admin asset cache key `1.8.7.1`; scanner.js banner `1.0.11.11`.
+
+## 1.8.6 — 2026-09-11
+
+### Changed
+- The Step-3 **Live URL status** table shows 15 URLs per page, with **« Prev · Page N of M · Next »** below it — the same pager as the results table. Scans of 15 URLs or fewer show no pager. The page moves only when you click it: it stays put while the scan updates, and a new scan opens on page 1.
+
+### Fixed
+- A scan that started from the outage queue (a submit that hit a network error and was dispatched later) now opens on a clean Step-3 table; rows from an earlier scan in the same tab no longer linger under it.
+
+### Internal
+- The pager is static markup that JS only toggles, so keyboard focus survives the 2-second status polls. If its markup is ever missing, no row is hidden.
+- Admin asset cache key `1.8.6.1`; scanner.js banner `1.0.11.10`.
+
+## 1.8.5 — 2026-09-05
+
+### Added
+- Scans carry the plugin version to the worker (`plugin_version` on the job create request), so a scan in the worker's log can be attributed to the exact plugin build that ran it. Older workers ignore the field.
+
+### Changed
+- **Discover / Re-discover** lists the homepage first within its group (Pages when a static front page is set; otherwise Other). When the home URL is not in the discovered set, the shortest URL is listed first instead. Manual include lists and Extra-Time carry-over are unchanged.
+- The admin header byline now reads "Powered by WPservice.pro" (link unchanged).
+
+### Internal
+- `PageDiscovery::normalise_url` is the single URL normaliser for both post-type grouping and homepage matching; `PageDiscovery::home_first` is pure and unit-tested. A `WP_Query` test stub joins the bootstrap.
+- Admin asset cache key (`1.8.4.1`) and scanner.js banner (`1.0.11.9`) unchanged — no admin JS/CSS bytes moved.
+
+## 1.8.4 — 2026-09-05
+
+First non-beta release.
+
+### Changed
+- **Sync** now treats a rule as already present when Code Unloader already unloads it on every device the rule targets: an **All** rule covers a Desktop or Mobile leg, and a Desktop + Mobile pair covers an All rule. Repeat Syncs no longer add redundant per-device rows beside an existing All rule; a rule whose device is not yet unloaded is still added.
+- When a Sync adds nothing and reports no errors, the success line reads "Synced to Code Unloader — all N rules are already present."
+- The result screen's "Nothing new to sync" notice and the duplicate-page credit-back (both Code-Unloader-live scans only) use the same definition of "already present".
+
+### Internal
+- Sync decides presence with direct Code Unloader lookups (no cached bulk read on the write path); the result-screen computation keeps its bulk read.
+- Test doubles now mirror Code Unloader's duplicate handling; the JS test harness binds `this` for listeners.
+- Advanced the public plugin version to `1.8.4` (no beta suffix), the admin-asset cache key to `1.8.4.1` and the scanner.js banner to `1.0.11.9`.
+
+## 1.8.3b — 2026-09-05
+
+### Changed
+- **Sync** and **Push to Code Unloader** now send — and report — only the rules of the scan shown. After an Extra-Time rescan that is the rescanned pages' rules; the earlier scan's other pages are no longer re-sent (they are already in Code Unloader from the earlier Sync, or, on Push, kept in the snapshot group).
+- A scan whose own pages produced no rules for this site now shows Push and Sync as unavailable — on the live screen and after returning to the page — instead of sending rules from an earlier scan.
+- The **Ready to apply** count now excludes external-site pages and matches what Sync will add. The summary tiles still show the whole scan.
+
+### Internal
+- The stored and exported scan JSON gains an additive `scanned_patterns` key (the scan's own page patterns). Scans stored by earlier versions keep the previous Sync/Push behaviour.
+- Advanced the public plugin version to `1.8.3b` and the admin-asset cache key to `1.8.3b.1`.
+
+## 1.8.2b — 2026-08-23
+
+### Added
+- Hovering a **S:** or **A:** count in the results table now names the assets behind that number, the same way the kept-assets badge already does. Only counts above zero are hoverable — there is nothing to name on a zero — and **N:** is never hoverable, since it is the untouched-asset residue rather than a recommendation.
+
+### Fixed
+- The **Buy credits** button on the Settings screen now centres its label vertically. It is a link styled as a button and, unlike the **Refresh** button beside it, it was not centring its own text inside the button height.
+- The **Scan options** checkbox row now starts its text at the same left edge as the card heading above it, instead of sitting a few pixels to the left.
+- Scan-history table headings are no longer heavier than the rest of the interface (font weight 800 down to 600).
+- The **AI Assets Scanner** title in the page header now renders at a consistent weight and letter-spacing on every screen. Settings and Scan history were picking up a heavier weight from an older style rule that the scan screen already overrode.
+- The Scan ID copy control now copies the labelled string (`Scan ID: ad4ada7c9bbc`) rather than the bare identifier, so a pasted value is self-describing in a ticket or chat.
+
+### Internal
+- The S:/A: asset lists are built at the same place the counts are — in the one rule-emitting pass, and again in the rescan-merge path that recomputes those counts — so a hover list cannot disagree with the number it hangs off. Both paths share one collapser, and the sum of a list is pinned to the count it describes.
+- Advanced the public plugin version to `1.8.2b`, the admin-asset cache key to `1.8.2b.1`, and the scanner diagnostic banner to `1.0.11.7`.
+
+## 1.8.1b — 2026-08-20
+
+### Added
+- The completed-scan header now offers a one-click copy control beside the Scan ID, with a confirmation state and a screen-reader announcement. Falls back to a legacy copy path on non-HTTPS admin origins, where the clipboard API is unavailable.
+
+### Fixed
+- The active-scan "Optimizer bypass" row no longer always reads *Applied*. It now reports the real state for the scan in progress: *Applied* when at least one URL carried a bypass, *Not applied (N/A)* when none did, and a neutral *Checking…* until every URL has been confirmed by the worker. A single bypass in a multi-URL scan still reads *Applied*.
+- Optimizer-bypass suffixes in the live URL table now render in a lighter grey than the address they were appended to, so the page being scanned is legible at a glance. Query strings that are part of the submitted URL keep their normal weight — only the scanner's own appended parameters are dimmed.
+- The Step-2 "Reserving credits" indicator no longer freezes into a static ring for visitors who have reduced motion enabled. It now pulses instead of rotating, so it still signals activity without vestibular motion. The duplicate WordPress spinner that sat in the corner of the same card was removed.
+
+### Internal
+- Advanced the public plugin version to `1.8.1b`, the admin-asset cache key to `1.8.1b.1`, and the scanner diagnostic banner to `1.0.11.6`.
+- Declared compatibility with WordPress 7.1.
+
+## 1.8.0b — 2026-08-19
+
+### Major redesign changes
+- The scanner admin now uses a wider, responsive diagnostic workspace with one consolidated Scan Readiness card, clearer discovery and active-scan states, and an expanded completion dashboard.
+- Completed scans now separate the summary, recommendation actions, page results and S/A/N guidance. Safe and Aggressive remain positive green recommendation tiers; Needed remains neutral.
+- Result rows retain their existing outcome classes while using restrained status tints, a strong left marker, readable URL hierarchy and distinct Safe, Aggressive and Needed badges.
+- The existing radar, animated stage lights, probe safety gates, result tooltips, kept-asset badges, Push/Sync controls and restored Step 4 behavior remain in place.
+
+### Fixed
+- Restored the active radar sweep using the 1.7.99b three-second rotation while retaining the larger 1.8 radar artwork and synchronized bright blips.
+- Result-table help markers and the Settings scan-option marker now display their explanatory tooltips without creating horizontal or vertical scrollbars; the redundant S/A/N sidebar marker was removed.
+- Gave long result statuses more room, inset the Extra Time bulk control, and kept status content clear of the Credits column.
+- Refined result typography: table headers now use 11px/600 text, S/A/N badges and admin buttons use 12px text, and the result summary uses 12px text with 600-weight emphasized counts.
+- Reduced the active radar by about 10% and separated it from the progress card so the full circle remains visible.
+- Push and Sync now stay visible but disabled when a mixed scan contains recommendations only for external URLs and no rules eligible for the current site.
+- Simplified the results sidebar by removing the duplicate kept-assets total, while retaining the blue crucial-assets strip in the main results column.
+- Softened the scanner page title from bold to semi-bold so the header reads as a label rather than a headline. (Same-version package refresh; asset cache key 1.8.0b.4.)
+- Restyled the Speed Analyzer calls to action as secondary buttons and refined the completion-heading alignment and Settings credit-balance weight.
+
+### Internal
+- Kept the public plugin version at `1.8.0b` and scanner diagnostic banner at `1.0.11.5`, and advanced the admin-asset cache key to `1.8.0b.3` so browsers fetch the corrected stylesheet.
+
+## 1.7.99b — 2026-08-18
+
+### Changed
+- The **Needs Extra Time** note can no longer be mistaken for the ordinary "please scan again" notes. All five zero-result notes used to render in the same style, close enough at a glance that a plain rescan prompt could be read as a second Extra-Time candidate. The Extra-Time note now stands out as an amber badge with an ⏳ mark; the informational notes step back to muted gray. The column keeps its exact width either way.
+- Hovering a row's **🛡 N kept** badge now shows which assets that page kept. The badge said "9 kept" with no way to see which nine without scrolling to the summary note — and the note counts the whole scan, not that page. The tooltip names each kept vendor with its count, and the numbers always add up to the badge's own N.
+
+- The pre-scan Cloudflare notice now explains **host-managed Cloudflare**. When Cloudflare and a hosting platform that bundles it (such as WP Engine) are detected together, the notice says plainly that whitelisting the scanner usually isn't possible on such plans — instead of only telling you to set up an exemption you may have no way to create. It also reassures: scanning is still safe to try, blocked pages are reported as blocked, and can be rescanned once the host adds an exception.
+
+### Fixed
+- Sites running **WP Fastest Cache** are now recognized on every scan, not only when the page came from cache. Recognition used to rely on a signature the plugin writes solely on a cache hit, so scanning a page served fresh reported "couldn't tell what's optimizing this site" while naming no cause. The scan itself was never affected — this fixes what the pre-scan check can tell you, and drops one now-unnecessary extra request per scan.
+
+## 1.7.98b — 2026-08-17
+
+### Fixed
+- The **S / A / N** help tooltip no longer flickers. Hovering it on a scan with only a few URLs made a scrollbar appear beside the results, which narrowed the table just enough to slide the "?" out from under the pointer — so the tooltip closed, the scrollbar vanished, the "?" moved back, and the whole thing repeated for as long as you kept the mouse there. The tooltip now floats above the table instead of stretching it, so no scrollbar appears and nothing moves. This is the behaviour the shorter **ET candidate** and **Extra Time** tooltips already had; they were unaffected only because they were small enough to fit.
+
+## 1.7.97b — 2026-08-16
+
+### Fixed
+- The settings page no longer goes quiet when something goes wrong. If the server answered a save with an error page instead of a proper response, the form simply did nothing — no message, no spinner, no way to tell a failed save from a slow one — and you were left re-clicking Save. Saving now tells you when it could not complete. The credit balance behaves the same way: instead of sitting on its loading dots forever, it falls back to "—" when it cannot be read.
+- Saving your settings no longer reports a failure when it actually succeeded. If the server returned a worker address the plugin does not trust, your API key had already been saved — but the page showed an error about the address, so a save that worked looked like a save that failed. The key is stored, the untrusted address is ignored, and the save now reports success.
+
+## 1.7.96b — 2026-08-16
+
+### Changed
+- The note below the scan summary now reports **every** asset the scan deliberately kept, not only the anti-bot and anti-spam ones. A page where the scan kept a payment script, a form script, an analytics script and four WordPress core files used to say "1 protection script kept" and name only the anti-bot vendor — the other eight were kept just as deliberately and went unmentioned. The note now names them all, puts a count beside any vendor whose kept files number more than one, and lists the WordPress core files individually.
+- The 🛡 badge beside a scanned URL now says how many assets were kept on that page, and appears on pages whose kept assets are all non-protection. Previously it read simply "kept" and appeared only where an anti-bot or anti-spam script was found, so on most pages the summary counted keeps that no row accounted for.
+
+## 1.7.95b — 2026-08-16
+
+### Fixed
+- Your API key is no longer lost when it fails to authenticate. Saving the settings used to write the submitted key to the database *before* checking it, so a typo or an expired key replaced the working one and the connection dropped until you pasted a valid key again. The key is now stored only after it authenticates; a failed save leaves the previous key untouched. The `railway_url` and balance fields are guarded the same way.
+- The scan summary no longer says "1 safe rules". Counts of exactly one now read as singular throughout the sentence — "1 URL scanned", "1 safe rule", "1 aggressive rule". A count of zero, and an unknown URL count, stay plural as before.
+
+### Changed
+- The scan summary now bolds the whole phrase, not just the digit: **9 aggressive rules** rather than **9** aggressive rules. Zero counts stay plain, and the number of URLs scanned is still never bolded — it can render as "?" when the count is unknown, and "?" is not a quantity.
+
+## 1.7.94b — 2026-08-15
+
+### Added
+- Scan results now explain when a protection script was deliberately kept. Anti-bot and anti-spam scripts found on pages with forms are never unloaded, because unloading them can break the form or let spam through. Previously they simply did not appear in the results and there was no way to tell a deliberately-kept script from one the scan had missed. A note below the results summary now says how many were kept and which service they belong to.
+- The note survives a page reload, and appears the same way whether the scan finished while you were watching it or in the background on another admin page.
+- The results table now shows *which* pages those kept scripts were on: a small 🛡 kept badge sits beside the URL of every row where one was kept. The summary note says how many and whose; the badge says where.
+- A kept script stays kept after an extra-time re-scan. A re-scan reconciles its findings against the previous scan's rules, and an older rule that would have unloaded one of these scripts is now discarded instead of being reinstated — so the protection holds on the re-scan path too, not only on the first scan.
+
+### Changed
+- The scan summary line now bolds its rule counts when they are above zero, matching the S: and A: counts in the results table below it — a scan that found something reads apart from one that did not, at a glance. The sentence itself is unchanged: a zero count stays plain, and the number of URLs scanned is never bolded.
+- Tested up to WordPress 7.0.4.
+
+---
+
+## 1.7.93b — 2026-08-12
+
+### Fixed
+- Fixed a false "site denial (4xx)" error on scans of URLs that redirect — the scanner now resolves each URL before appending an optimizer-bypass suffix, instead of sending the suffix to a stale pre-redirect address.
+- Added a 2-hour cache for each URL's own redirect resolution, alongside the existing per-site optimizer-detection cache.
+- Added a diagnostic hook (`cu_scanner_suffix_suggested_unresolved`) for developers, fired when a bypass suffix is suggested for a URL that hasn't been resolved individually yet.
+- The updater now reads a release's date from the update manifest instead of a hardcoded value, so the date shown for an available update is the real one.
+- Scan result rows now bold the S: and A: counts when they are above zero, so a row with findings reads apart from an empty one at a glance.
+- After a scan, the results summary now tells you what to do next with the rules it produced.
+
+---
+
+## 1.7.92b — 2026-08-09
+
+### Fixed
+- **A WordPress site is no longer reported as "may not be WordPress" when its page markup is large.** The pre-scan check read only the first 32 KB of the page for WordPress markers, so a site whose `<head>` is large enough to push those markers past that point — common when a page inlines a lot of script — was reported as possibly not being WordPress, on a site that plainly is. The check now also recognises the REST API discovery link WordPress sends in its response headers, which does not depend on page size at all. On a site fronted by a security stack such as Cloudflare the pre-scan dialog still appears, because a detected security stack raises it independently — but the platform check no longer depends on page size alone, which is what produced the false warning.
+- **A long "nothing to unload" message no longer stretches the S / A / N column.** The note renders inside the S/A/N cell, which keeps `S:0 A:0 N:93` on one line — the note inherited that same no-wrap rule and so could not wrap, forcing the column to the width of its longest line (measured 363px, against 106px for the numbers alone). That squeezed the URL column into a 4-5 line wrap and pushed the table into horizontal scroll. The message now wraps in a fixed-width block *beneath* the numbers, so the column stays a constant ~185px at every window size and the message grows in height instead. Measured in a browser against the real stylesheet at five widths (560-1400px): the URL column regains 137-300px and the horizontal scrollbar disappears at 900px and above. Same table as the 1.7.91b `overflow-x` fix — and unlike that one, this was visually confirmed before release.
+- **The optimizer-bypass suffix on each scanned URL is now dimmed, so the page address reads first.** Every scanned URL carries the suffix the scanner appends (`?nowprocket&nowpcu&perfmattersoff`), previously at full strength and as visually loud as the address itself. The query string is now dimmed while the path keeps full contrast. The dimming is relative, so each row keeps its own status colour rather than being flattened to grey, and the suffix stays comfortably legible — measured at a higher contrast than two annotation styles already shipping in that table. A URL with no query string is unchanged.
+
+### Changed
+- Tested up to WordPress 7.0.3.
+
+---
+
+## 1.7.91b — 2026-08-06
+
+### Fixed
+- **The "Measure Your Gains" sidebar could overlap the Step-4 results table on a wide row.** The results table had no horizontal scroll container of its own, so a row with a long URL plus a long "Needs Extra Time" annotation could exceed the results column's width and spill onto the adjacent sidebar box, covering the Extra Time checkbox. `#cu-result-url-list` now scrolls horizontally (`overflow-x: auto`) instead of overflowing. This is a layout fix, not a stacking-order one — the table no longer physically extends past its column on a wide row. Code-reviewed with zero findings; not yet visually confirmed against a live WordPress admin screen, since none was available in the environment where the fix was built — please report back if the overlap still occurs on a wide row.
+
+---
+
+## 1.7.90b — 2026-08-05
+
+### Fixed
+- **Result-truth is now scoped to scans that ran with Code Unloader's rules live.** On a default scan — where the `?nowpcu` suffix is applied and Code Unloader is switched **off** for the duration — 1.7.88b/1.7.89b were still consulting Code Unloader's current rules, so a page could be reported as *"Already in Code Unloader — nothing new to unload"* with its credit returned, even though the scan had deliberately measured the page as if Code Unloader did not exist.
+
+  A default scan is a **fresh, full measurement**, not an incremental one. What Code Unloader happens to hold is irrelevant to what that scan measured, so it is no longer consulted there: counts are reported exactly as measured, no page is netted to zero, no credit-back is claimed, and the wording is the same as before the scan-mode setting existed. Every page that yields rules is billed normally.
+
+  With *Remove Code Unloader's suffix (?nowpcu) from scans* **ticked**, the scan is explicitly incremental — it measures the site as visitors receive it, with existing rules live — and the full result-truth behaviour applies unchanged: split counts, zero-yield rendering for duplicate-only pages, the automatic credit-back, and the *"No new unloads found since the last time"* wording.
+
+  Syncing is unaffected in both modes: **Sync still skips rules Code Unloader already has**, so pushing a duplicate still appends nothing. That has always been a separate question from what the scan reports.
+
+---
+
+## 1.7.89b — 2026-08-05
+
+### Changed
+- A page whose every rule was **already in Code Unloader** is now shown as what it is: **S:0 / A:0, 0 credits**, with the same styling as any other page that yielded nothing, and labelled *"Already in Code Unloader — nothing new to unload on this page."* Previously such a page reported its rules as findings (e.g. `A:1`) and showed the gross `1` credit, even though the credit had been returned and Sync would then say *"appended 0 (1 already present)"*. The zero shown on the row is derived from the same server-side predicate that claims the credit-back, so the screen and the charge cannot disagree.
+- Scans run with **Remove Code Unloader's suffix (?nowpcu) from scans** ticked no longer urge a rescan when a page yields nothing. In that mode Code Unloader's rules are live during the scan, so assets it already unloads never become candidates and a zero is the correct, expected outcome. Those pages now read *"No new unloads found since the last time."* Normal scans keep the existing wording, where a zero genuinely may be a miss worth retrying.
+
+### Removed
+- The per-URL **Already in CU** column. It rendered `0` on zero-finding pages while the summary line deliberately made no claim on the same scan, and with the `?nowpcu` suffix off it read backwards — Code Unloader holding the rules is *why* such a scan finds nothing. The server-side attribution behind it is unchanged: it still drives the *"N new, M already in Code Unloader"* summary line and the per-page credit-back.
+
+---
+
+## 1.7.88b — 2026-08-04
+
+### Fixed
+- The post-scan screen no longer counts rules Code Unloader **already has** as new findings. Previously a scan could report "3 aggressive rules" and then, on Sync, tell you "appended 0 (3 already present)" — you paid for the scan, saw three findings, and got none. Results now say how many are genuinely new: "→ 1 new, 2 already in Code Unloader". When every rule is already there, the Sync area says so outright instead of offering a button with nothing to add.
+
+### Added
+- **Credits returned for pages that found nothing new.** If a scanned page's rules were all already in Code Unloader, its page credit is returned automatically. Pages that found nothing at all are unaffected — they were already free. Scan History shows the charge and the return side by side (`3 (2 returned)`) rather than quietly netting them, and the History CSV export gains a final **Credits Returned** column. The per-URL results table gains an **Already in CU** column; it stays blank where the split cannot be attributed to a single URL rather than guessing a number.
+
+## 1.7.87b — 2026-08-03
+
+### Added
+- A new setting, **Remove Code Unloader's suffix (?nowpcu) from scans**. By default the scanner adds `?nowpcu` to each URL it visits, which switches Code Unloader off for that request so the scan sees every asset a page can load. Tick the new box to leave the suffix off: scans then run with your existing Code Unloader rules applied, the way visitors actually receive the pages. On heavy pages this often surfaces rules an earlier scan missed, because the page loads lighter and the scanner gets further through it. Assets your current rules already unload will not appear in the results, so use **Sync with Code Unloader** to add newly found rules on top of your existing ones rather than **Push**, which replaces them.
+
+### Fixed
+- When a scan is cut short by rate limiting, the warning now names who actually did it. It previously always said "Your server rate-limited the scanner", even when the block came from Cloudflare, so the advice pointed at the wrong place. Cloudflare-issued limits now say so and note that whoever manages the Cloudflare account — you, your host, or your agency — needs to allowlist the scanner. Limits coming from your own server say that instead, and no longer suggest a CDN exemption that would not help.
+- The notices shown before a scan no longer assume you are the one who manages the CDN. On sites where a host or agency runs Cloudflare, the previous wording ("set up the exemption") was a dead end for the person reading it.
+- The "Before you scan" tip no longer implies a Cloudflare WAF bypass rule is a substitute for relaxing your own server's rate limits. It covers Cloudflare-issued blocks only.
+
+## 1.7.86b — 2026-08-01
+
+### Fixed
+- The internal marker used by the one-time database update has been renamed to a plugin-specific name. The previous name was shared with another WPservice plugin, and the two could repeatedly overwrite each other's value; on sites running both plugins this could cause extra database work on every page load. The update now uses a dedicated name, so this no longer happens.
+
+## 1.7.85b — 2026-08-01
+
+### Fixed
+- The one-time data update introduced in 1.7.84b did not run on sites that had been upgraded from a much older version of this plugin, because a leftover value written by that old version was mistaken for "this update already ran." Those sites now convert correctly the next time any page loads — no action needed.
+
+## 1.7.84b — 2026-08-01
+
+### Fixed
+- Scan-history and per-scan report data are no longer loaded into memory on every page of your site — only when the plugin actually needs them. A one-time update converts any scan data saved by earlier versions the same way, and verifies the conversion succeeded before marking itself complete.
+
+### Added
+- A small internal migration system (`CUScanner\Migrations`) that runs one-time database updates like the one above safely; its version marker is cleaned up automatically if you ever uninstall the plugin.
+
+## 1.7.83b — 2026-07-31
+
+### Fixed
+- The "visual comparison off" note now starts on its own line in the results table instead of trailing the end of the "optimizer detected — scanned with …" note, so both notes stay readable on wide screens. CSS-only (`.cu-choff-note` is now block-level); the note text, tooltip, and the conditions under which the note appears are unchanged.
+- Touched: `admin/css/ai-assets-scanner-admin.css`.
+
+## 1.7.82b — 2026-07-31
+
+### Added — the results table now tells you when visual comparison is off for a page
+
+- Some pages naturally change their appearance between visits (animations, rotating content) by more than any visual difference the scanner could detect. On those pages the scanner's visual check is deliberately switched off, and unload decisions rely on its other checks (code coverage, console, network). Until now you couldn't see that state — a page with visual comparison off looked identical to any other page. The Step-4 results table now shows a "👁 visual comparison off — <device>" note in the URL cell, with a "?" tooltip explaining exactly what it means. The state comes from the scan worker per device, appears only when a scan's shipped verdict actually ran with the visual channel off, and older stored results simply show no note.
+- Touched: `includes/class-scan-status.php` (defensively-whitelisted `visual_channel_off` row field, ok-rows only), `admin/js/scanner.js` (URL-cell note + dual-sink tooltip), `admin/css/ai-assets-scanner-admin.css` (one note class), tests (`tests/ScanStatusChannelOffTest.php`, `tests/js/channel-off-note.test.js`).
+
+## 1.7.81b — 2026-07-28
+
+### Fixed
+- Auto-bypass banner now shows canonical plugin names ("SWIS Performance", "WP Rocket", "LiteSpeed Cache") instead of title-casing the plugin slug ("Swis Performance"). `PluginDetector::detect()` carries a new additive `auto_bypass_labels` map; the admin JS uses it with the old slug derivation kept as fallback. Reported by the SWIS/EWWW developer.
+
+## 1.7.80b - 2026-07-23
+
+### Added — the scanner can now see WordPress's declared script dependencies
+
+- WordPress knows which scripts each script depends on (`$deps`); the scanner never did, and inferred it from the rendered page instead. A script that looked unused could therefore be unloaded even though a script you **are** keeping declares it as a dependency — breaking the page in exactly the case unloading is supposed to be safe. Real example: `wc-add-to-cart-variation` declares `wp-util`; `wp-util` measured zero coverage, was unloaded, and broke the variable-product purchase flow on a live store.
+- The plugin now publishes a small JSON "dependency island" on the page, **only** on the scanner's own authenticated capture request — never on a normal visitor's page view. The scan worker reads it and refuses to unload anything inside a kept script's declared dependency chain.
+- The island is requested with an explicit marker so it rides exactly one request per page, is removed from the page body before the scanner measures it (so it can never distort broken-page detection), and is capped at 128 KB.
+- **This release ships the producer side only.** The worker-side guard is deployed in observation mode: it reports what it **would** protect and changes no scan result yet.
+
+### Changed — the tech-stack popup no longer interrupts a clean probe
+
+- After probing your site, the detected cache/optimizer stack was shown in a modal that blocked the scan until you clicked. When nothing needs a decision, it is now a self-dismissing notification and the scan continues immediately.
+- **The security-stack warning is unchanged and still blocks.** If a WAF or security stack is detected — or the probe fails, cannot identify the stack, or the target is not WordPress — you still get the blocking prompt with Cancel/Continue, so you can bail before any credits are spent.
+
+### Security — scan token hardened
+
+- The temporary token that authorises the scanner's own requests to your site is now generated with a cryptographically secure random source (128-bit, `random_bytes`) instead of WordPress's UUID helper, which is not intended for security use. Token lifetime and validation are unchanged.
+
+### Internal
+
+- Each page submitted for scanning now carries an `is_external` flag, so the worker can distinguish "the plugin did not supply a dependency island" from "this page is on another host, so we never asked".
+
+---
+
+## 1.7.79b - 2026-07-17
+
+### Fixed — ET-ratchet "↩ +N" badge counts distinct restored rules, not device legs
+
+- The "↩ +N" ratchet-recovered badge on the results table could exceed a page's Aggressive count (e.g. `A:20 ↩ +39`), which is nonsensical (recovered > total). Root cause: `RatchetMerger::merge()` incremented `recovered_by_pattern` once per restored **per-device rule leg** (desktop + mobile), but the customer-facing S/A/N are rule-domain because `merge()` returns `recollapse(...)` — so a rule restored on both devices double-counted. The badge now counts **distinct restored rules** (a per-pattern set of recollapse keys `url_pattern|handle|type|group_id`), so a both-device restore counts once instead of twice — eliminating the leg-domain double-count that produced counts like `A:20 ↩ +39`. The ratchet's actual restoration behavior (demotion-aware union) is unchanged — only the displayed count's domain was wrong.
+
+### Changed — "↩ +N" badge restyled so it isn't mistaken for the S/A/N counts
+
+- The ratchet badge now renders in muted grey (`#787c82`) and one step smaller (12px vs the 13px Safe/Aggressive/Needed counts).
+
+_Touched: `includes/scanner/class-ratchet-merger.php`, `admin/css/ai-assets-scanner-admin.css`, `ai-assets-scanner.php`, `README.md`._
+
+## 1.7.78b - 2026-07-15
+
+### Changed — SWIS Performance reclassified Class B → Class A (`?swis_disable=1` auto-bypass)
+
+- Operator-sourced and live-verified: `?swis_disable=1` disables SWIS Performance's JS/CSS optimization per-request (undocumented in SWIS docs; behavioral A/B against a random cache-buster on a live SWIS site showed `/wp-content/swis/` bundle refs 74→0, deferred scripts 6→1, scripts un-combined 12→15, −39 KB body). Supersedes 1.7.76b's Class-B "no proper bypass" handling.
+- **External targets:** the probe now auto-appends `?swis_disable=1`, so the scanner analyzes the raw WP-enqueued assets instead of SWIS's combined/deferred bundles — correct rule generation instead of a "results may be incomplete" warning (F-MISS fix).
+- **Own-site scans:** SWIS moves from SOFT_BLOCK ("disable manually before scanning") to AUTO_BYPASS — the suffix is appended automatically; no manual step. The same param also busts SWIS's page cache.
+- Target-stack probe cache schema bumped 6 → 7 (auto-invalidates cached Class-B probe results).
+
+### Fixed — S:0 A:0 result copy no longer over-claims "Nothing to unload found on this page"
+
+- The 1.7.73b copy for a converged S:0 A:0 non-ET row inferred "genuinely nothing to unload" from the mere absence of the ET-candidate flag — but that flag's absence only means the zero was not budget-starved (repro: scan `e1271ec1fd71`, a page scoring S:0 A:0 N:63 whose prior scan had proven A:8, got told "Nothing to unload found on this page"). The note now claims only what the scan observed and always invites a retry: "This scan found nothing to unload — a rescan occasionally finds more. Please rescan." ET-candidate branches (Needs Extra Time / Please scan again) are unchanged.
+
+_Touched: `includes/scanner/class-plugin-detector.php`, `admin/js/scanner.js`, `ai-assets-scanner.php`, `README.md`._
+
+## 1.7.77b - 2026-07-15
+
+### Fixed — ET Result Ratchet now engages on zero-yield Extra-Time rescans
+
+- The ratchet's "is this an Extra-Time rescan?" gate keyed only on the worker's per-page `extra_time_charged` billing flag. Since the worker's 2026-07-05 billing change, a zero-yield ET rescan (one that returns S:0 A:0 — the exact case the ratchet floor exists for) arrives **un-stamped**, so the ratchet silently skipped: the initial scan's aggressive rules were dropped with no `↩` recovery badge, and the empty rescan overwrote the saved baseline. AAS now detects the ET rescan from its own submit-time intent (the URLs the operator flagged for Extra Time), persisted as a job-keyed marker — so the ratchet engages independently of billing, and the baseline is no longer clobbered. The old billing-stamp path is retained as a fallback. The ratchet's page-break (F-DEG) drop/restore policy is unchanged.
+
+_Touched: `admin/class-scanner-ajax.php`, `ai-assets-scanner.php`, `README.md`._
+
+## 1.7.76b - 2026-07-15
+
+### Added — SWIS Performance (EWWW IO) cache/optimization plugin detection
+
+- The target-stack probe now fingerprints **SWIS Performance** (the EWWW IO speed suite; identifies as "SWIS Cache" via the `x-cache-handler: swis-cache-engine` response header and an end-of-body `<!-- SWIS Cache @ … -->` comment). Previously a SWIS-powered external target matched nothing and returned "Couldn't detect target caching stack"; it is now detected as a **Class B** page cache — the scanner's unique query token already busts its page cache, so no bypass suffix is needed, and results surface the honest "detected, results may be incomplete" notice. Not to be confused with Swift Performance (a different plugin — `swis` ≠ `swift`).
+- **Own-site coverage:** SWIS is added to the pre-scan SOFT_BLOCK list (optimization-suite class, alongside NitroPack / Swift / Hummingbird) — scanning your own SWIS-powered site now warns to disable its JS/CSS defer/delay first, since delayed-until-interaction scripts can otherwise be missed and produce incorrect Safe rules.
+- **Telemetry:** `plugin_file_to_enum()` maps SWIS to the `swis` optimizer enum (paired with the SaaS-side `optimizer_detected.plugin` enum registration in CU Scanner SaaS 1.2.41, so the event is no longer rejected on ingest).
+
+_Touched: `includes/scanner/class-plugin-detector.php`, `ai-assets-scanner.php`, `README.md`._
+
+## 1.7.75b - 2026-07-15
+
+### Fixed — Results-table header tooltips vertically centered with the "?" centered below each label
+
+- Follow-up to 1.7.73b/1.7.74b. The S / A / N, ET candidate, and Extra Time header labels now sit on the vertical center of the header row (level with #, URL, Status, Credits), and each "?" icon is centered horizontally under its own label with a 3px gap — instead of rendering inline or top-aligned. Implemented by wrapping each tooltip label in an inline-block and absolutely positioning the "?" below it; header cells use `white-space: nowrap` so the two-word labels never wrap and knock the icons onto a third line.
+
+_Touched: `admin/js/scanner.js`, `admin/css/ai-assets-scanner-admin.css`, `ai-assets-scanner.php`, `README.md`._
+
+## 1.7.74b - 2026-07-15
+
+### Fixed — S / A / N tooltip icon now sits below the header, matching the other two
+
+- The "?" help icon on the S / A / N results-table header rendered inline on the same line as the text, unlike the ET candidate and Extra Time tooltips, which sit on a second line. Those two columns are narrow enough that the icon wraps naturally; the S / A / N column is wide (its data cells are long), so it never wrapped. Forced the icon onto its own line with a break so all three header tooltips render consistently.
+
+_Touched: `admin/js/scanner.js`, `ai-assets-scanner.php`, `README.md`._
+
+## 1.7.73b - 2026-07-15
+
+### Changed — "Please scan again" no longer shown on converged no-unloads rows
+
+- A completed S:0 A:0 row that the worker did NOT flag as an ET candidate is a converged verdict — the scan finished with budget to spare and found nothing to unload; a rescan reproduces the same result (verified live: two scans of the same page 2.5 min apart returned identical S:0 A:0 N:3). Those rows now read "Nothing to unload found on this page — a rescan occasionally finds more" instead of the misleading "Please scan again". Rows the worker DID flag as ET candidates keep the existing notes: "Needs Extra Time — rescan with 'Rescan ET Candidates'" (uncharged), "Please scan again" (already ET-charged, still zero).
+
+### Added — S / A / N column tooltip
+
+- The Step-4 results table's S / A / N header now carries the same "?" hover/focus tooltip as the ET candidate and Extra Time headers, defining the three buckets: Safe (high-confidence unload rules, tested and confirmed safe to unload), Aggressive (broader rules with slightly lower confidence, tested and confirmed safe to unload), Needed (assets required by the page — they remain loaded when rules are pushed).
+
+_Touched: `admin/js/scanner.js`, `ai-assets-scanner.php`, `README.md`._
+
+## 1.7.72b - 2026-07-11
+
+### Changed — Single-source the security-stack/CDN display names (FU-ANTIBLOCK-STACK-NAMES drift-guard)
+
+- The stack id → display-name map (Cloudflare, Sucuri, Akamai, Imperva/Incapsula, BunnyCDN, Fastly + reserved Wordfence / SiteGround Antibot rows) now lives in exactly ONE place: the new canonical `PluginDetector::stack_display_names()`. The admin page's `cuReasonCopy.stack_names` localization consumes it instead of carrying its own inline copy, and the dead per-row `name` fields inside the `SECURITY_STACKS` fingerprint table (never read by `detect_security_stacks()`) were deleted. The localized payload is byte-identical — no visible change in the pre-scan modal or the same-site CDN dialog.
+- New drift-guard test `tests/stack-display-names-test.php` pins the exact strings and asserts every id either registry can surface (`SECURITY_STACKS` keys + `Cdn\Detector` adapter names) has a display row — a future one-sided rename/drop now fails an executable test instead of rendering a raw id.
+
+_Touched: `includes/scanner/class-plugin-detector.php`, `admin/class-admin-pages.php`, `tests/stack-display-names-test.php`, `ai-assets-scanner.php`, `README.md`._
+
+## 1.7.71b - 2026-07-10
+
+### Fixed — "Error: Invalid page count" on Start Scan with an empty selection
+
+- Start Scan in Discover/carry-over mode had no empty-selection guard (the include-only branch always had one), so an empty `selectedUrls` sailed past the external-probe and same-site gates (both no-op on empty arrays) straight into Step 2, where the server-side `reserve_job` validation rejected `page_count: 0` with the opaque browser alert "Error: Invalid page count". Reachable two ways: (a) a restored ET/rescan carry-over view whose persisted selection was empty (list renders unchecked, Start Scan still visible — button visibility keys on discovered/included, not selection); (b) typing an already-listed URL into Include URLs, which `syncIncludedUrls()`'s already-discovered dedupe silently drops without selecting the matching row. Now guarded loudly in `admin/js/scanner.js` before any Step-2 transition: "No URLs selected. Tick at least one URL in the list (or add one under Include URLs) before starting the scan." Server-side validation stays as defense-in-depth. Follow-up filed (not in this release): make typing an already-listed URL check its row instead of being dropped.
+
+## 1.7.70b - 2026-07-09
+
+### Fixed — Duplicate remediation text in the post-scan "couldn't be fully scanned" banner
+
+- The post-scan warning banner (`admin/js/scanner.js`) rendered the rate-limit / error / bot remediation copy **twice** — once in the aggregate message above the dismiss button, and again as a per-reason block below it. The `appendRemediation()` path added in 1.7.67b was never de-duplicated against the pre-existing aggregate `action` clause. Removed the below-button per-reason render so the banner shows a single remediation paragraph, matching the server-side initial banner (`class-broken-banner.php`), which was never affected. No copy is lost — the aggregate clause already carries the CDN-exemption settings link.
+
+_Touched: `admin/js/scanner.js`, `ai-assets-scanner.php`, `README.md`._
+
+## 1.7.69b - 2026-07-09
+
+### Added — Name the security stack on block-shaped scan failures (FU-ANTIBLOCK-FAILURE-SHAPE-FINGERPRINT)
+
+- When the external target-stack probe hits a block shape (HTTP 403 / 429 / 5xx), `PluginDetector` now runs `detect_security_stacks()` over the already-fetched response headers + body instead of hard-coding an empty `security_stacks` list. The pre-scan modal can now name the blocking stack (Cloudflare via `cf-ray`, Sucuri via `x-sucuri-id`, …) alongside the bare "HTTP 403" reason. Zero additional HTTP — a pure header/body signature match on the response already in hand. The inconclusive-4xx path (404 / 401) deliberately stays empty: a not-found / unauthorized is not a block.
+
+### Fixed — CDN display names for the same-site dialog (FU-ANTIBLOCK-STACK-NAMES-BUNNY-FASTLY)
+
+- Added `bunnycdn` and `fastly` rows to the `stack_names` display-name map so the same-site CDN leg (which keys on `Cdn\Detector::detect_cached()` ids) renders "BunnyCDN" / "Fastly" instead of the raw id. The id must match `Detector::name()` — it is `bunnycdn`, not `bunny` (a `bunny` row would have been a silent no-op). Rewrote the map's provenance comment: it feeds two scanner.js consumers — the external-probe modal over `SECURITY_STACKS` ids and the same-site CDN leg over `Cdn\Detector` ids; the `wordfence` / `siteground_antibot` rows are unconsumed today (same-site plugin legs render via their own `p.label`) and are retained as reserved display names.
+
+_Touched: `includes/scanner/class-plugin-detector.php`, `admin/class-admin-pages.php`, `ai-assets-scanner.php`, `README.md`._
+
+## 1.7.68b - 2026-07-08
+
+### Added — "Don't show this again" on the same-site security-stack warning (FU-ANTIBLOCK-2 follow-up)
+
+- The pre-scan same-site security-stack dialog (the Cloudflare / active-security-plugin warning) gains a **Don't show this again** button. Clicking it proceeds with the current scan (same as Continue) and suppresses the dialog on all future scans via a browser-local flag (`localStorage['cu_suppress_local_stack_warn']`, per-browser; undo by clearing the key). Cancel and Continue behave as before, and the storage read/write is guarded so a browser that blocks `localStorage` simply keeps showing the dialog.
+
+_Touched: `admin/js/scanner.js`._
+
+## 1.7.67b - 2026-07-08
+
+### Added — Per-reason remediation copy, single-sourced and localized (FU-ANTIBLOCK-1, spec §3.1)
+
+- Scan-blocked-reason copy (challenge/WAF/rate-limit/error phrasing, remediation guidance, and the settings-page bypass anchor) is now built once in `AIAS_Broken_Banner::export_copy_map()` and localized onto the scanner page as `cuReasonCopy`, replacing scattered inline strings with a single translatable source (`__()`-wrapped, `ai-assets-scanner` text domain). Includes a `stack_names` display-name sub-map (Cloudflare/Sucuri/Akamai/Imperva/Wordfence/SiteGround Antibot) for the upcoming probe-result modal.
+
+### Added — Pre-scan security-stack fingerprinting: external probe + same-site check (FU-ANTIBLOCK-2, spec §3.3/§3.4)
+
+- `PluginDetector::SECURITY_STACKS` fingerprints the external target's already-fetched target-stack probe response (zero additional HTTP) for Cloudflare/Sucuri/Akamai/Imperva, feeding a UX-only Cancel/Continue warning (`warning_needed`) that never affects scan outcome or bypass suffixes. On the same-site side, `PluginDetector::active_security_warn_ids()` reports locally-active security plugins (Wordfence, Wordfence Login Security, Cloudflare), and `Cdn\Detector::detect_cached()` — a zero-HTTP, request-header/transient-only read (never the blocking self-sniff fallback) — surfaces the locally detected CDN. Both are localized onto the scanner page as `cuLocalStack` alongside the operator's acknowledged-CDN setting, for a pre-scan same-site warning.
+- Wordfence/SiteGround rows were evaluated for `SECURITY_STACKS` and dropped (no live-capturable signature met the spec §6.2 bar); they remain reachable via the locally-active-plugin (`security_warn`) path.
+
+### Technical
+
+- `PluginDetector::SIGNATURE_SCHEMA_VERSION` bumped `'4' → '5'` — the target-stack probe transient key is schema-salted, so adding `SECURITY_STACKS` matching to the shared probe response auto-invalidates every host's cached probe result.
+
+_Touched: `admin/class-scanner-ajax.php`, `admin/class-admin-pages.php`, `includes/cdn/class-detector.php`, `includes/class-broken-banner.php`, `includes/scanner/class-plugin-detector.php`, `ai-assets-scanner.php`._
+
+## 1.7.66b - 2026-07-05
+
+### Fixed — Render-health gate suppresses the false Safe rule on optimizer-intercepted (delay-marker) renders (F-DEG fix, FU-ABSENT-SAFE)
+
+- The `absent,absent` co-occurrence path (an asset absent from BOTH the aggressive and control render) no longer emits a **Safe** rule when the page carries a delay-marker signature — the shape produced when an optimizer (Perfmatters, Autoptimize, etc.) intercepts and defers the asset rather than the asset genuinely being unused. This is the PHP emission-side lockstep of the worker's `absent,absent` co-occurrence gate that already shipped to production; `CuJsonBuilder` now honors the same verdict when building the CU Import File so a delay-marker render can no longer round-trip into a false Safe rule via the PHP side. Gated behind `CuJsonBuilder::RENDER_HEALTH_GATE_ENABLED` (TEMP retire-PAIR with the worker's `ABSENT_SAFE_RENDER_GATE_ENABLED` — both flip to hardcoded-on together once baked).
+
+### Fixed — Target-stack probe transient no longer pins a Class-A-miss for a full day (FU-ABSENT-SAFE B1)
+
+- The per-host optimizer-detection transient now uses a **tiered TTL**: the full 24h cache is granted only to detections that produced a usable bypass suffix (a genuine Class A / A★ optimizer match). A positive-render-but-suffixless outcome — the Class-A-miss shape, e.g. a transient probe block (rate-limit, bot-challenge, momentary WAF) or a detected-but-non-bypassable optimizer — now gets a short TTL instead, so it self-heals on the next scan (~15 min) rather than pinning the miss for a day. The transient cache key is also salted with a new `SIGNATURE_SCHEMA_VERSION` const (bumped `'3' → '4'` for this change), replacing the old manual `v1`/`v2`/`v3` literal discipline — bumping the const now auto-invalidates every host's cached probe result whenever detector signatures or probe logic change, instead of relying on remembering to edit the key string.
+
+### Added — Visible "optimizer detected" note on Step-4 rows, now working on external scans (FU-ABSENT-SAFE B2)
+
+- Step-4 result rows show a note (`cu-bypass-note`) when the scan applied an optimizer-bypass query suffix (`?X`) to reach the real asset list past a caching/optimizer layer. The per-URL bypass-suffix map is now **persisted at submit time** (keyed by `job_id`, built from the exact reshaped `pages[]` sent to the worker) and **read back** when building the result rows, replacing a same-host-only live re-detect that could never fire for external scans (its original purpose) and could drift from what was actually applied at submit. Both internal and external rows are stamped correctly; a URL absent from the map (expired transient, background rebuild) fails closed — the note simply stays off, never a false positive.
+
+### Changed — Scan URL-list rows normalized to 13px (FU-ABSENT-SAFE B3)
+
+- The URL column font-size on the Step-4 results table and the Step-1 URL-list rows is now a consistent `13px`, matching the rest of the scan table typography.
+
+_Touched: `includes/scanner/class-cu-json-builder.php`, `includes/scanner/class-plugin-detector.php`, `admin/class-scanner-ajax.php`, `includes/class-scan-status.php`, `admin/css/ai-assets-scanner-admin.css`, `admin/js/scanner.js`, `includes/scanner/class-outbox.php`, `ai-assets-scanner.php`._
+
+## 1.7.65b - 2026-07-04
+
+### Fixed - Credits column now matches the SaaS charge on blocked and cancelled scans (FU-BILLING-BLOCKED-NOOPT E3)
+
+- A **blocked/partial** non-ET row that produced zero rules (S:0 A:0) now displays **0 credits**, mirroring the worker's relaxed noopt billing (a blocked page that delivered nothing bills nothing). Previously the display-zero was gated on class 'ok' only, so a blocked S:0 A:0 row showed 1 while the SaaS charged 0.
+- On a **user-cancelled** scan the Credits column is now **cancel-aware**: ALL noopt display-zeroing is skipped (the worker's /cancel site bills every done page with no noopt subtraction — operator ruling 2026-07-04), so the rows sum to the amount actually charged. The terminal source is plumbed from the scanner JS into `build_result` (whitelist-validated server-side: `user_cancel|failed|paused_exhausted|killed`; display-only — it cannot affect billing) and persisted with the Step-4 restore payload, so reloaded/restored views stay consistent. Not-scanned rows keep their forced 0. Known residual: an ET row on a cancelled scan still displays its +1 premium that cancel never charges (pre-existing wrinkle, tracked separately).
+
+## 1.7.64b - 2026-07-04
+
+### Fixed - Co-present cache plugin missed when its only signature is an end-of-body comment
+
+- The target-stack probe scans only the first 32 KB of the page (`Range: bytes=0-32767`). A cache plugin that serves warm HITs without running PHP (e.g. **Breeze** on a file-cache HIT) emits no `x-*-cache` header, so its only hit-visible signature is an end-of-body comment (`Cache served by breeze …`) sitting past that window — and when another optimizer (e.g. Perfmatters) was already matched in the head, the probe finished early and never saw the cache. The probe now runs one full-body scan when the head returns a conclusive verdict but **no page-cache layer**, catching the trailing marker. Detection is additive — an existing head match (Perfmatters, WP Rocket, …) is never downgraded. Informational only: these caches are bypassed ambiently by the scan flow's unique-query-string probes, so scan rules and credits are unaffected.
+- Network cost: at most **one additional full-body GET per host per 24 h** (gzip-compressed response, cached), fired only on hosts where the head scan finds no cache layer. A ranged tail fetch was rejected — on compressed origins the server serves the range against the gzip stream and a partial-gzip suffix cannot be decompressed. The positive-detection cache key is bumped `v2 → v3` so already-probed hosts re-evaluate under the new logic.
+
+## 1.7.63b - 2026-07-04
+
+### Fixed - Redundant "External URLs scanned" notice on 0-rule external scans
+
+- When a completed external-only scan produced 0 rules, the "**External URLs scanned.** Rules can only be downloaded…" notice still rendered even though the Download button is dormant on 0-rule scans (1.7.60b) — pointing at an action that doesn't exist. The notice is now suppressed when the scan produced no rules; Push/Sync stay hidden as before. Display-only.
+
+## 1.7.62b - 2026-07-04
+
+### Fixed - Typing in "Include URLs" erased the carried-over rescan URL
+
+- After "Rescan ET Candidates" / "Rescan 0-Results URLs" primed Step 1 with carried URLs, the first keystroke in the "Include URLs (one per line)" box wiped them from the list: the include-box sync rebuilt the INCLUDED group from the textarea alone, and the carried URLs are prime-injected (not textarea-sourced). The sync now merges the carried set with the typed URLs — typing adds, never replaces. Leaving the carry-over view (e.g. running Discover Pages) restores the previous behavior exactly.
+
+## 1.7.61b - 2026-07-04
+
+### Changed - "Rescan ET Candidates" primary styling now tracks the dead-end state only
+
+- The button renders primary (blue) only while a noopt (S:0 A:0) ET-candidate row exists — the state the "Needs Extra Time" note points at. After an ET rescan yields results, the residual `et_candidate` flag ("still starved after Extra Time") keeps the button available for another pass, but as a secondary action alongside "Run Another Scan".
+
+## 1.7.60b - 2026-07-04
+
+### Changed - Results-table polish for the "Needs Extra Time" state (display-only)
+
+- The ET-directing noopt note now breaks after "Needs Extra Time —" (second line carries the button reference), and the URL column keeps a readable minimum width (`min-width: 220px`) instead of being squeezed by the note.
+- When ET candidates exist, the **Rescan ET Candidates** buttons render as primary (blue) — the primary next action in that state.
+- **Download CU Import File** goes dormant on 0-rule scans (same `noRules` gate as Push/Sync; anchor href removed + dimmed).
+
+## 1.7.59b - 2026-07-04
+
+### Added - Noopt-row "Needs Extra Time" directing copy (Phase-2 Slice C, display-only)
+
+- The `S:0 A:0` "Please scan again" row note now distinguishes rows that are Extra-Time candidates not yet ET-charged: those rows show "Needs Extra Time — rescan with “Rescan ET Candidates”" instead, styled to match the yellow-row emphasis family. Reads the existing `et_candidate`/`et_charged` result-row fields for branching only — no new input, no new endpoint, display-only. Pairs with the worker's Phase-2 Slice A budget-stop `et_candidate` flag; the new copy stays unreachable until that flag lights up, but is safe to ship ahead of it.
+
+## 1.7.58b - 2026-07-02
+
+### Fixed - Scan UI wedged at N-1/N until a hard refresh (live-status caching)
+
+- The Step 3 progress poll hits a **fixed** worker URL (`/status?from=0`), so an HTTP-cached in-progress snapshot could mask the terminal `complete` status and leave the scan stuck at N-1/N (e.g. 14/15) until a hard refresh — even though the scan had finished and was billed correctly. The live poll now uses `cache: 'no-store'`, and the worker `/status` endpoint sends `Cache-Control: no-store`, so no browser or edge/proxy layer can strand a stale snapshot. No credits or scan results were affected by the wedge.
+
+## 1.7.57b - 2026-07-01
+
+### Added - Undo last Code Unloader Push/Sync
+
+- Added a dormant **Undo last Push/Sync** button to the Step 4 scan-complete actions. It stays disabled until a successful Code Unloader Push or Sync, then turns red and remains available across browser or WordPress closure via server-side persisted state.
+- Undo removes the recorded rules from Code Unloader, deactivates groups created by that last operation instead of deleting them, leaves existing groups untouched, and keeps the undo manifest retryable if Code Unloader cannot delete an existing recorded rule.
+
+## 1.7.56b - 2026-06-29
+
+### Fixed - Release package checksum repair
+
+- Reissued the 1.7.55b code under a fresh 1.7.56b update URL so WordPress does not reuse a stale cached package after the 1.7.55b checksum mismatch.
+
+## 1.7.55b - 2026-06-29
+
+### Fixed - Compliance scan follow-up
+
+- Routed the `target_stack_summary` POST payload through an explicit sanitizer helper to satisfy the remaining sanitized-input warning.
+- Replaced diagnostic `var_export()` usage in the menu badge heartbeat log with production-safe scalar/type formatting.
+- Normalized line endings in the reported PHP files so PHPCS no longer reports mixed endings.
+
+## 1.7.54b - 2026-06-29
+
+### Fixed - Result summary placement
+
+- Moved the Step 4 "Scan complete" summary so it appears directly above the Scan ID / URL results area instead of above the download and Code Unloader action buttons.
+- Hardened AJAX POST handling for probe/submit payloads and escaped the Outbox unknown-dependency exception detail to satisfy the reported `WordPress.Security.*` findings.
+
+## 1.7.53b - 2026-06-25
+
+### Fixed — Scanning-table "undefined" URLs (FU-AAS-UNDEFINED-URL)
+
+- The live **Step 3 — Scanning** table no longer shows the literal text **"undefined"** in the URL column for not-yet-started pages. The worker returns pending pages without a `url` — only the in-flight pages (`PAGE_CONCURRENCY` of them) carry one at `0/N` — so rows past the first few rendered `undefined` until each page started. The URL cell now falls back to the resolved submitted URL (`selectedUrls`/`resolvedByUrl`, index-aligned with the worker's `pages[]`) when the worker hasn't echoed one yet, so every row shows its real (redirect-resolved) URL from the start; on a reattach with no client-side list it renders empty rather than "undefined". Scanning-screen cosmetic only — results and billing were always correct. Frontend-only; no worker/SaaS change.
+
+## 1.7.52b - 2026-06-24
+
+### Fixed — Noopt display parity (FU-NOOPT-ZERO-CREDIT)
+
+- The **Credits** column on the Step-4 results table now displays **0** for any page marked S:0 A:0 ("scanned but produced zero rules"), matching the worker's billing logic (0 credits charged for no-output pages). The column value is single-sourced via a new `AIAS_Scan_Status::page_credit()` helper used by both `build_pages()` and `billable_credit_total()`; Extra-Time pages remain billable per billing status; partial and cancelled rows are unchanged.
+
+### Added — Main page resumes running scans (FU-MAINPAGE-SCAN-RUNNING)
+
+- Opening the scanner page in a fresh tab while a scan is already in progress now displays the live progress view (Step 2–3 via the server transient) instead of the empty pre-scan state, so you can reattach to an ongoing scan without losing visibility.
+
+### Changed — Zero-rule scans don't push/sync
+
+- When a scan produces **no rules** (all pages are S:0 A:0), the **"Push to Code Unloader"** and **"Sync to Code Unloader"** buttons are now both **disabled** — the scanner skips the outbox enqueue, matching the existing per-page behaviour when a previous result already has rules staged. (A fresh scan on an empty result still offers the button; a mixed result where some previous rules exist follows the per-page disable logic.)
+
+_Touched: `admin/class-scanner-ajax.php` (docblock update for new `billable_credit_total()` param), `ai-assets-scanner.php`._
+
+## 1.7.51b - 2026-06-23
+
+### Added — R3 Stage C: pause-cooldown UI + wp-cron partial-rebuild backbone
+
+- When the scanner pauses a scan due to **repeated origin throttling/blocking** (HTTP 429 / 403 / 5xx / WAF), the scanner page now shows a **live countdown** to the auto-retry, plus a **"Stop & keep results now"** control, and a terminal **"paused-exhausted" partial banner** that delivers the completed pages' rules.
+- A **wp-cron backbone** rebuilds the partial result server-side, so a charged result is delivered even if the browser was closed during the cooldown.
+- **Inert until the worker's R3 cooldown feature is enabled** — no behavior change on existing scans.
+
+_Touched: `admin/js/scanner.js`, `includes/class-menu-badge.php`, `includes/class-plugin.php`, `ai-assets-scanner.php`, plus `tests/js/r3-*`, `tests/MenuBadgeTest.php`._
+
+## 1.7.50b - 2026-06-23
+
+### Changed — "Scanned but not optimized" (S:0 A:0) rows
+
+- The per-row **"Scan again"** link on yellow S:0 A:0 rows is now plain **"Please scan again"** text.
+- A new **"Rescan 0-Results URLs"** button sits beside **"Rescan ET Candidates"** (above and below the results table) and appears whenever the scan produced at least one S:0 A:0 page. Clicking it loads every S:0 A:0 URL from the result into a fresh Step 1 — no Extra Time, each selected and ready — so you can rescan them all in one batch. Each URL is charged as a normal scan (1 credit per URL).
+
+_Touched: `admin/js/scanner.js`, `admin/views/scanner-page.php`, `admin/css/ai-assets-scanner-admin.css`, `ai-assets-scanner.php`, `README.md`._
+
+## 1.7.49b - 2026-06-23
+
+### Fixed — Duplicate pages in the discovery list (and double-counted credits)
+
+- After **Re-discover**, a page that a sitemap lists in more than one section (e.g. the WooCommerce **shop** page) no longer appears twice in the page list. Discovery now de-duplicates URLs at the single point that feeds both the displayed list and the credit cost, so a duplicated page is also no longer **billed twice**.
+
+### Changed — Settings → Cloudflare WAF exemption copy button
+
+- The copy-icon button next to the rule expression is now a compact **20×20** square with the icon centred, instead of the oversized default WordPress button (the previous compact styling was being overridden by core button CSS).
+
+_Touched: `includes/scanner/class-page-discovery.php`, `admin/css/ai-assets-scanner-admin.css`, `tests/PageDiscoveryTest.php`, `ai-assets-scanner.php`, `README.md`._
+
+## 1.7.48b - 2026-06-22
+
+### Added — Spot "scanned but not optimized" pages + re-scan them
+
+- The Step-4 results table now highlights any **completed page that produced zero rules (S:0 A:0)** with a **yellow "needs attention" row** instead of the green success row — these pages scanned OK but got no optimization (deadline-bailed / fail-closed / nothing safely unloadable), so they're worth a second look instead of blending in as a success.
+- Each such row gains a **"Scan again"** link that re-runs just that URL: it re-enters Step 1 pre-filled (no Extra Time), so you review the credit cost and start it yourself. On completion it reuses the existing re-queue behavior — **"Push to Code Unloader" is disabled (Sync only)** when you already have pushed rules, so a single-page re-scan can't replace them.
+
+### Changed — Settings → Cloudflare WAF exemption section
+
+- Renamed the visible "CU Scanner" wording to **"AAS"** in the WAF exemption instructions (the `x-cu-scanner` rule expression is unchanged).
+- Restyled the step-by-step instructions for readability: tighter heading-to-text spacing and a subtle dashed separator between steps.
+- Replaced the **"Copy" text button** next to the rule expression with an **accessible copy icon** — it now shows a brief check-mark on success, degrades gracefully on a clipboard failure, and no longer mis-resets the wrong button after copying.
+
+_Touched: `admin/js/scanner.js`, `admin/js/settings.js`, `admin/css/ai-assets-scanner-admin.css`, `includes/cdn/class-cloudflare-adapter.php`, `ai-assets-scanner.php`._
+
+---
+
+## 1.7.47b - 2026-06-21
+
+### Added — Pre-scan throttle attribution notice (know *who* rate-limited your scan)
+
+- After a scan hits rate-limiting (429), the scanner page now shows a **pre-scan notice that names the source** of the throttling and gives source-specific advice:
+  - **CDN edge** (Cloudflare / Akamai / Imperva / WAF) → "set up the exemption before re-scanning," with a direct link to the Cloudflare WAF Bypass settings.
+  - **Origin server** (e.g. Wordfence or host limits) → "a CDN exemption won't help — temporarily raise or disable rate limiting on your server."
+  - **Unknown** → generic CDN-or-origin guidance.
+- The notice is precise (it uses the scanner worker's actual throttle attribution), persisted (it shows *before* the next scan, carried from the last one), and **self-clears** after the next clean scan. For a confirmed Cloudflare throttle it supersedes the proactive "CDN detected" notice to avoid a double message.
+
+---
+
+## 1.7.46b - 2026-06-21
+
+### Fixed
+
+- **CDN auto-detection now works on hosts where the server's self-check loops back to the origin** (e.g. Hostinger + Cloudflare): the scanner now also reads the CDN fingerprint from the current inbound request (`$_SERVER` HTTP_* headers), so the "CDN detected" notice and the Settings exemption instructions appear automatically instead of falling back to the manual "I use a CDN" picker.
+
+---
+
+## 1.7.45b - 2026-06-21
+
+### Added — CDN rate-limit exemption (stop your CDN throttling the scanner)
+
+- **Cloudflare** (full support) and **BunnyCDN, Fastly, Akamai, Sucuri** (detected with setup guidance) are now auto-detected by sniffing the response headers of your own homepage — no manual configuration needed.
+- A **"CDN detected" notice** appears on the scanner page, with a direct link to the relevant exemption instructions in Settings. The notice is CDN-keyed: once you acknowledge it for your CDN, it stays gone.
+- The **Cloudflare WAF "Skip" rule instructions** in Settings → Cloudflare WAF Bypass have been rewritten with accurate, copy-paste-ready steps: Security → Security rules → Custom rules → create a Skip rule matching the scanner's `x-cu-scanner` header, placed at First. Includes the exact checkboxes to tick, a copy button for the rule expression, and a caveat for free-plan users on Bot Fight Mode.
+- After a scan that hit rate-limiting (429 responses), the **broken-scan banner now links directly to the CDN exemption setup** in Settings, so you know where to go without hunting.
+- For non-Cloudflare CDNs (BunnyCDN, Fastly, Akamai, Sucuri), a conditional instruction is shown — these are detect-only with platform-specific guidance since setup steps vary by plan.
+
+---
+
+## 1.7.44b - 2026-06-19
+
+### Fixed — Partial banner could get stuck after a page reload
+
+- Hotfix for 1.7.43b: after a cancelled or stopped scan, clicking **"Run Another Scan"** reloaded the page but left the partial-failure banner stored, so it reappeared on every load — the banner became impossible to dismiss, and the screen showed a duplicate "Run Another Scan" button with Push/Sync missing.
+- **"Run Another Scan" now clears the stored partial-banner state** (and any leftover re-queue markers) before reloading, so it always lands on a fresh Step 1.
+- An administrator-stopped scan — which legitimately shows the banner on its own after a passive reload — no longer renders a redundant top "Run Another Scan" button (the bottom one remains).
+
+> The partial banner still survives a plain page reload before you act on it, and is still cleared automatically when you re-queue the remaining pages. Only "Run Another Scan" now also discards it.
+
+---
+
+## 1.7.43b - 2026-06-19
+
+### Fixed — Re-queue button, and cancelled-mid-scan pages on the partial result
+
+- **"Re-queue the remaining N pages" now works.** It previously reported "No remaining pages to re-queue" even when the banner offered pages — the button was reading the remainder from the wrong place on the live (just-cancelled) screen. It now re-queues correctly.
+- **Re-queue targets the pages that didn't actually finish.** When you cancel a scan, pages already in-flight may finish a moment later. The re-queue set is now the pages that genuinely didn't complete (cut off + never reached), so it won't re-scan pages that already produced rules.
+- **Pages cut off by the cancel now read "Cancelled — not scanned"** in the results table, instead of a misleading "OK" with zero rules.
+- **Scan History credit count matches the charge.** A partial scan's recorded credits now mirror what the SaaS actually charged (the same number the banner shows), instead of counting build-time delivered pages that a fast cancel could inflate. No change to what you're charged.
+
+> Note: on very fast scans, the worker bills the page count at the instant you cancel while a couple of pages finish right after — so the pages shown with rules can slightly exceed the charged count (in your favour). This is heavily exaggerated when testing on a fast site and is negligible on real long scans.
+
+---
+
+## 1.7.42b - 2026-06-19
+
+### Fixed — Cancelling a scan now shows the partial banner (and bills the right number)
+
+- Hotfix for 1.7.41b: cancelling a long scan partway (e.g. 3 of 13 pages) could leave the scanner stuck on the progress screen with no "partial" banner, even though the cancel itself went through and you were correctly charged for the completed pages.
+- Root cause: when a scan ends early, the server reports the not-yet-scanned pages as empty placeholders. The rule-builder (written for fully-completed scans) choked on those placeholders, so building the partial result failed and the banner never rendered. The same placeholders were also miscounted as credits, so the Scan History row could show too high a "credits charged" number.
+- The partial result is now built from only the pages that actually ran — fixing both the stuck/no-banner behaviour and the Scan History credit count. No change to what you're actually charged (the backend already had that right).
+
+---
+
+## 1.7.41b - 2026-06-18
+
+### Added — Honest partial-failure handling: banner, delivered rules, and re-queue-the-rest
+
+- When a scan ends early — interrupted before it finished, cancelled by you, or stopped by an administrator — the scanner now shows a clear banner explaining what happened and exactly what you were charged for that path.
+- For **charged** partials (interrupted / cancelled), the scanner now delivers the rule file for the pages that **did** complete. Previously a partially-delivered scan could charge you for the completed pages but hand back nothing; now you get rules for the pages you paid for.
+- **Re-queue the rest** — a one-click "Re-queue the remaining N pages" button re-runs only the pages that didn't finish, through the normal reserve → submit → 1-scan-per-account gate. An administrator-stopped scan offers "Retry the scan" (re-runs the whole run, since it delivered no rules).
+- A re-queued partial result offers **Sync only** — "Push to Code Unloader" is shown disabled (with a note) so a remainder-only scan can't replace and lose the rules you already pushed. Push stays available when there's nothing to protect.
+- An administrator-stopped scan now clearly states **you were not charged** (admin-kill is non-charging) and shows no download.
+
+### Fixed — Interrupted-scan credit handling and a stale results table
+
+- Closed a credit-handling race on the interrupted-scan path: the plugin no longer releases a credit reservation the backend is already finalizing, so an interrupted-but-partially-delivered scan is charged for its delivered pages and handled once. The pre-submit-failure path (a scan that never reached the backend) still releases its reservation as before, so it can't strand credits. No change to what a successful scan costs.
+- The Step-3 live URL table is now cleared when a new scan starts, so starting a smaller scan after a larger one no longer leaves stale rows behind.
+
+### Changed — Scan History shows partial scans
+
+- Charged-but-incomplete scans now appear in Scan History as "Partial — N credits charged" with their safe/aggressive rule counts and a re-download link, instead of a bare status with no actions.
+
+---
+
+## 1.7.40b - 2026-06-14
+
+### Fixed — A queued-during-outage scan now releases its reservation cleanly (no more stuck "scan already running")
+
+- The 1.7.37b–1.7.39b outage outbox could still leave a credit reservation stranded after a backend outage: the queued scan's attempt to release its half-completed reservation was rejected by the server's auth check, so the reservation stayed active and the next scan was blocked with "a scan is already queued or running" until the reservation expired (up to 24h) or an admin cleared it.
+- Root cause: the plugin's reservation-release call authenticated with the account API key instead of the scan's own job token; the release endpoint requires the job token, so every release silently failed. The release call now sends the correct job token, so reservations release as intended across all paths (submit failure, scan failure, and the outage-outbox retry). No change to what you're charged.
+
+---
+
+## 1.7.39b - 2026-06-14
+
+### Fixed - A locally-queued scan no longer strands a reservation during a long outage
+
+- When a scan was queued locally during a backend outage (1.7.37b outbox), the original credit reservation could be left active-but-orphaned, so the queued scan then failed with "a scan is already queued or running" and the account stayed blocked until the reservation expired. The locally-queued scan now takes ownership of that reservation and releases it cleanly before retrying, so it dispatches normally when the backend returns.
+
+---
+
+## 1.7.38b - 2026-06-14
+
+### Fixed — Cancel no longer silently strands a scan when the backend is unreachable
+
+- Cancelling a scan while the scanner backend is temporarily unreachable (timeout / 5xx / network) previously reported success and reset the UI even though the cancel never reached the backend — leaving the scan (and its credit reservation) active, which could block the next scan for that account until it expired.
+- Cancel now distinguishes a transient backend outage from a real cancel: on an outage it keeps the scan tracked, tells you it couldn't be cancelled, and lets you retry; a confirmed cancel (or a job already gone backend-side) resets as before. No change to what you're charged.
+
+### Changed — Friendlier message when a scan is already running for your account
+
+- If you try to start a scan while one is already queued or running for your account (the 1-scan-per-account limit), you now get a plain "a scan is already queued or running — please wait for it to finish" message instead of a raw "HTTP 409" error.
+
+---
+
+## 1.7.37b - 2026-06-14
+
+### Added — Outage outbox (queued-locally scan replay through backend outages)
+
+- When the scanner backend is temporarily unreachable (timeout / 5xx / 503 capacity), a scan is now queued locally instead of failing. It dispatches automatically when the backend recovers — retried in the browser while the tab is open, and by WP-cron after it closes.
+- Max one locally-queued scan per site. Any half-completed credit reservation is released before each retry; the request fails cleanly (with a clear message) if another scan on the account becomes active while it waits.
+- New internal `HttpException` carries the HTTP status so failures are classified correctly (network/5xx retried; 4xx / insufficient-credits / already-active are terminal).
+- A replayed scan is identical to an interactive one — same optimizer handling, Scan History record, and event telemetry (the submit path was refactored into shared units so the two paths cannot drift).
+- No backend/SaaS changes; AAS-only.
+
+---
+
+## 1.7.36b - 2026-06-13
+
+### Added — Probe-challenge blocker banner copy (Cloudflare / firewall-WAF / host)
+
+- The Railway worker now detects an intermittent CF / host / WAF challenge served only to the
+  verifier's mid-scan probe passes — previously missed by the `phase_a`-only challenge detector,
+  which produced a misleading-green scan (S:0 A:0, no warning) plus a spurious mass demote. When
+  detected, the worker flags the affected device in `broken_devices` with a blocker reason key and
+  applies a conservative keep; the "some pages couldn't be fully scanned" banner now names the
+  blocker class. Two new reason keys are mapped in the banner copy: `tier2_waf_challenge` →
+  "firewall/WAF", `tier2_unknown_challenge` → "bot/firewall protection (unidentified)"
+  (Cloudflare / Akamai / Imperva / 4xx / 5xx / rate-limit classes were already mapped). AAS side
+  is banner-copy only; the detection + conservative-keep logic ships in the worker.
+
+---
+
+## 1.7.35b - 2026-06-13
+
+### Fixed — Class A bypass hook-removal no longer emits PHP warnings during scans
+
+- The Class A optimizer bypass (defense-in-depth hook removal for WP Rocket / Perfmatters /
+  Autoptimize) removed a hook's entire priority bucket by directly unsetting
+  `$wp_filter[$tag]->callbacks[$priority]`. That bypasses `WP_Hook::resort_active_iterations()`,
+  so WordPress core emitted repeated `Undefined array key <priority>` + `foreach() … null given`
+  warnings (`class-wp-hook.php`) on every scanned page-load. Removal now goes through the core
+  `remove_all_filters( $tag, $priority )` API, which re-sorts active iterations. No behavior
+  change to the bypass itself (the URL-suffix bypass remains primary); this only removes the
+  warning noise and the latent remove-during-iteration fragility.
+
+---
+
+## 1.7.34b - 2026-06-13
+
+### Added — ET ratchet rule-count divergence diagnostic (debug-gated, inert in production)
+
+- Diagnostic only: when a scan's per-page tally disagrees with the merged rule list (only
+  reachable when the Extra-Time ratchet restores rules for pages absent from a partial
+  rescan), the plugin now logs a `[ratchet][count_divergence]` line — the per-`url_pattern`
+  rule breakdown vs the rescanned URLs — so we can tell whether those restored rules are
+  legitimate other-page rules or stale same-page patterns. Gated behind `CU_SCANNER_DEBUG`
+  (no output in normal operation); logs asset handles/URLs only, withheld from the browser.
+  Investigates FU-AAS-RATCHET-ABSENT-PAGE-RESTORE. No behavior change to scans or rules.
+
+---
+
+## 1.7.33b - 2026-06-13
+
+### Fixed — Scan-History "Safe / Aggressive Rules" counts now match the per-URL table
+
+- On an Extra-Time **ratchet** scan, the Scan History "Safe Rules" / "Aggressive Rules"
+  columns could disagree with the per-URL Step-4 table (live: a 1-URL scan showed
+  **A:17** in the table but **48** in history). The history counts were computed from
+  `count(cu_json['rules'])` *after* the ratchet merge, which can include restored rules
+  whose `url_pattern` is not among the rescanned pages (`recompute_by_page()` attributes
+  them to no page). The history Safe/Aggressive totals are now summed from the same
+  `by_page` tally the per-URL table renders, so the history row always equals the sum of
+  the per-URL column. Non-ratchet scans are unaffected (`array_sum(by_page) == count(rules)`
+  already holds). Note: this aligns the *displayed* counts; whether the ratchet should
+  restore rules for pages absent from a single-URL rescan is tracked separately
+  (FU-AAS-RATCHET-ABSENT-PAGE-RESTORE).
+
+---
+
+## 1.7.32b - 2026-06-13
+
+### Fixed — Scan-History "Credits" total under-counted Extra-Time scans
+
+- The Scan History table's **Credits** column showed the base page count for an Extra-Time
+  (ET) continuation scan — e.g. **1** where **2** was actually billed. The per-URL Step-4
+  "Credits" column was already ET-aware (2026-06-02), but the history *summary* was computed
+  by a separate page-COUNT that ignored `extra_time_charged`. The summary now sums the same
+  per-page rule (`AIAS_Scan_Status::classify()`), so the history total always equals the sum
+  of the per-URL column and the amount the SaaS charged. Backfill-safe: scans whose pages
+  lack the `extra_time_charged` flag show base credits only, unchanged.
+
+---
+
+## 1.7.31b - 2026-06-11
+
+### Added — Queue visibility: queued banner now shows estimated start time
+
+- Queue visibility: queued banner now shows estimated start time (eta_s) returned by the worker.
+
+---
+
+## 1.7.30b - 2026-06-11
+
+### Fixed — ET rescans no longer re-resolve URLs (carried URLs scan byte-identically)
+
+- "Rescan ET Candidates" carried the prior result's URLs into a full re-run of the submit flow, whose fresh
+  redirect probe could re-resolve them differently — `example.com?bypass` lost its cache-bypass suffix on
+  rescan (scanned un-bypassed) and the ET-ratchet's original-vs-rescan URL comparison could never match,
+  silently blocking rule restoration. Carried-over URLs are now pinned to identity resolution (tracked
+  through the carry-over view, surviving navigation), so resolution fires only on a URL's first scan.
+  Fresh URLs added during a rescan view still resolve normally. Probe warnings/stack detection unchanged.
+
+---
+
+## 1.7.29b - 2026-06-10
+
+### Fixed — Detected cache stack now shown for cleanly-detected external sites
+
+- When scanning an external URL whose cache stack is detected cleanly (WP Rocket, FlyingPress, LiteSpeed, …), the plugin now shows a passive "Target site detection" notice on the scanning screen naming the detected stack. Previously the detection summary only appeared as a blocking confirmation dialog, and that dialog is shown **only** when the probe is uncertain (a warning outcome). A clean detection proceeded silently — so as the target probe got more reliable, well-detected sites stopped surfacing *which* stack was found even though the correct cache bypass was still applied. The notice is informational only; it does not block the scan or change which bypass is used. Detected host and stack names are HTML-escaped on output.
+
+---
+
+## 1.7.28b - 2026-06-08
+
+### Fixed — Step-4 notice placement (External URLs / banners)
+
+- Dynamically-rendered admin notices now carry the WordPress `inline` class so they stay where the plugin places them instead of being hoisted by WP admin to the top of the page (which made the "External URLs scanned" notice appear inside the header banner during scanning and duplicated on the results screen). Applies to the External-URLs notice, the queued-scan banner, and the broken-pages banner.
+
+---
+
+## 1.7.27b - 2026-06-08
+
+### Fixed — Extra-Time rescan no longer loses rules on resolving URLs
+
+- The ET (Extra Time) rescan now flags the correct page when a URL resolves (e.g. trailing slash or http→https). Previously the extra-time selection was matched against the pre-resolution URL, so a resolving URL silently dropped extra-time — the worker ran no continuation and the Extra-Time result ratchet did not engage (a scan could lose rules its first pass had found). Fixed at both submit paths plus a server-side backstop.
+
+### Changed — AAS debug logging is off by default
+
+- AAS no longer writes diagnostic lines to `wp-content/debug.log` unless you opt in with `define( 'CU_SCANNER_DEBUG', true );` in `wp-config.php`. Real-error logging is unchanged.
+
+---
+
+## 1.7.26b - 2026-06-08
+
+### Added — ET ratchet decision-trail diagnostic (observability)
+
+- `WP_DEBUG_LOG`-gated logging of the ET Result Ratchet: the R_orig persist, the gate decision (ratchet enabled / is-ET-rescan / R_orig present / URL-set match), and the per-handle merge outcome (restore/drop + reason). Off in production; no behaviour change.
+- Lets an operator diagnose ET-rescan rule-retention questions (e.g. why an A:N→A:0 drop happened) by reading `wp-content/debug.log` — previously the ratchet was a black box.
+
+---
+
+## 1.7.25b - 2026-06-05
+
+### Fixed - Free key activation retry
+
+- AAS now retries free-key activation from wp-admin when the stored key is the pending placeholder, not only when the API key field is empty.
+- This helps a fresh install recover automatically if the first activation request to WPservice.pro was missed or temporarily unavailable.
+- Updated the README badge and plugin version display to 1.7.25b.
+
+---
+
+## 1.7.24b — 2026-06-05
+
+### Fixed — Paid key handoff after checkout
+
+- After buying credits from AAS settings, AAS can now save the paid API key automatically once checkout completes.
+- The settings-page balance refresh now updates the local key and cached service URL when the paid key is available.
+- The settings page also retries this check when the browser tab regains focus, covering the normal flow where checkout opens in a new tab and the user returns to AAS settings.
+
+---
+
+## 1.7.23b — 2026-06-04
+
+### Fixed — ET rescan shipped bogus per-device "safe" rules (desktop F-DEG)
+
+A "Rescan ET Candidates" run could show a large jump in **Safe** rules on the Step-4 table (e.g. speed-analyzer S:0 → **S:19**) that, if applied, would unload assets the page actively uses on **desktop** (`jquery-migrate`, `woocommerce`, `wc-add-to-cart`, …) — a desktop-breakage (F-DEG) risk. Root cause: the ET rescan's desktop coverage pass can spuriously report a present, used asset as **absent** on one device (verified on scan `9fabc6ec8edc`: 18 site-wide scripts flipped `needed→absent` on desktop vs a clean non-ET baseline of the same page), and the Phase-2a asymmetric-absent rule then converted each single-device `absent` into an **unvalidated** per-device "safe" unload. The ET Result Ratchet was **not** the cause — it faithfully unions the builder's output; disabling `cu_scanner_ratchet_enabled` does not change the count.
+
+The Phase-2a asymmetric-absent → per-device-safe emit is now **disabled** (`CuJsonBuilder::PHASE2A_ASYMMETRIC_SAFE_ENABLED = false`), restoring the 2026-04-25 dual-device-confirmation invariant: only an asset confirmed **absent on BOTH devices** (`absent,absent`) yields a Safe rule. Aggressive rules and every other device-pair cell are unchanged. A worker-side follow-up (`FU-ET-DESKTOP-ABSENT`) will root-cause why the ET rescan's desktop pass drops present-asset readings; the asymmetric emit can be re-enabled once a clean per-device desktop read is proven. (Beta build.) Touched: `includes/scanner/class-cu-json-builder.php` (+ regression tests in `tests/CuJsonBuilderTest.php`).
+
+## 1.7.22b — 2026-06-03
+
+### Changed — ET Result Ratchet now default-ON (beta)
+
+The ET Result Ratchet (added 1.7.21 behind the default-off `cu_scanner_ratchet_enabled` option) is now **on by default**. After "Rescan ET Candidates", the result is unioned with the original scan's rules with no setup needed; an original rule is restored only when the rescan dropped it benignly, never when the rescan validated it as page-breaking. The option is retained as an opt-out kill switch — set `cu_scanner_ratchet_enabled` to a falsy value (`0` / `false`) to disable. No other behavior change. (Beta build — `b` suffix per the current beta-versioning scheme.) Touched: `admin/class-scanner-ajax.php`.
+
+## 1.7.21 — 2026-06-03
+
+### Added
+
+- **ET Result Ratchet — a Rescan never ships fewer rules than the original (default-OFF, `cu_scanner_ratchet_enabled`)** — "Rescan ET Candidates" is a fresh scan that *replaced* the original result, so a rescan that derailed (control-probe / goto failsafe → A:0) or whose fresh baseline simply converged lower could deliver **fewer** unload rules than the first scan. Behind the default-OFF `cu_scanner_ratchet_enabled` option, an ET rescan now **unions** its result with the original scan's rules: `final = rescan_rules ∪ {original rules the rescan dropped *benignly*}`. An original rule is re-included only when the rescan dropped it for a benign reason (ran out of time / derailed) — **never** when the rescan validated it as page-breaking (visual-diff / solo-confirm / a whole-page failsafe), so page-breakage (F-DEG) is protected, **including the zero-coverage animation-CSS class** (a rule that breaks the page despite 0 measured coverage). Per-device-correct (`device_type='all'` rules are normalized to desktop/mobile legs, merged, then re-collapsed); aggressive rules are never silently downgraded to safe on a benign rescan. Consumes the companion CU Scanner Railway worker's per-asset `demote_class` + per-page `failsafe_demote` fields. The original scan's rule keys are stashed in a 60-minute user transient and used only when the **same URL set** is rescanned (staleness-guarded). Step-4 shows a "↩ +N" badge on pages where the ratchet restored rules. **Pure addition — flag-OFF is a no-op** (no transient write, no merge); billing/credits unchanged. New `includes/scanner/class-ratchet-merger.php`; touched `admin/class-scanner-ajax.php`, `admin/js/scanner.js`. Spec/plan: CU product-docs `04-development/2026-06-03-et-result-ratchet-demotion-aware-union-design.md` (Rev 2) + `…-implementation-plan.md`.
+
+---
+
+## 1.7.20 — 2026-06-03
+
+### Fixed
+
+- **Telemetry: `target_stack_summary.detected` corrupted to `["Array"]`** — `capture_target_stack_summary()` cast each probe `detected` entry (an object `{name, class, …}`) with `(string) $d`, which emitted a PHP `Array to string conversion` warning and forwarded the literal `"Array"` instead of the optimizer name to the SaaS job payload. The helper now extracts the optimizer name (`$d['name']`) with an `is_array` guard (legacy string entries still pass through) and drops empties. Telemetry-only — no effect on scan behavior, bypass routing, rules, or billing. Pre-existing since FU-NEW-2 (Phase 5); surfaced via `WP_DEBUG_LOG`. Touched: `admin/class-scanner-ajax.php` (+ object-shape regression test in `tests/SubmitJobPayloadTest.php`).
+
+## 1.7.19 — 2026-06-03
+
+### Fixed
+
+- **Hotfix: Step-4 results stuck on "Scanning…"** — 1.7.18 introduced a JavaScript scope error. The per-URL resolved-URL map (`resolvedByUrl`) was declared inside the submit handler but read by the Step-4 results renderer (a sibling function), throwing a `ReferenceError` that aborted the Step-3 → Step-4 transition on **every** scan (redirecting or not — clean same-host scans included). `resolvedByUrl` is now declared at shared (IIFE) scope, and the renderer guards the access, so results render normally. No change to scan behavior, rules, or billing. Touched: `admin/js/scanner.js`.
+
+## 1.7.18 — 2026-06-03
+
+### Added
+
+- **Redirect URL resolution on submit** — before sending a URL to the Railway worker, the plugin now follows same-site HTTP redirects to resolve the true scan target (`resolution_source: redirect_final`). Cross-domain redirects are rejected and the submitted URL is used unchanged (`cross_domain_reject`); no redirect resolves to `none`. The `<link rel="canonical">` tag is captured and logged for diagnostics but does not affect which URL is scanned in v1. The resolved URL is what gets scanned (the reserve domain is unchanged — billing still uses the submitted URL's host). Resolution is cached in a short-lived transient to avoid a cold probe on every scan. Touched: `includes/scanner/class-plugin-detector.php`.
+- **Step-4 results show resolved URL with origin note** — when a submitted URL was redirected before scanning, the Step-4 table now shows the resolved (scanned) URL with a muted "← resolved from \<submitted\>" note inline. Available on live post-scan views; gracefully absent when results are restored from localStorage after a page reload (AC-RC-8b). Touched: `admin/js/scanner.js`, `admin/css/ai-assets-scanner-admin.css`.
+- **Worker redirect-drift log** — the Railway worker now emits a `DEBUG=1`-gated `runvp_final_url` debug event after each page navigation, capturing the requested URL vs the browser's actual final URL after redirects. Flagless safety net for detecting redirect-drift between what was submitted and what Playwright ended up on. Touched: `src/analysis/page-analyzer.js`.
+
+---
+
+## 1.7.17 — 2026-06-02
+
+### Fixed
+
+- **Extra-Time "?" tooltip on the Step-1 URL list** — clicking the help icon no longer toggles the row's Extra-Time checkbox (the `?` was nested inside the `<label>`; it is now a sibling), and its tooltip now renders on hover instead of being clipped (the URL list no longer clips overflow; the rounded corners are preserved by rounding the first/last rows). The same `.cu-help` marker already worked on the Step-4 results header.
+- **Per-URL "Credits" column under-counted Extra-Time URLs** — a URL that ran (and was billed for) an Extra-Time continuation now shows its base credit **+1**, matching the amount actually charged. Relies on the companion Railway worker stamping `extra_time_charged` on the page result; older scans without the field show base credits only (backfill-safe, no warning).
+
+### Added
+
+- **The post-scan Extra-Time view now survives WordPress-admin navigation** — after "Rescan ET Candidates", leaving the scanner page and returning restores the ET URL list (with your selections) instead of discarding it, the same way the Step-4 results already persist. Stored client-side only (`localStorage`); cleared when you Start Scan or Run Another.
+
+UI + per-URL credit display only — no scan-behavior, rule-output, or billing change. Touched: `admin/js/scanner.js`, `admin/css/ai-assets-scanner-admin.css`, `includes/class-scan-status.php`.
+
+---
+
+## 1.7.16 — 2026-06-02
+
+### Fixed
+
+- **Probe: send a browser `Accept` header on the external target-stack probe** — some origin WAFs return HTTP 415 to header-poor requests; adding the standard browser Accept header prevents false negatives on those stacks.
+- **Probe: honest rejection classification** — a rejected/errored probe (4xx) now resolves to "probe failed" instead of "not WordPress", so a blocked probe is reported honestly and does not suppress the bypass on a real WordPress target.
+- **Probe: tiered cache TTL** — negative/indeterminate probe verdicts are now cached for 15 min (vs 24 h for positive detections) so a transient block (rate-limit / bot-challenge) self-heals on the next scan.
+
+Touched: `includes/scanner/class-plugin-detector.php`.
+
+---
+
+## 1.7.15 — 2026-05-31
+
+### Added
+
+- **Extra Time (ET) — opt a URL into a longer probe budget for +1 credit.** A new per-URL toggle lets you re-run any URL with Extra Time so the worker spends more time on it (typically yielding more unloads), at the cost of one additional credit.
+  - **Step 1 (Discover):** each URL row gains an "Extra Time" checkbox; bulk "Extra Time: all …" filters toggle every URL in the active group/filter at once. The credit badge reflects the surcharge (each ET-selected URL counts as +1 credit on top of its scan credit).
+  - **Step 4 (Results):** the per-URL results table gains an "Extra Time" column with a live checkbox on every **ET-candidate** row (paging-safe — selections persist across pages), plus an "Extra Time: all ET candidates" master toggle.
+  - **Rescan ET Candidates:** a new button beside "Run Another Scan" (shown when the result has ≥1 ET candidate) reloads Step 1 pre-loaded with exactly the checked ET URLs — each selected and **Extra Time pre-checked** — ready to start a focused, more-thorough rescan.
+  - The ET count is threaded through the reserve payload (AAS → SaaS) so the extra credits are reserved and charged correctly.
+
+Touched: `admin/js/scanner.js`, `admin/views/scanner-page.php`.
+
+---
+
+## 1.7.14 — 2026-05-30
+
+### Changed
+
+- **"ET candidate" column tooltip is now discoverable + instant** — a "?" help marker beside the header opens a styled tooltip on hover/focus, replacing the undiscoverable, ~1s-delayed native browser title.
+- **Top "Run Another Scan" hidden on short result lists** — when fewer than 10 URLs were scanned, only the bottom "Run Another Scan" shows; the top button's space is reserved (`visibility:hidden`) so the layout does not shift (no CLS).
+
+UI only — no scan-behavior, credit, or rule-output change. Touched: `admin/js/scanner.js`, `admin/css/ai-assets-scanner-admin.css`.
+
+---
+
+## 1.7.13 — 2026-05-30
+
+### Changed
+
+- **Results table: "ET" column renamed to "ET candidate"** with a hover tooltip ("ET candidates are URLs that would benefit from the worker spending extra time on them — likely yielding more unloads").
+- **"Run Another Scan" is now a secondary button**, shown both above and below the per-URL results table (previously a single text link).
+- **Second "Start Scan →" button** at the top of the discovered URL list (Step 1), mirroring the existing bottom one — easier to start a scan from a long list. Both share one submit path.
+
+Cosmetic UI only — no scan-behavior, credit, or rule-output change. Touched: `admin/js/scanner.js`, `admin/views/scanner-page.php`.
+
+---
+
+## 1.7.12 — 2026-05-30
+
+### Added
+
+- **"ET-candidate" column in the Step-4 results table** — a new rightmost flag column (`yes` / `—`) marking pages whose rule yield was cut short by the scan's probe time budget (a `deadline_bail` occurred) **and** that scanned cleanly on both devices. Surfaces the pages whose safe/aggressive results could improve with more probe time — a visibility aid only; it changes nothing about which rules ship. The flag reads a new per-page `deadline_bail_count` field from the scanner result, using an `ok`-only allowlist (`partial` / `error` / `blocked` / `skipped` pages never flag — bot/WAF-blocked pages are excluded by design). Touched: `includes/class-scan-status.php` (flag computed in `build_pages()`), `admin/js/scanner.js` (column render). Pairs with the CU Scanner Railway `deadline_bail_count` result field shipped the same day.
+
+---
+
+## 1.7.11 — 2026-05-27
+
+### Fixed
+
+- **API key persistence across reinstall** — plugin uninstall now preserves the saved `cu_scanner_api_key`, so an existing active key is reused after reinstall. Truly empty first-time installs still auto-register the next free API key.
+
+---
+
+## 1.7.10 — 2026-05-27
+
+### Fixed
+
+- **LiteSpeed Cache scan warning** — treats LiteSpeed Cache as an automatic bypass via `LSCWP_CTRL=before_optm` instead of requiring the operator to confirm a minification warning. The scan URL already runs before LiteSpeed optimization, so the warning checkbox is no longer shown for LiteSpeed-only cases.
+
+---
+
+## 1.7.9 — 2026-05-27
+
+### Fixed
+
+- **Free-key fresh-install scan start** — anonymous free-key activation now also caches the Railway worker URL returned by WPservice auth, and the scan start flow self-heals a missing cached Railway URL before reserving credits. If submit validation still fails after a reservation, AAS releases the reserved SaaS job token instead of leaving a stuck running job with no Railway heartbeat.
+
+---
+
+## 1.7.8 — 2026-05-26
+
+### Fixed
+
+- **Private updater stale transient cleanup** — removes cached AAS update responses whose `new_version` is already installed, both while WordPress saves update checks and while the Plugins screen reads the existing update transient. This prevents same-version update notices from lingering after a successful update.
+
+---
+
+## 1.7.7 — 2026-05-26
+
+### Fixed
+
+- **Speed Analyzer sidebar copy** — references AI Assets Scanner instead of Code Unloader.
+- **Private updater checksum lookup** — validates stale same-version update packages against the raw manifest checksum, avoiding a misleading "checksum is missing" error when WordPress keeps an old update transient after a successful update.
+
+---
+
+## 1.7.6 — 2026-05-26
+
+### Added
+
+- **Speed Analyzer sidebar card** — adds the same "Measure Your Gains" Speed Analyzer promotion card used by Code Unloader, linking to the WordPress.org Speed Analyzer plugin page.
+
+---
+
+## 1.7.5 — 2026-05-26
+
+### Added
+
+- **Anonymous free API key bootstrap** — empty installs now request a normalized-domain `cusk_Freekey_N` from WPservice on activation, and after SFTP updates on first admin load. If WPservice is temporarily unreachable, the plugin stores `cusk_Freekey_?`, schedules a retry, and blocks scans with a pending-activation message.
+- **Free-key checkout context** — free keys now pass the normalized domain and key into the Buy Credits URL so checkout can convert the free key to a paid key without treating `www` and non-`www` as different sites.
+
+---
+
+## 1.7.4 — 2026-05-26
+
+### Changed
+
+- **Bot-block / rate-limit / error warning copy on the scan-results banner** — "The mobile rules…" replaced with "The rules from the unblocked device…" so the phrasing is correct regardless of which device was actually blocked. Surfaced when an operator scan blocked **mobile** on `flyingpress.com` (the previous wording assumed desktop was always the blocked device). No behavior change. PHP banner (`includes/class-broken-banner.php` — 3 strings) + admin JS (`admin/js/scanner.js` — 3 strings) both updated; translation domains preserved, `esc_html__` wrappers preserved.
+
+---
+
+## 1.7.3 — 2026-05-26
+
+### Changed
+
+- **README feature list cleanup** removes older/superseded implementation-detail bullets and support/UI entries that no longer belong in the top-level feature list.
+- **Plugin dashboard metadata cleanup** removes the rating and review count from the AAS plugin row until accurate public review data exists.
+
+---
+
+## 1.7.2 — 2026-05-26
+
+### Added
+
+- **Private update channel support** for `updates.wpservice.pro`, including WordPress update metadata, plugin details metadata, and SHA256 package verification before update installation.
+- **Plugin dashboard metadata row** now matches the private-plugin information style used by Code Unloader, including View details, updated date, rating/review summary, requirements, tested-up-to value, and status.
+
+---
+
+## 1.7.1 — 2026-05-22
+
+### Changed
+
+- **Menu completion badge now renders as a centered block below the "AI Assets Scanner" label** instead of floating right (the float wrapped and bled into the next menu row for the long label). It sits in normal flow, so the menu row grows to fit it cleanly.
+- **"Sync with Code Unloader" button restyled to match Download / Push** (`button-primary`, was `button-secondary`).
+
+---
+
+## 1.7.0 — 2026-05-22
+
+### Added — Origin-unavailable status (Railway scanner companion)
+
+Handle the Railway scanner's new `origin_unavailable` per-page status (a page skipped because the customer origin was down — circuit-breaker tripped). `AIAS_Scan_Status::classify()` now returns a distinct **"Origin unavailable"** / `skipped` row with **0 credits** (previously fell through to a green "OK" row billed 1 credit — silent overbilling for a page that never scanned). Excluded from the billable page count via `ScannerAjax::billable_page_count()` so skipped pages aren't charged; `CuJsonBuilder::build()` skips them in the rule pass; new neutral-grey results-table badge (`.cu-row-skipped`) + JS counter key. `CU_SCANNER_VERSION` → 1.7.0 (cache-bust for the edited `scanner.js` + admin CSS).
+
+---
+
+## 1.6.2 — 2026-05-21
+
+### Changed
+
+- **Menu completion badge ("!") moved to the right end of the "AI Assets Scanner" menu row** (it previously wrapped to the lower-left). The JS now appends the badge inside `.wp-menu-name` and the CSS floats it right, mirroring WordPress's native update-count bubbles; when the label is too long to share the row it wraps just below. `CU_SCANNER_VERSION` → 1.6.2 to cache-bust `menu-badge.js`.
+
+---
+
+## 1.6.1 — 2026-05-21
+
+### Changed
+
+- **Push to Code Unloader skips the overwrite confirm when there are no active rules to overwrite.** The "This will save and overwrite…" dialog now appears only when Code Unloader actually has active rules; pushing into an empty Code Unloader proceeds immediately. The decision is server-authoritative — `push_to_cu` returns `needs_confirm` based on `RulePusher::has_active_cu_rules()` — so the warning cannot be skipped when rules do exist.
+
+### Added
+
+- **"Found a bug? Get in touch" button on the Step-4 results screen**, right-aligned beside the Download / Push / Sync buttons (previously the contact button appeared only on Step 1).
+
+### Internal
+
+- Added `RulePusher::has_active_cu_rules()`; `SCANNER_JS_VERSION` → 1.0.10.18, plugin → 1.6.1 to cache-bust `scanner.js`.
+
+---
+
+## 1.6.0 — 2026-05-21
+
+### Added
+
+- **"Sync with Code Unloader" button** on the Step-4 results screen, beside "Push to Code Unloader". Sync *appends* the scan's internal rules to Code Unloader's existing active rules (find-or-create the "AA Scanner — Safe/Aggressive" groups, then add rules) instead of overwriting. Duplicates are skipped via CU's `find_duplicate` and reported separately ("appended X … (Y already present)") — they never enter the active rules list or the count. No confirmation dialog (additive/safe). Hidden for external-only scans; on a mixed scan only internal rules are synced.
+
+### Changed
+
+- **Push to Code Unloader now confirms before overwriting** ("This will save and overwrite your existing Code Unloader rules. Continue?").
+- **Push and Sync now leave BOTH the Safe and Aggressive groups enabled** (Push previously enabled Safe only and left Aggressive disabled).
+
+### Internal
+
+- Extracted `RulePusher::build_rule_payload()` / `enable_both_groups()` and `ScannerAjax::filter_internal_rules()` shared by Push + Sync; `SCANNER_JS_VERSION` → 1.0.10.17, plugin → 1.6.0 to cache-bust `scanner.js`.
+
+---
+
+## 1.5.7 — 2026-05-20
+
+### Changed
+
+- **Cache-bust for the 1.5.6 "Scan ID:" results-table label.** The label change (results title `Scan <id>` → `Scan ID: <id>`) shipped in 1.5.6 without a version bump, so the deployed `scanner.js?ver=1.5.6` kept serving from cache — a browser hard-refresh didn't help because a CDN/host cache fronts the versioned asset URL. Bumped plugin version → 1.5.7 and `SCANNER_JS_VERSION` → 1.0.10.16 to force a fresh fetch (new `?ver=` URL) and provide a console marker for deploy verification. Version constants only — no behavioral code change.
+
+---
+
+## 1.5.6 — 2026-05-20
+
+### Changed
+
+- **Per-URL results table: URL cells render in sans-serif** (was monospace), for a cleaner look consistent with the rest of the table. `.cu-url-table td.cu-url-cell` font-family changed; plugin version → 1.5.6 to cache-bust the stylesheet.
+- **Results table title now reads "Scan ID: &lt;id&gt;"** (was "Scan &lt;id&gt;") for clarity. Label-only change in `scanner.js`; no version bump (folded into 1.5.6).
+
+---
+
+## 1.5.5 — 2026-05-20
+
+### Fixed
+
+- **Mixed selection (Discover pages + an Include URL) scanned only the Include URL.** When the operator selected pages from the Discover list AND added an external URL in the Include box, the Start Scan handler mis-detected "include-only mode": its `groupedUrls.included !== undefined` check is true whenever any include URL exists (set by `syncIncludedUrls()`), even in mixed mode — so it replaced the selected discovery pages with just the include URL, and only the external URL got scanned. Mode detection now keys on a dedicated `discoveryRan` flag (set only by a completed Discover run). Include-only mode still re-reads the textarea (FU-NEW-6 behavior preserved); mixed/Discover mode now merges the include URLs into the selected pages via `syncIncludedUrls()` (union — all selected URLs are scanned). The external-URL count in the safety modal stays accurate. JS-only; `SCANNER_JS_VERSION` → 1.0.10.15, plugin → 1.5.5 to cache-bust scanner.js.
+
+---
+
+## 1.5.4 — 2026-05-20
+
+### Fixed
+
+- **Scan ID display mismatch (Bug 1).** The Step-4 results table (and broken-banner) showed a 16-char scan id (`f6bfc683f8af4bd4`) while the SaaS dashboard and Railway logs use the 12-char canonical form (`f6bfc683f8af`). `do_build_result()` now returns `substr(scan_id, 0, 12)` for display so the operator can cross-reference a scan across AAS / SaaS / Railway.
+- **Per-URL table missing after a background-completed scan (Bug 2).** When the operator navigated away during a scan and returned after it finished, Step 4 restored from a 1.4.11 summary snapshot that predated the per-URL feature, so the table was absent. `do_build_result()` now persists the full Step-4 restore payload (per-URL `pages` + 12-char `scan_id` + counts) to the `aias_last_result` option; `get_badge_state()` returns it verbatim, and `menu-badge.js`'s `triggerBuildResult` localStorage write now carries `pages`/`scan_id` too. Both background-restore paths (JS-driven `triggerBuildResult` and the server-driven badge poller) rebuild the complete results screen on return.
+
+### Housekeeping
+
+- `uninstall.php` now also deletes the `aias_last_result`, `aias_last_seen_scan_id`, and `aias_dismissed_warnings` options (the `aias_*` options previously leaked on plugin deletion).
+
+---
+
+## 1.5.3 — 2026-05-20
+
+### Changed
+
+- **Per-URL results table UI polish.** Moved the table below the action buttons and "Run Another Scan" link (it previously sat between the summary line and the buttons). Renamed the credits column header `Cr.` → `Credits`. Reformatted the per-URL asset counts from `S1 A17 N44` to `S:1 A:17 N:44` for readability. JS/view-only change; bumped `SCANNER_JS_VERSION` → 1.0.10.14 and plugin version → 1.5.3 to cache-bust `scanner.js`.
+
+---
+
+## 1.5.2 — 2026-05-20
+
+### Fixed
+
+- **Per-URL results table never rendered — `cu_scanner_build_result` returned a 500 (fatal).** `do_build_result()` lives in namespace `CUScanner\Admin` but called the global `AIAS_Scan_Status::build_pages()` without a leading backslash, so PHP resolved it to the non-existent `CUScanner\Admin\AIAS_Scan_Status` and threw `Error: Class not found`. The fatal fired at the very end of `do_build_result()` — *after* the scan-history write — so scans still recorded safe/aggressive counts, but the AJAX response was a 500 HTML error page that the JS couldn't parse as JSON, and the Step-4 table never appeared. The unit tests missed it because they invoke `\AIAS_Scan_Status` from the global test scope, bypassing the namespaced production call site (the "test seam bypasses plumbing" trap). Fixed by qualifying the call as `\AIAS_Scan_Status::build_pages()`, matching the existing `\AIAS_Broken_Banner::on_submit_job()` convention in the same file. PHP-only fix; no asset cache-bust needed.
+
+---
+
+## 1.5.1 — 2026-05-20
+
+### Fixed
+
+- **Step-1 discovery list stopped rendering after 1.5.0 (regression).** The 1.5.0 per-URL results table reused the DOM id `cu-url-list` and the JS function name `renderUrlList()` — both already owned by the Step-1 discovered-URL list. Because a later JS function declaration wins for the whole scope, the Step-4 `renderUrlList(pages, scanId)` overrode the discovery renderer, so clicking **Discover** called it with no arguments, hit the empty-guard, and hid the discovered URLs (only the "Re-discover" button remained). Fixed by namespacing the Step-4 feature: the results container is now `#cu-result-url-list`, and its renderers are `renderResultUrlList()` / `renderResultUrlListPage()`. The Step-1 discovery code (`renderUrlList()`, `#cu-url-list`, `.cu-url-list`) is left untouched. Plugin version bumped to 1.5.1 (and internal `SCANNER_JS_VERSION` → 1.0.10.13) so the cached `scanner.js?ver=1.5.0` is busted on redeploy.
+
+---
+
+## 1.5.0 — 2026-05-20
+
+### Added
+
+- **Per-URL results table on the scan results screen (Step 4).** Each scanned URL gets its own row — number, URL, status, credits spent, and S/A/N asset-bucket counts — with status-driven row colors (green OK · yellow one-device failure · orange bot-protection/WAF block · red page error) and 25-per-page pagination. S/A = the safe/aggressive rules generated for that URL (so per-URL counts sum to the scan totals); N = assets left in place. Status, credits, and counts are derived server-side in `do_build_result()` (per-page tallies emitted by `CuJsonBuilder::build()` in its single rule pass + the broken-banner reason taxonomy via `AIAS_Scan_Status`); the table restores on reload from the cached result snapshot.
+
+---
+
+## 1.4.14 — 2026-05-20
+
+### Fixed
+
+- **Phase 2a broken-device guard: suppress per-device safe emits for a BLOCKED device.** `CuJsonBuilder::combine()` previously emitted the `absent,needed` → safe-desktop and `needed,absent` → safe-mobile rules whenever both Phase 2a flags were on — even when the device whose probe registered "absent" had actually been *blocked* (e.g. `tier1_http_4xx`). A blocked device's assets register wholesale-`absent` as an artifact, and the Phase A visual-diff demote net does not run on a blocked device, so those emits shipped unvalidated wholesale unloads (trigger: customer-d.example flood-emitted 43 safe-desktop unloads off a blocked desktop probe). `build()` now derives a per-device blocked map from each page's `broken_devices` array (untrusted Railway HTTP input — `is_array` guard, `(string)` casts on `device`/`reason`, allowlist `{desktop,mobile}`, non-empty `reason` required; mirrors the existing `class-scanner-ajax.php` walk) and passes it into `combine()`, which suppresses the safe-desktop emit when desktop is blocked and the safe-mobile emit when mobile is blocked. Missing or malformed `broken_devices` is treated as not-blocked (D5 safety — the emit proceeds), so healthy scans and the wpservice.pro EB case are unaffected. All 7 other `combine()` cells are byte-identical regardless of block state.
+
+### Testing
+
+- `CuJsonBuilderTest` +5 cases: blocked-desktop suppresses safe-desktop; blocked-mobile suppresses safe-mobile; control (no `broken_devices`) still emits safe-desktop; non-Phase-2a cells unchanged under a desktop block; malformed/reason-less `broken_devices` treated as not-blocked. 30/30 pass. Pre-existing 15-error baseline unchanged.
+
+---
+
+## 1.4.13 — 2026-05-20
+
+### Changed
+
+- **Scanner group names + source labels rebranded "CU Scanner" → "AA Scanner".** Pushed groups now read `AA Scanner — Safe` / `AA Scanner — Aggressive` (and versioned history `AA Scanner — … vN`); the pushed `source_label` is now `AA Scanner` and snapshot rows `AA Scanner Snapshot`. Affects future pushes only — existing rows in a connected Code Unloader DB are renamed by Code Unloader's 1.5.3 migration (Code Unloader ≥ 1.4.7). The internal `CUScanner\Scanner` namespace and `CU_SCANNER_VERSION` constant are unchanged (broader identifier rebrand still deferred).
+
+### Testing
+
+- `CuJsonBuilderTest`, `GroupVersionManagerTest`, `RulePusherTest`, `SnapshotManagerTest` updated to assert the new names; scoped grep confirms zero `CU Scanner` in the four scanner classes + their tests. Pre-existing 15-error baseline unchanged.
+
+---
+
+## 1.4.12 — 2026-05-20
+
+### Added
+
+- **Phase 2a: asymmetric-absent unblock (default-off, Railway-payload-gated).** `CuJsonBuilder::combine()` now emits per-device safe rules for the two asymmetric-absent cell shapes that previously produced no rule: `absent,needed` → safe desktop-only rule; `needed,absent` → safe mobile-only rule. Both emissions are gated behind two flags carried from the Railway scan-result payload: `combine_asymmetric_absent_enabled` AND `visual_diff_enabled` must both be `true`. The structural guard (`visual_diff_enabled`) ensures no per-device safe rule is ever emitted without the Phase A visual-diff demote safety net active. When both flags are absent or `false`, behavior is identical to 1.4.11 (the two cells remain empty). Expected F-MISS recovery: +1–2 safe rules/scan on EB-heavy sites.
+- **`do_build_result()` threads `$status['flags']` into `CuJsonBuilder::build()`.** The Railway HTTP response `flags` field (added by Task 3/5 on the Railway side) is now read and passed through. The field is treated as untrusted input: guarded with `is_array`, and individual flag values receive defensive `(bool)(... ?? false)` casts inside `build()` (D5 safety invariant — missing or non-bool flags default to `false`).
+
+### Testing
+
+- 6 new `CuJsonBuilderTest` PHPUnit tests covering AC-V9a-1/2/3/7 + D5 missing-flags safety invariant + other-cells-unchanged invariant across all flag combos. 25/25 `CuJsonBuilderTest` pass; 10/10 `ScannerAjaxTest` pass; pre-existing 15-error baseline (`FakeRuleRepository::create_group_item()`) unchanged.
+
+---
+
+## 1.4.11 — 2026-05-18
+
+### Fixed
+
+- **Menu badge: complete architectural fix (closes the 1.4.3-introduced regression chain).** The badge now appears reliably within ~30s when a scan completes while the operator is on any other wp-admin page, AND returning to AAS restores the Step 4 result screen directly. Closes the four production failures observed across 1.4.3 → 1.4.6 (operator-flagged "badge only after AAS-return + animation", "no badge during wait + no Step 4 on return") and the architectural dead-ends discovered during 1.4.7-diag / 1.4.8-diag investigation.
+- **Root cause** (proven by 1.4.8-diag triangulation logs in `debug (3).log`): another plugin on the operator's WP install replaces `wp_ajax_heartbeat` with a custom handler that short-circuits `apply_filters('heartbeat_received', ...)`. The 1.4.5 server-side polling fix registered correctly but the filter never fired — `MenuBadge::init()` and `filter_menu_title()` produced log entries, `filter_heartbeat()` produced zero. The Heartbeat-channel architecture was unrecoverable on this install.
+
+### Architecture
+
+- **Browser-driven setInterval polling.** `admin/js/menu-badge.js` now runs a `setInterval(30000)` (first poll at 2s after page-load) that POSTs to a new AJAX action `cu_scanner_get_badge_state`. Independent of WP Heartbeat, independent of operator navigation. The 30s cadence matches the "look away then back" UX window without hammering the server.
+- **New AJAX endpoint `cu_scanner_get_badge_state`.** Authenticated (nonce + `manage_options`), thin wrapper that calls `MenuBadge::run_polling_check_and_get_state()` (new public method). The poll method drives the same Railway-status → ScanHistory-update → `do_build_result` path the 1.4.5 server-side code used — but now triggered by JS timer instead of the bypassed Heartbeat filter.
+- **`admin_init` poller as supplementary trigger (1.4.9 path retained).** Both `admin_init` and the JS setInterval converge on the same `check_active_job_completion()` method (idempotent + transient-deleted-on-success). Two independent triggers means the badge appears whether the operator navigates frequently (admin_init wins) or sits idle (setInterval wins).
+- **`result` snapshot in the AJAX response** (1.4.11 fix). When badge state is `'green'`, the response also includes `{job_id, safe_count, agg_count, can_push, external_only:false, total_pages}` synthesized from the most-recent unseen `'complete'` ScanHistory record. The JS poller writes this to `localStorage.cu_scanner_result` (guarded by job_id mismatch so it can't clobber a fresher entry written by scanner.js on the AAS tab). `scanner.js` init at `admin/js/scanner.js:1349` reads exactly that key on AAS-return and runs the existing `restoreStep4` flow — no Step 1 default screen anymore.
+
+### Iteration history (1.4.7-diag → 1.4.11)
+
+- **1.4.7-diag** — moved diagnostic `error_log` to the top of `check_active_job_completion` (1.4.6 logged AFTER the early-return, so "filter not firing" and "transient missing" produced identical evidence). Result: still zero entries in `debug (2).log` — confirmed filter_heartbeat doesn't fire.
+- **1.4.8-diag** — added triangulation logs at `MenuBadge::init()` + `filter_menu_title()` + `filter_heartbeat()`. Result (`debug (3).log`): init fires 9 times (mostly during AJAX, `doing_ajax=1`), `filter_menu_title` fires once on regular page render, `filter_heartbeat` NEVER fires. Definitively isolated the bypass.
+- **1.4.9** — pivoted server-side polling from `heartbeat_received` filter to `admin_init` action with 15s transient rate limiter. WP-core hook fires on every admin request including admin-ajax.php; much harder to bypass than the Heartbeat-specific filter chain. Production result (`debug (4).log`): polling worked but missed scan-end transition window when operator sat idle on one page during the 35-second scan-end gap.
+- **1.4.10** — added the JS setInterval poller + `cu_scanner_get_badge_state` AJAX endpoint. Decoupled badge state sync from operator navigation entirely. Operator confirmed green badge appears reliably during scan-in-progress.
+- **1.4.11** — added the `result` snapshot to the AJAX response + JS-side `localStorage.cu_scanner_result` write so AAS-return restores Step 4 instead of falling back to the Step 1 default. End-to-end validated by operator 2026-05-18 PM.
+
+### Technical
+
+- **New method `MenuBadge::run_polling_check_and_get_state(): ?string`** — public wrapper around `check_active_job_completion()` + `get_badge_state()` so the new AJAX handler can drive both in one call.
+- **New AJAX action `cu_scanner_get_badge_state`** registered in `ScannerAjax::register()` alongside the existing 15 actions; handler runs nonce + cap check via `$this->check()` then returns `{badge, result}`.
+- ~125 LOC added across 3 files (menu-badge.js, class-scanner-ajax.php, class-menu-badge.php). `CU_SCANNER_VERSION` + plugin header bumped 1.4.6 → 1.4.11 for JS cache-bust on next page load.
+
+### Testing
+
+- 13/13 `MenuBadgeTest` + 10/10 `ScannerAjaxTest` pass locally. `PluginDetectorTargetProbeTest` 146/146 + `ProbeTargetStackEndpointTest` 4/4 unchanged (no scan-pipeline modification).
+- Snapshot/RulePusher pre-existing `FakeRuleRepository::create_group_item()` test-stub errors verified pre-existing (confirmed by stash + baseline rerun); unrelated to menu-badge changes.
+- Manual smoke MS-AC-HF-1 (start scan, navigate to any wp-admin page, badge appears within ~30s of scan completion) and MS-AC-HF-2 (return to AAS post-completion → Step 4 renders with result counts populated, no Step 1 flash) validated end-to-end by operator post-SFTP-deploy 2026-05-18 PM.
+
+### Compliance
+
+- P10 wp-compliance re-confirmed: new AJAX endpoint uses the existing `cu_scanner_nonce` + `manage_options` capability check via `ScannerAjax::check()`. No new SQL, no new input handling beyond the nonce, no escape contract change (response is `wp_send_json_success` with synthesized array — same shape as existing endpoints). JS `localStorage` write uses idempotent `setItem` with `JSON.stringify` of server-supplied integer/boolean/string fields — no DOM injection, no XSS surface.
+
+---
+
+## 1.4.6 — 2026-05-18
+
+### Diagnostic
+
+- **Added diagnostic `error_log` checkpoints to `MenuBadge::check_active_job_completion()`** so the 1.4.5 server-side polling chain is traceable in WP debug.log when the badge fails to fire. Post-1.4.5 production test showed zero AAS entries in debug.log despite the badge never appearing — couldn't distinguish "method never fires" from "method fires successfully every time." Now the path emits log entries at each checkpoint: transient-present, Railway-status, do_build_result-firing, do_build_result-OK / failed. Whatever entry is MISSING in the next operator-reproduced debug.log tells us where the chain breaks. Entries fire ONLY when there's an active scan (transient present), so no log spam.
+
+### Fixed
+
+- **Badge-flash-on-next-navigation timing race** (UX bug surfaced by operator 2026-05-18 PM: "if you are chaining the green ! only after animation you need to replace it with something else"). When the operator was away from AAS, scan finished server-side, and operator then returned to AAS, the flow was: scanner.js detects active sessionStorage → polls Railway → fires `cu_scanner_build_result` AJAX → status flips to `'complete'` in ScanHistory → operator sees result. But `mark_seen_on_main_page` (the admin_head hook) had already run earlier in the page render, at which point ScanHistory still had `'queued'` — so `aias_last_seen_scan_id` was never updated. On the operator's NEXT navigation away from AAS, `add_menu_classes` filter saw `aias_last_seen_scan_id` was empty while the latest scan was `'complete'` → green badge fired AFTER the operator had already seen the result.
+- **Fix:** the `cu_scanner_build_result` AJAX handler now ALSO calls `update_option('aias_last_seen_scan_id', $job_id)` after `do_build_result()` succeeds. This AJAX endpoint is reachable only from authenticated AAS-scanner-page scanner.js, so the operator IS viewing the result by the time it fires — marking-seen there avoids the next-nav flash. The server-side Heartbeat-driven path (`MenuBadge::check_active_job_completion`) intentionally does NOT call `update_option` because that path runs when the operator is AWAY from AAS, and the badge SHOULD fire in that case.
+
+### Technical
+
+- ~25 LOC added across 2 files. No new tests required (existing 13/13 still pass; the `error_log` calls and `update_option` are pure side-effects, mechanically verified by `php -l` + manual smoke).
+- Diagnostic `error_log` entries are intentionally kept permanent — they'll be useful in any future scan-completion debugging session and only fire during active scans (~1 entry per active scan, ~5 per scan total).
+
+### Compliance
+
+- P10 wp-compliance re-confirmed: only adds `error_log` (intentional production diagnostic, scope-limited) + `update_option` on the same `aias_last_seen_scan_id` key already used by `mark_seen_on_main_page`. No new SQL, no new AJAX endpoint, no new input handling, no escape contract change. AJAX handler's nonce/cap check unchanged.
+
+---
+
+## 1.4.5 — 2026-05-18
+
+### Fixed
+
+- **Menu badge still didn't fire reliably when operator was away from AAS** (architectural pivot after 1.4.4 client-side approach proved unreliable in production). DevTools diagnostic on the Plugins page confirmed menu-badge.js's `maybeCheckActiveJob` polling WAS firing (visible `status?from=0` fetches every ~15s) but **zero `cu_scanner_build_result` calls ever fired** — the chain broke somewhere between Railway response and the terminal-status dispatch in JS, and after multiple iterations the root cause couldn't be reliably reproduced in client diagnostics.
+- **Pivot: 1.4.5 moves the polling to the server side.** Reuses the existing WP Heartbeat channel that's already calling `MenuBadge::filter_heartbeat()` every ~15s. The handler now ALSO checks for an active job (read from the existing `cu_scanner_job_<user_id>` transient set at `class-scanner-ajax.php:389-394`), polls Railway via the existing `RailwayClient::get_status()` (same code path scanner.js uses, but server-to-server — no CORS, no browser-tab-state dependency, no Heartbeat throttling), and on terminal status invokes the refactored-to-be-callable `do_build_result()` method. The badge then appears on the NEXT heartbeat tick (same response cycle) since `aias_badge` is computed from the freshly-updated `cu_scanner_history`.
+- The 1.4.4 client-side `maybeCheckActiveJob` stays as supplemental — no harm if it occasionally fires too; the underlying `do_build_result` is idempotent on already-`complete` records.
+
+### Technical
+
+- **`ScannerAjax::build_result()` refactored** — extracted the Railway-fetch + CuJsonBuilder + ScanHistory update + pages_blocked computation into a new public callable `do_build_result( string $job_id, string $job_token ): array` (~80 LOC moved, throws `RuntimeException` on error, returns the response payload). The AJAX handler now thinly wraps it with nonce + cap check + `wp_send_json_*`. Existing AJAX call path from `scanner.js` is unchanged (same nonce, same response shape, same error semantics).
+- **`MenuBadge::check_active_job_completion()`** new private method called by `filter_heartbeat()` BEFORE returning the badge state. Reads `cu_scanner_job_<user_id>` transient → constructs `RailwayClient` with `Settings::get_api_key()` + `railway_url` from transient → calls `get_status()`. On `'complete'` invokes `ScannerAjax::do_build_result()`; on `'failed'` updates ScanHistory + deletes transient; on `'killed'` / `'cancelled_timeout'` just deletes the transient; on `'queued'` / `'in_progress'` no-ops. Safety net: if `do_build_result` throws (e.g., Railway 410 — job data expired between status poll and coverage fetch), the scan is force-failed and the transient deleted to break the poll loop.
+
+### Testing
+
+- **`MenuBadgeTest` grows from 11 → 13 tests** (~95% coverage of the new method's early-return paths via `filter_heartbeat` integration tests). The Railway-fetch + dispatch paths can't be cleanly unit-tested without significant DI refactoring of `RailwayClient` — they're covered by the operator's MS-AC-HF-1 manual smoke (badge appears while away from AAS).
+- `PluginDetectorTargetProbeTest` 146/146 + `ProbeTargetStackEndpointTest` 4/4 unchanged (no scan-pipeline modification).
+- Existing scanner.js `buildResult` AJAX path verified intact by the refactor's non-breaking signature change (the AJAX handler still reads the same `$_POST['job_id']` + `$_POST['job_token']`, validates the same way, returns the same response shape).
+
+### Why the 1.4.4 client-side approach failed (lesson)
+
+The client-side approach had too many fragile interactions to diagnose reliably without invasive instrumentation: CORS preflight, browser tab focus/Heartbeat throttling, sessionStorage same-tab assumption, Railway response-shape variance between scanner.js's `from=<incremental>` polls vs menu-badge.js's `from=0` polls. Each diagnostic cycle eliminated one but the architecture had too many moving parts. Server-side polling consolidates everything into one PHP method on one well-known WP hook — easy to inspect via `error_log`, no browser variables, no client-state assumptions.
+
+### Compliance
+
+- P10 wp-compliance re-confirmed: refactor is non-breaking (same nonce/cap check, same input validation). New `MenuBadge` method uses `get_transient` + existing `RailwayClient` (already URL-allowlist-validated via `Settings::is_safe_railway_url`) + `wp_remote_get` (via `RailwayClient`). No new SQL, no new AJAX endpoint, no new input handling, no escape contract change. Heartbeat context is already authenticated admin — no new capability surface.
+
+---
+
+## 1.4.4 — 2026-05-18
+
+### Fixed
+
+- **Menu badge appeared only after operator returned to AAS** (architectural follow-up to 1.4.3). The 1.4.3 spec assumed `cu_scanner_history`'s status would flip to `'complete'` as soon as a scan finished server-side, but the flip actually requires the client-side `cu_scanner_build_result` AJAX to fire — which only happens on the AAS scanner page. So when the operator started a scan and navigated to another wp-admin page, the badge never appeared until they returned to AAS, viewed the result, and then navigated away again. The opposite of the intended "ping me when scan finishes" flow.
+- **Fix:** `admin/js/menu-badge.js` now does background active-job polling on every Heartbeat tick. If `sessionStorage.cu_scanner_active_job` is present, the script polls Railway directly (same call shape as `scanner.js:pollProgress`) and, on a terminal status (`'complete'` / `'failed'` / `'killed'` / `'cancelled_timeout'`), fires the appropriate AAS-side AJAX (`cu_scanner_build_result` / `_handle_failure` / `_handle_killed`) to flip the status server-side. Within ~15-30 seconds of scan completion the badge appears next to the AAS menu item — even when the operator is sitting on Dashboard, Posts, or any other wp-admin page.
+- **Bonus UX improvement:** when the operator returns to AAS after a background-completed scan, the page now renders step 4 (results) directly — `cu_scanner_result` is written to localStorage by the background poller, so there's no "scanning..." animation flash + 1-second snap-to-result that operators reported in 1.4.3.
+
+### Technical
+
+- New `wp_localize_script` call in `MenuBadge::enqueue_heartbeat_listener()` exposes `aiasMenuBadgeData = { ajaxurl, nonce }` (nonce action `cu_scanner_nonce`, matching the existing scanner.js usage + `ScannerAjax::check()` validation at `admin/class-scanner-ajax.php:42`).
+- ~70 LOC added to `admin/js/menu-badge.js`: `maybeCheckActiveJob()` + `handleStatus()` + `triggerBuildResult()` + `triggerHandleFailure()` + `triggerHandleKilled()` helpers. No new AJAX endpoints — all reuse existing `cu_scanner_*` actions.
+- `CU_SCANNER_VERSION` 1.4.3 → 1.4.4 cache-busts the JS on next page load.
+
+### Known limitations (accepted)
+
+- **Multi-tab:** `sessionStorage` is per-tab. If the operator starts a scan in Tab A and opens a brand-new Tab B at the wp-admin URL, Tab B has no `cu_scanner_active_job` and won't poll. Tab A still polls normally. Single-tab navigation (operator clicks WP admin menu items in the same tab where AAS lives) is fully covered — that's the case operators actually hit.
+- **Concurrent build_result firing:** if AAS tab is open AND another tab is also polling via menu-badge.js, both can fire `cu_scanner_build_result`. The PHP handler is idempotent — second call on an already-`'complete'` record just re-writes the same data. The `cu_scanner_scan_complete` action hook may fire twice; no known listeners are non-idempotent today.
+
+### Testing
+
+- PHP regression unchanged: 11/11 `MenuBadgeTest` + 146/146 `PluginDetectorTargetProbeTest` + 4/4 `ProbeTargetStackEndpointTest` (no PHP test surface affected; behavior change is JS + 1 line PHP for `wp_localize_script`).
+- Manual smoke AC-HF-1 (start scan, navigate away, badge appears ~15-30s after scan finishes on Railway) and AC-HF-3 (return to AAS post-completion → step 4 renders directly with results, no flash) require operator post-deploy validation.
+
+### Compliance
+
+- P10 wp-compliance re-confirmed: no new SQL, no new AJAX endpoints, no new escape contract, no new input handling. `wp_localize_script` exposes only `ajaxurl` (already a WP-core global) + a nonce — no secrets. AJAX calls from `menu-badge.js` use the same `cu_scanner_nonce` already validated by `ScannerAjax::check()` on every existing handler.
+
+---
+
+## 1.4.3 — 2026-05-18
+
+### Added
+
+- **Menu badge for completed-but-unseen scans.** A small `!` badge now appears next to "AI Assets Scanner" in the WP admin menu when a scan finishes while you're on a different admin page. Green for `'complete'` (success), red for `'failed'`. Disappears when you visit the main AAS scanner page. Updates live via WordPress's built-in Heartbeat API (~15s polling — no manual refresh needed). Cancelled scans (`'cancelled'`) do NOT trigger the badge — you already know you cancelled it.
+- **URL count in scan-complete summary.** Result line now reads `Scan complete. N URLs scanned, S safe rules, A aggressive rules generated.` (was: missing the URL count). Works on both the live success path and the page-reload restore path; data sourced from `total_pages` already in the server response.
+
+### Technical
+
+- New `CUScanner\MenuBadge` class at `includes/class-menu-badge.php` — single-responsibility, DI-constructor-injected `ScanHistory` for testability. Registers `add_menu_classes` filter (server render), `heartbeat_received` filter (live update), `admin_head-toplevel_page_cu-scanner` hook (mark-seen), `admin_print_styles` (inline CSS), `admin_enqueue_scripts` (load JS).
+- New `admin/js/menu-badge.js` — Heartbeat-tick listener that syncs the badge DOM node based on the server response field `aias_badge` (`'green' | 'red' | null`).
+- New WP option `aias_last_seen_scan_id` — tracks the most-recent badge-triggering scan job_id the operator has viewed. Global key (site-wide, single value).
+
+### Testing
+
+- **New `MenuBadgeTest`** — 11 WP_Mock unit tests covering AC-MB-1, -2, -3, -4, -5, -7, -8, -10, -11, -12 + Minor 6 conditional `update_option`.
+- Existing 146/146 `PluginDetectorTargetProbeTest` + 4/4 `ProbeTargetStackEndpointTest` unchanged.
+
+### Compliance
+
+- P10 wp-compliance re-confirmed: no new SQL, no new AJAX endpoints (Heartbeat is WP-core), no new escape contract, no new user input handling, no `$_*` reads. `get_option` + `update_option` on one new key only. wp-compliance 27/27 clean.
+
+---
+
+## 1.4.2 — 2026-05-18
+
+### Fixed
+
+- **Start Scan silent no-op after Discover Pages with subset selection (FU-NEW-6 regression).** Clicking Discover, unselecting some URLs, and clicking Start Scan produced no scan attempt, no modal, and no console error — the click handler bailed silently. Root cause: `syncIncludedUrls()` at `admin/js/scanner.js:500` was unconditionally setting `groupedUrls.included = newIncluded` even when `newIncluded` was an empty array (the post-Discover sync at line 546 reads an empty Include URLs textarea). This polluted the FU-NEW-6 include-only-mode predicate at the Start Scan handler (line 841 — `groupedUrls.included !== undefined`), which wrongly evaluated TRUE on every Discover→Scan flow and short-circuited at line 844 (`if (includeList.length === 0) return;`). Fix: only assign the `included` key when there are actual include URLs; `delete` it otherwise. Restores the FU-NEW-6 author's documented intent that `groupedUrls.included !== undefined` ⟺ include URLs exist. Bumps `CU_SCANNER_VERSION` 1.4.1 → 1.4.2 for cache-bust on the `?ver=` query of the enqueued JS asset (per `feedback_cache_bust_on_enqueue_change.md`).
+
+### Compliance
+
+- No PHP / SQL / AJAX / REST / `$_*` surface change. JS-only bug fix. wp-compliance trivially clean.
+
+### Testing
+
+- PHP regression unchanged: 146/146 PluginDetectorTargetProbeTest + 4/4 ProbeTargetStackEndpointTest (no PHP modifications).
+- Manual JS trace verified on 4 scenarios: (1) Discover → unselect/select subset → Scan now proceeds; (2) Pure include-only multi-scan (original FU-NEW-6 case) still works; (3) Pure include-only with empty textarea correctly short-circuits with no scan (intentional); (4) Discover + textarea-added URL still routes through include-only path as pre-1.4.2 (unchanged behavior).
+
+---
+
+## 1.4.1 — 2026-05-17
+
+### Added
+
+- **Host-level cache detection (target-side probe).** Three new Class B `OPTIMIZERS` entries detect managed-WP host page caches via response headers:
+  - **Kinsta Page Cache** — matches `x-kinsta-cache` header.
+  - **WP Engine Page Cache** — 4-pattern coverage: `x-cache-group: normal`, `x-cacheable: short`, `x-cacheable: no-cacheable`, `x-powered-by: wp engine`.
+  - **Pantheon Edge Cache** — matches `x-pantheon-styx-hostname` or `x-styx-req-id` (Fastly via Styx).
+
+  Previously these hosts returned silent `no_clue` outcomes despite emitting clean fingerprint headers. AAS now identifies the host and surfaces it in the probe outcome modal. Informational only — AAS's existing unique-query-suffix scan flow auto-bypasses query-aware caches ambiently.
+
+- **Host-level cache detection (operator-side `detect()`).** New `HOST_FINGERPRINTS` table walks per-host detector callables and merges hits into `$result['soft_warn']`:
+  - **Kinsta** — file_exists check on `WPMU_PLUGIN_DIR/kinsta-mu-plugins/kinsta-mu-plugins.php`.
+  - **WP Engine** — file_exists check on `WPMU_PLUGIN_DIR/wpengine-common/plugin.php`.
+  - **Pantheon** — `defined('PANTHEON_ENVIRONMENT')` with non-empty/non-null value check.
+
+  Each soft_warn entry includes a runbook tail (`Manual cache flush: <Dashboard path>`). MU-plugins and hosting-defined constants don't appear in `is_plugin_active()`, so this gap was previously invisible.
+
+### Technical
+
+- **Injectable-override detector pattern.** New private static properties `$mu_plugin_dir_override` + `$pantheon_env_override` allow tests to swap detection state without touching PHP's define-once constants. Production fall-through preserved (overrides default to `null`, helpers fall through to the real `WPMU_PLUGIN_DIR` / `PANTHEON_ENVIRONMENT`).
+
+- **New test seams (public-static):** `__test_set_mu_plugin_dir_override`, `__test_set_pantheon_env_override`, `__test_detect_kinsta_host`, `__test_detect_wpe_host`, `__test_detect_pantheon_host`.
+
+### Testing
+
+- 17 new tests, 146 total in `PluginDetectorTargetProbeTest` (was 129):
+  - 7 new `target_header_fixtures` rows (1 Kinsta + 4 WP Engine + 2 Pantheon).
+  - 6 per-host detector tests (3 positive + 3 negative; same-process via override pattern).
+  - 2 foundation tests (override-setter seam verification).
+  - 1 `@runInSeparateProcess` fall-through test (pantheon_env_defined production path; Mi-r2-3 closure).
+  - 1 integration test verifying `detect()` populates `soft_warn` for hosting.
+- Existing 4/4 `ProbeTargetStackEndpointTest` continues to pass unchanged.
+
+### Known limitations
+
+- **WP Engine behind Cloudflare** — when a WPE site is fronted by Cloudflare, CF can strip `X-Cacheable`, `X-Cache-Group`, and `X-Powered-By` headers before the response reaches the probe. In the worst case all 4 patterns are absent and target-side probe falls back to `no_clue`. Operator-side `HOST_FINGERPRINTS` is a fallback only for THIS operator's install (probing my-site.com from a Kinsta operator install), NOT for cross-stack probing (probing a Cloudflare-fronted-WPE target from any operator).
+
+### Compliance
+
+- P10 wp-compliance re-confirmed: no new SQL surface, no XSS surface, no new escape contract, no nonce/cap surface, no new endpoints, no new remote requests, no new file-write operations. `file_exists()` reads on `WPMU_PLUGIN_DIR`-anchored paths only. `defined()` + `constant()` on internal-constant name only.
+
+---
+
+## [1.4.0] — 2026-05-17
+
+### Added — Optimizer Fingerprint Broadening (T1 + T2 + T3 bundled)
+
+**Diagnostic trigger:** scanning `flyingpress.com` (real FlyingPress-cached site) returned `outcome: 'no_clue'` despite a clear `<!-- Powered by FlyingPress … Cached at 1778932465 -->` marker as the last line of the response. Root cause was three compounding gaps in the target-stack probe ([`includes/scanner/class-plugin-detector.php`](includes/scanner/class-plugin-detector.php)):
+
+1. `target_headers` empty for FlyingPress, despite the plugin emitting `x-flying-press-cache: HIT` + `x-flying-press-source: Web Server` on every cached page
+2. `target_body_markers` list contained `'Optimized by FlyingPress'` (legacy) but the current plugin emits `'Powered by FlyingPress'`
+3. Pass-2's 8KB-tail-only fallback left a dead zone between bytes 32,768 and `(body_len − 8192)` — the existing `/wp-content/plugins/flying-press/` marker sits at byte 125,954 on flyingpress.com and was invisible to both passes
+
+Spec: [`docs/product-docs/04-development/2026-05-17-optimizer-fingerprint-broadening-design.md`](../docs/product-docs/04-development/2026-05-17-optimizer-fingerprint-broadening-design.md) (rev 2 + d-review verdict `ready-to-plan`). Plan: [`…-implementation-plan.md`](../docs/product-docs/04-development/2026-05-17-optimizer-fingerprint-broadening-implementation-plan.md) (20 TDD tasks, subagent-driven-development with spec + code-quality reviews per task).
+
+### Tier 1 — Header pattern audit (9 plugins gain patterns, 1 phantom removed)
+
+Updated `OPTIMIZERS::target_headers` based on plugin-source-grep (10 open-source plugins) + live-probe (5 plugin-author sites) + community-documented headers (paid plugins):
+
+- **FlyingPress**: added `x-flying-press-cache`, `x-flying-press-source` (was empty)
+- **Hummingbird**: added `hummingbird-cache` (was empty; source: WPMU DEV's `Hummingbird-Cache: Served` PHP emission)
+- **Swift Performance**: added `swift3: ` (trailing-space-anchored — DO NOT auto-trim), `x-cache-status: identical/changed/not-modified` (was empty)
+- **WP Rocket**: added `x-rocket-nginx-bypass` (kept existing `x-wp-rocket-cache`)
+- **NitroPack**: added `x-nitro-cache-from`, `x-nitro-rev` (kept existing `x-nitro-cache`)
+- **LiteSpeed Cache**: added `x-litespeed-cache-control` (kept existing `x-litespeed-cache`)
+- **W3 Total Cache**: added `x-w3tc-cdn`, `x-powered-by: w3 total cache` (kept existing `x-w3tc-cached-by`, `x-w3tc-page-cache`)
+- **Breeze**: added `x-breeze-cache-write`, `x-breeze-cache`, `x-breeze-circuit-breaker` (kept existing `x-cache-handler: breeze`)
+- **SG Optimizer**: added `sg-f-cache` (kept existing `x-powered-by: siteground`)
+
+Removed the unverified `x-cache: wpfc-` pattern from WP Fastest Cache — no PHP `header()` emission found in the plugin source; the existing body marker `'WP Fastest Cache file was created'` covers detection.
+
+### Tier 2 — Body marker regex with context-scoping
+
+New optional `target_body_pattern` field on every OPTIMIZERS entry (single PCRE; case-insensitive `/i`) provides fallback detection when literal `target_body_markers` miss due to plugin output drift. The 14 starter regexes use word boundaries + permissive separators `[- _]?` and avoid catastrophic-backtracking constructs (linear-time guarantee tested at AC-T2-5 lint via 100KB adversarial input — 14/14 patterns complete in <100ms each).
+
+New helper `extract_non_text_zones( string $html ): string` strips visible body text before regex application. Preserved zones:
+- Entire `<head>` content (title, meta, link, script)
+- All HTML comments (entire document)
+- All `<script>` / `<style>` / `<noscript>` block contents
+- Attribute values from the whitelist: `class`, `id`, `src`, `href`, `data-*`, `rel`, `type`, `name`, `content` (last two added per d-review Mi3 for OG/meta-generator coverage)
+
+Style attributes are deliberately excluded — inline CSS commonly carries unrelated `url(...)` references that would false-positive against `target_body_pattern`.
+
+**`extract_non_text_zones` is hoisted once per probe** before the OPTIMIZERS-scan loop (load-bearing per d-review M3). Without the hoist, the helper would run 14× per probe (~280 ms zone-extraction worst case on 2MB bodies); the hoist cuts that to ~10-30 ms — a ~14× reduction. AC-T2-6 spy test enforces `$extract_call_count <= 1` per `single_probe_attempt` to prevent regression.
+
+False-positive corpus (AC-T2-2): 14 synthetic HTML fixtures with plugin names in visible body text (review/comparison articles); each fixture's `target_body_pattern` must NOT match against the stripped scoped output. All 14 pass — visible body text is correctly excluded.
+
+### Tier 3 — Pass-2 widening (8KB tail → full body)
+
+Dropped the `$scan_tail_only` parameter on `body_match()` and `single_probe_attempt()`. Pass 2 now scans the **entire body** up to the existing 2MB `limit_response_size` cap (already enforced in `wp_remote_get` args). The 95KB dead zone on the canonical flyingpress.com body (~133KB total) is closed; the plugin-directory script tag at byte 125,954 is now visible to Pass 2.
+
+| Body size | Pre-1.4.0 dead zone | Post-1.4.0 dead zone |
+|---|---|---|
+| 133 KB (flyingpress.com) | 95.5 KB blind | 0 KB blind |
+| 500 KB | 467 KB blind (93 %) | 0 KB blind |
+| 1 MB | 1008 KB blind (96 %) | 0 KB blind |
+| 2 MB+ | bounded by `limit_response_size` cap | unchanged |
+
+CPU cost analysis (spec §6.4.3): combined Pass-2 new path (literal scan + zone extraction + 14× regex) is ~70-150 ms worst-case on a 2MB body; ~20-60 ms typical on 200-500 KB pages. HTTP fetch latency (~100-500 ms typical) still dominates total probe time. Perf budget reconciled to **p50 ≤30 ms, p95 ≤100 ms** added probe latency (AC-OVERALL-4).
+
+### Validation
+
+19 acceptance criteria implemented (AC-T1-1..3, AC-T2-1..6, AC-T3-1..4, AC-OVERALL-1..6):
+
+- **AC-T2-5 perf bench**: ≤50 ms p95 on 2 MB body — PASS (observed <30 ms p95 on dev hardware)
+- **AC-T2-6 hoist preservation**: `extract_non_text_zones` invoked exactly 1× per `single_probe_attempt` — PASS
+- **AC-T1-1 + AC-T3-4 production-mirror**: FlyingPress detected end-to-end via `probe_target_stack` — PASS via header path AND body fallback
+- **AC-T2-2 FP corpus**: 14 visible-text fixtures — none match
+- **Regex backtracking lint**: 14 patterns each <100 ms on 100 KB of `'a'`
+- **PHPUnit regression**: `PluginDetectorTargetProbeTest` 128/128 PASS, 243 assertions; `ProbeTargetStackEndpointTest` 4/4 PASS (endpoint contract unchanged)
+
+### Operator post-deploy validation
+
+- **AC-T1-1 manual verification**: probe `https://flyingpress.com/` via WP Admin → CU Scanner → Run Scan. Expect: scan-complete view shows FlyingPress detection (header path: `x-flying-press-cache` HIT); no `no_clue` banner.
+- **AC-OVERALL-4 latency observation**: across the next 5+ external-URL probes (operator-initiated), `probe_duration_ms` (in the AJAX response) should stay within `p50 ≤ baseline+30ms`, `p95 ≤ baseline+100ms`. Pre-1.4.0 baseline was typically 100-500 ms; post-1.4.0 expected typically 130-600 ms (HTTP fetch dominates; the new in-PHP scan work adds ~20-60 ms typical).
+- **7-day monitoring window**: watch the `cu_scanner_probe_target_stack` AJAX outcome distribution. `outcome: detected` rate should rise (Tier 1+2+3 cumulative F-MISS recovery). `outcome: no_clue` rate should fall. `outcome: probe_failed` rate should remain unchanged.
+
+### Migration / backward compatibility
+
+All changes additive:
+- `target_body_pattern` is OPTIONAL on OPTIMIZERS entries — pre-1.4.0 callers (or future plugins added without this field) behave identically to today.
+- `target_body_markers` literals unchanged (still primary signal; new regex is fallback OR'ed via `body_match($body, $b_pat, $use_range) || body_match_pattern($scoped_body, $entry['target_body_pattern'] ?? null)`).
+- `body_match()` and `single_probe_attempt()` signature changes are internal (private static); no public API touched.
+- `probe_target_stack()` return shape, AJAX endpoint contract, 24h cache key (`cu_scanner_target_stack_<md5>`), and TTL all unchanged.
+
+### Rollback path
+
+`target_body_pattern` is optional; an emergency rollback can NULL all entries' pattern fields via a single config edit without a code revert. The `body_match` signature change (drop `scan_tail_only`) is irreversible without code revert, but the Pass-2 full-body behavior is strictly more permissive than the prior 8KB-tail, so rollback is unlikely to be needed.
+
+### Files
+
+- `includes/scanner/class-plugin-detector.php` — OPTIMIZERS updates (T1 + T2), new `extract_non_text_zones()` + `body_match_pattern()` helpers, `body_match()` signature change (T3), loop hoist in `single_probe_attempt()`, `__test_*` seam additions
+- `tests/PluginDetectorTargetProbeTest.php` — 71 new tests (helper coverage, T1 fixtures, T2 fixtures, FP corpus, backtracking lint, AC-T3 integration, AC-T1-1/T3-4 end-to-end, AC-T2-5 perf bench, AC-T2-6 hoist spy)
+- `ai-assets-scanner.php` — version bump 1.3.7 → 1.4.0
+- `CHANGELOG.md` — this entry
+
+---
+
+## [1.3.7] — 2026-05-17 PM late
+
+### Fixed — FU-NEW-X-A: Subsystem D-4 banner silent disappearance on hard-error external scans
+
+**Bug (F-DEG-adjacent — observability regression):** for external scans that errored hard at the URL level (pre-probe correctly flagged the 4xx; operator clicked "Continue with scan"; Railway worker recorded `pages_completed:0, pages_error:1, pages_blocked_*:1, blocked_reasons:{tier1_http_4xx:1}`), the AAS scan-complete view showed only the ordinary "Scan complete. 0 safe rules, 0 aggressive rules generated." message — without the yellow-triangle ⚠ broken-banner that operators relied on pre-FU-NEW-2 to recognize "this scan didn't produce useful rules because the site errored." Operator reported regression 2026-05-17 PM after re-running a customer-c.example scan post-T3d-SFTP.
+
+**Root cause:** the post-scan banner pipeline (`class-scanner-ajax.php::build_result()`) walks the Railway per-page `broken_devices` array to compute `pages_blocked` + `blocked_reasons`. For some scan-error paths — notably `analyzePage`'s outer `catch` at [`src/analysis/page-analyzer.js:893-897`](../../CU%20Scanner%20Railway/cu-scanner-railway-master/cu-scanner-railway-master/src/analysis/page-analyzer.js#L893) which returns `{url, status:'error', assets:[]}` without `broken_devices`, plus certain pre-runPass failures — the page result lands at AAS with `status='error'` but no `broken_devices` field. The walk then yields zero pages_blocked, the JS-side `renderBrokenBanner()` returns early per its zero-check at scanner.js:1181, and the user sees only the rule-count summary.
+
+**Fix:** add a defensive fallback to `class-scanner-ajax.php::build_result()` — after the `broken_devices` walk, if `pages_blocked.desktop === 0 && pages_blocked.mobile === 0` BUT one or more pages have `status === 'error'`, count each errored page as blocked-on-both-devices with synthetic reason `scan_errored` (counted in `blocked_reasons`). The JS-side `phraseMap` gets a `scan_errored: 'scan errored'` entry; the `reasonCategory()` function maps `scan_errored → 'error'` so the action_clause copy reads "Your server returned an error or didn't respond..." — same copy operators see for `tier1_http_4xx/5xx/transport_error`.
+
+**Behavior after fix:**
+
+| Scan outcome | `pages_blocked` source | Banner reason phrase | action_clause category |
+|---|---|---|---|
+| `broken_devices` populated (e.g., Phase A symbol_match demote on a 4xx site) | from broken_devices walk (unchanged) | `tier1_http_4xx` → "site denial (4xx)" | 'error' → "server error" copy |
+| `status='error'` but no `broken_devices` (hard pre-runPass fail) | **fallback: 1 page → desktop+1, mobile+1, reason=`scan_errored`** | `scan_errored` → "scan errored" | 'error' → "server error" copy |
+| `status='done'` everywhere | walk yields 0, fallback skips | no banner | n/a |
+
+**Files:** `admin/class-scanner-ajax.php` (~12 LOC fallback block at L594), `admin/js/scanner.js` (+2 LOC phraseMap + reasonCategory), `ai-assets-scanner.php` (version bump 1.3.6 → 1.3.7), `CHANGELOG.md`. F-DEG-neutral on the rule-pipeline (no scan behavior changed). F-CHECK-EFF + (restores the user-visible "this scan errored" signal that pre-FU-NEW-2 displayed).
+
+---
+
+## [1.3.6] — 2026-05-17
+
+### Fixed — T3d: JS/PHP banner `action_clause` divergence
+
+**Bug (UX cosmetic, F-DEG-neutral):** the broken-scan banner has two render paths — server-side via `class-broken-banner.php::action_clause()` (history view, REST responses) and client-side via `admin/js/scanner.js::renderBrokenBanner()` (live scan result on the Running tab). The PHP path correctly mapped `tier1_http_4xx`, `tier1_http_5xx`, `tier1_transport_error` to the `'error'` category ("Your server returned an error or didn't respond...") and `tier1_http_rate_limit` to `'rate'` ("Your server rate-limited the scanner..."), with everything else falling back to `'bot'` ("Your bot protection denied the scanner..."). The JS path was hardcoded to ALWAYS emit the `'bot'` copy regardless of reason — so the same scan could surface inconsistent guidance depending on which UI path the user happened to see first.
+
+**Reproduced:** scan against a deterministic 404 fixture (banner-test-404 path) showed "Your bot protection denied the scanner..." in the live Running-tab banner, then "Your server returned an error or didn't respond..." in the History-tab banner for the same scan_id. Two different messages, same reason, same scan. Functionally fine; semantically inconsistent.
+
+**Root cause:** `admin/js/scanner.js::renderBrokenBanner()` at L1206 (pre-fix) hardcoded the action string to the 'bot' copy — no per-category mapping was implemented on the JS side; the PHP-side `reason_category()` lookup was never mirrored. Spec'd as a Minor follow-up from FU-NEW-4/5 work-track 2026-05-16; closed 2026-05-17 PM.
+
+**Fix:** mirror PHP's `reason_category()` lookup in JS. Add `reasonCategory(reason)` function returning `'rate' | 'error' | 'bot'`; map the per-scan `reasons` keys; if all categories collapse to a single non-bot category, use that category's copy verbatim from PHP; otherwise fall back to 'bot' (matches PHP's `count($categories) === 1` gate at `class-broken-banner.php:137`).
+
+**Behavior after fix:**
+
+| Reason set | JS-side action_clause | PHP-side action_clause | Match? |
+|---|---|---|---|
+| `{tier1_http_4xx: N}` (only) | "Your server returned an error or didn't respond..." | (same) | ✅ |
+| `{tier1_http_rate_limit: N}` (only) | "Your server rate-limited the scanner..." | (same) | ✅ |
+| `{tier2_cf_challenge: N}` (only) | "Your bot protection denied the scanner..." | (same) | ✅ |
+| Mixed `{tier1_http_4xx: 1, tier2_cf_challenge: 1}` | "Your bot protection denied the scanner..." (fallback) | (same — `count($categories) !== 1` ⇒ fallback) | ✅ |
+
+**Files:** `admin/js/scanner.js` (~15 LOC added), `ai-assets-scanner.php` (version bump 1.3.5 → 1.3.6), `CHANGELOG.md`. Pure UX-text change; F-DEG-neutral; F-CHECK-EFF + (eliminates two-paths-of-truth on a user-facing message).
+
+---
+
+## [1.3.5] — 2026-05-16
+
+### Fixed — FU-NEW-9: operator-site bypass keys leaking onto external scan URLs
+
+**Bug (F-DEG):** when scanning external URLs, the operator's wpservice.pro plugin auto-bypass keys (`nowprocket` for WP Rocket, `nowpcu` for Code Unloader, `perfmattersoff` for Perfmatters, etc.) were being appended to ALL scan URLs — including external targets — alongside the target-detected suffixes. Example: scanning `https://customer-b.example/` (LiteSpeed external) shipped as `https://customer-b.example/?nowprocket&nowpcu&LSCWP_CTRL=before_optm` — the `nowprocket&nowpcu` are leaked operator-site keys that don't belong on an external target's request.
+
+**Reproduced 2026-05-16 PM:** operator scanned customer-b.example (LiteSpeed) after 1.3.4 deploy and observed the polluted URL in worker logs. Probe response was clean (`suggested_bypass_per_url: { "https://customer-b.example/": ["LSCWP_CTRL=before_optm"] }` — ONLY LiteSpeed key, no operator-site contamination); pollution happened on the AAS side at submit_job assembly. Same pattern verified on prior customer-c.example scans (`?nowprocket&nowpcu` present on URLs despite the host running neither WP Rocket nor Code Unloader — these were operator-site keys leaking through).
+
+**Root cause:** `admin/class-scanner-ajax.php:154-159` builds `$bypass_params` from `$detected['auto_bypass']` (detected via `PluginDetector::detect()` against the LOCAL WP install — wpservice.pro's own plugins). Then the `$build_scan_url` closure at L221 unconditionally calls `add_query_arg( $bypass_params, $sanitized )` on every URL — INCLUDING external ones. The intent comment at L164 ("External URLs use target-detected suffixes; internal URLs use $host_bypass") was implemented for the FU-NEW-2 `$host_bypass` / `$target_bypass_per_url` path only — the legacy `$bypass_params` (auto_bypass) path predates FU-NEW-2 and was never made host-aware.
+
+**Fix:** make `$bypass_params` application host-aware inside `$build_scan_url`. Extract `$home_host = wp_parse_url( home_url(), PHP_URL_HOST )` once at the submit_job entry. Inside the closure, parse each URL's host and only call `add_query_arg( $bypass_params, $sanitized )` when the URL's host matches `$home_host` (case-insensitive, via `strcasecmp`). External URLs receive ONLY the probe-derived `$bypass_suffixes` (which may be empty if probe returned `no_clue` / `probe_failed` — graceful no-bypass behavior).
+
+**Behavior after fix:**
+
+| URL type | `$bypass_params` (operator-site) | `$bypass_suffixes` (target-probe) | Final example |
+|---|---|---|---|
+| Internal (same-host as `home_url()`) | ✅ applied | ✅ applied | `wpservice.pro/page?nowprocket&nowpcu&cu_scan_token=…` (unchanged) |
+| External `class_a_clean` (LiteSpeed) | ❌ skipped | ✅ `LSCWP_CTRL=before_optm` | `customer-b.example/?LSCWP_CTRL=before_optm&cu_scan_token=…` (clean) |
+| External `class_a_clean` (WP Rocket on a DIFFERENT site) | ❌ skipped | ✅ `nowprocket` (from probe) | `that-site.com/?nowprocket&cu_scan_token=…` (clean — comes from THEIR detection, not ours) |
+| External `no_clue` / `probe_failed` | ❌ skipped | empty | `customer-c.example/?cu_scan_token=…` (just the token; graceful no-bypass) |
+
+**Why this didn't surface in FU-NEW-2 AC validation:** FU-NEW-2's ACs focused on the per-URL `$target_bypass_per_url` (suggested_bypass_per_url) plumbing, which IS correctly host-aware. The legacy `$bypass_params` (auto_bypass) path predates FU-NEW-2 and wasn't covered by FU-NEW-2's test surface. The pollution was only operator-visible once they inspected actual scan URLs in the Railway worker log.
+
+- **Version bump** `1.3.4 → 1.3.5`.
+- **Internal `SCANNER_JS_VERSION` unchanged** at `1.0.10.12` (server-side PHP fix only; scanner.js not modified).
+- **wp-compliance:** P10 invoked pre-edit. All 27 rules N/A or pass (pure logical filter; no new input read, no new output, no SQL, no security surface).
+
+Refs:
+- Operator-reported bug 2026-05-16 PM during AC validation of customer-b.example (LiteSpeed) scan after 1.3.4 deploy. Verbatim operator framing: "`?nowprocket` and `nopwcu` are again transplates from my website, that website should have only Lightspeed cache related `LSCWP_CTRL=before_optm` suffix. External URLs with detected stacks should ran ONLY detected stack suffix (if is it suffix frienldy category), not my website + their."
+- Related: FU-NEW-2 spec (rev 2) `docs/superpowers/specs/2026-05-15-fu-new-2-target-stack-bypass-routing-design.md` — fixed the `$host_bypass` / `$target_bypass_per_url` half of the bypass-routing intent; this commit completes the second half (the legacy `$bypass_params` path).
+
+---
+
+## [1.3.4] — 2026-05-16
+
+### Fixed — pre-probe external-URL safety gate restoration
+
+**Gap (pre-FU-NEW-2 regression surfaced 2026-05-16 PM):** the original external-URL `confirm()` dialog ("This is an external URL — continue?") was removed in FU-NEW-2 (1.2.9) and replaced by the probe-driven outcome modal. The new modal correctly gates non-`class_a_clean` outcomes, but on uniform `class_a_clean` / `A_star` outcomes the modal is suppressed for "silent proceed" — leaving NO operator confirmation before the scan starts on suffix-friendly external sites (LiteSpeed, WP Rocket, Perfmatters, FlyingPress hosts, etc.).
+
+**Reproduced 2026-05-16 PM:** operator entered `getkush.cc` (LiteSpeed-class suffix bypass) → Start Scan → probe AJAX fired → no modal shown → scan started + credits reserved with no operator click.
+
+**Fix:** added a pre-probe safety gate inside the `if (externalUrls.length > 0) {` block in `admin/js/scanner.js` (~L858, before the inline "Detecting target stack…" spinner shows). Shows `window.confirm(...)` listing the unique external hosts + the URL count before any probe AJAX fires. Cancel = clean abort (return). Continue = proceed to probe + outcome-specific modal (existing FU-NEW-2 behavior preserved end-to-end for non-`class_a_clean` outcomes).
+
+**Why BEFORE the probe, not after:** the probe is itself an HTTP request from wpservice.pro to the external site. Operator-stated requirement: ask the external-website question BEFORE starting the stack-probe check, so the operator can abort without any external network calls (and without wpservice.pro server-side load).
+
+**Why the silent-proceed-on-`class_a_clean` detection modal-skip is preserved:** intentional and orthogonal. The silent-proceed concerns the DETECTION RESULT ("Detected LiteSpeed — proceeding with bypass") which is unwanted UX noise per operator directive. The pre-probe gate concerns generic external-scan consent — a separate concern that operator wants. Both rules now coexist: pre-probe `confirm()` covers consent; post-probe modal (for non-`class_a_clean`) covers detection-result transparency; class_a_clean silent-proceed (after pre-probe consent) covers the high-confidence happy path.
+
+- **Version bump** `1.3.3 → 1.3.4`.
+- **Internal `SCANNER_JS_VERSION`** bumped `1.0.10.11 → 1.0.10.12`.
+
+Refs:
+- Operator directive verbatim 2026-05-16 PM: "ASk the external website question BEFORE starting the stack probe check" (surfaced during FU-NEW-7 AC validation closure).
+- Memory: `~/.claude/projects/d--AI-ChatGPT/memory/feedback_silent_proceed_suffix_friendly_correct.md` updated to clarify scope (rule applies to detection-result observability toast, NOT to the external-URL safety gate restored in this version).
+
+---
+
+## [1.3.3] — 2026-05-16
+
+### Fixed — FU-NEW-7: end-of-body cache marker detection (Two-pass probe)
+
+**Gap:** the target-stack probe's existing 32KB scan cap (via `Range: bytes=0-32767` request header AND `substr( $body, 0, BODY_SCAN_MAX_BYTES )` inside `body_match()` / `is_wordpress_target()`) prevented detection of 9 of 14 OPTIMIZERS table plugins whose identifying HTML comment is injected AFTER `</html>` — beyond 32KB on typical 100KB-1MB WP pages.
+
+**Affected plugins (now detectable):** WP Rocket, LiteSpeed, WP Fastest Cache, W3 Total Cache, **Breeze**, Cache Enabler, Swift Performance, FlyingPress, SG Optimizer. Header-based detection (`x-wp-rocket-cache`, `x-cache-handler: breeze`, etc.) was the only working signal for these plugins; when the CDN strips headers (Kinsta strips `x-cache-handler: breeze` per observed customer-a.example behavior), the probe returned `no_clue` even on clear cache-plugin-protected sites.
+
+**Fix:** added Pass 2 to `probe_target_stack()` at the wrapper level. Pass 1 (existing ranged 32KB + head-area scan) is unchanged. Pass 2 fires when Pass 1 returns `inconclusive` AND `reason === null` (no-markers case — NOT HTTP-error / transport-error inconclusives). Pass 2 re-probes each URL with `use_range=false` (full body, capped at 2MB via `'limit_response_size'`) + `scan_tail_only=true` (last 8KB scan via new `body_match()` parameter) to recover end-of-body markers.
+
+**Why last-8KB instead of full-body substring scan:** end-of-body cache markers live in HTML comments after `</html>`. Scanning the full body would expand the false-positive surface (article text mentioning cache plugin names — e.g., wptavern.com blog posts about WP Rocket — would match the bare marker strings). Last-8KB scan matches actual signal location, bounds CPU, and narrows FP surface.
+
+**Trade-off / known limitation:** `is_wordpress_target()` deliberately remains head-only. WP sites with `<meta name="generator">` beyond byte 32768 (rare; long head injections) ship as `non_wordpress` and are not re-probed in v1.
+
+**Performance:**
+- Pass 1 detects (head-area marker / header): 1-2 fetches, unchanged.
+- Pass 2 detects: 3 fetches (URL1 ranged, URL2 ranged, URL1 full ~100KB-2MB).
+- All 4 attempts (worst case, truly-no-cache-plugin target): 4 fetches, +2-6s latency.
+- 24h transient cache absorbs repeat probes on the same host.
+
+**Coverage:** 10 new PHPUnit tests in `tests/PluginDetectorTargetProbeTest.php` — 2 helper tests (T-N7-A `body_match()` tail-only mode; T-N7-B `single_probe_attempt()` parameter passthrough) and 8 integration tests (T-N7-1 header-detect fast-path; T-N7-2 Breeze tail-detect on customer-a-class fixture; T-N7-3 all-4-inconclusive worst-case; T-N7-4 HTTP-4xx exclusion; T-N7-5 definitive `non_wordpress` exclusion; T-N7-6 false-positive control with article-body cache plugin name; T-N7-7 SSRF gate; T-N7-8 24h cache hit short-circuit).
+
+- **Version bump** `1.3.2 → 1.3.3`.
+- **Internal `SCANNER_JS_VERSION` unchanged** at `1.0.10.11` (scanner.js not modified — server-side PHP refactor only).
+
+Refs:
+- Spec: `docs/superpowers/specs/2026-05-16-fu-new-7-two-pass-probe-design.md` (rev 2.1)
+- D-reviews: `…-design-review.md` (rev 1, needs-revision 3C/4M/5m/3n) + `…-design-review-r2.md` (rev 2, ready-to-plan 0C/0M/2m/2n)
+- Plan: `docs/superpowers/plans/2026-05-16-fu-new-7-two-pass-probe-plan.md`
+- Spawned during FU-NEW-4/5 AC validation 2026-05-16 PM after customer-a.example (Breeze) returned `no_clue` from the probe.
+
+---
+
+## [1.3.2] — 2026-05-16
+
+### Fixed — FU-NEW-6 rev 2: include-only-mode re-trigger gap (1.3.1 hotfix was insufficient)
+
+**Bug (still present after 1.3.1):** the L825-832 include-only-path block in `admin/js/scanner.js` populates `selectedUrls` from the textarea, but its guard `if (discoveredUrls.length === 0)` only fires on the FIRST Start Scan click — because L829 sets `discoveredUrls = includeList` after that point. On the SECOND+ click within the same page session, neither the L825 block NOR the 1.3.1 defensive re-read at L846 (same guard) fired, so `selectedUrls` retained the prior scan's URLs.
+
+**Reproduced 2026-05-16 PM:** operator did fresh page load → typed `customer-a.example` → Start Scan (probe sent customer-a.example ✓) → Cancel modal → cleared textarea → typed `wptavern.com` → Start Scan again → probe AJAX payload showed `urls[0]=customer-a.example, urls[1]=wptavern.com` even though textarea contained ONLY `wptavern.com` (confirmed via `console.log(JSON.stringify(document.getElementById('cu-included-urls').value))`).
+
+**Fix:** widen the include-only-mode detection. Instead of `discoveredUrls.length === 0`, use `(discoveredUrls.length === 0) || (groupedUrls.included !== undefined)`. The `groupedUrls.included` field is set uniquely by L830 of the include-only path (NOT set by the Discover Pages flow at L541, which sets `groupedUrls = res.data.groups`). This makes the L825 block re-fire on every Start Scan click in include-only mode while leaving Discover Pages mode untouched.
+
+The 1.3.1 redundant defensive fix at the post-L832 site is now removed (the L825 block handles it correctly).
+
+**Impact severity (same as 1.3.1):** F-DEG-critical — silent wrong-target scanning, wrong-host attribution in `cu_scanner_events`, credits spent on unintended scans.
+
+- **Version bump** `1.3.1 → 1.3.2`.
+- **Internal `SCANNER_JS_VERSION`** bumped `1.0.10.10 → 1.0.10.11`.
+
+Refs:
+- Diagnosis: operator DevTools Network + Console capture 2026-05-16 PM (textarea content `"wptavern.com"`, AJAX payload had customer-a + wptavern → root cause at `admin/js/scanner.js:825` pre-existing guard semantics).
+- Supersedes the 1.3.1 fix at the same L846 site (now removed in this version).
+
+---
+
+## [1.3.1] — 2026-05-16
+
+### Fixed — FU-NEW-6: selectedUrls state-leak across scan attempts
+
+**Bug:** When the user changed the include-URLs textarea content between scan attempts within a single page session, scanner.js's `selectedUrls` could retain the previous attempt's URLs. The probe AJAX (`cu_scanner_probe_target_stack`) + the submit_job AJAX (`cu_scanner_submit_job`) both read from `selectedUrls`, so a stale URL would be sent server-side — Railway would silently scan the WRONG target while the user thought they were scanning the URL they typed.
+
+**Reproduced 2026-05-16 PM:** operator entered `https://customer-a.example/` in the textarea, but DevTools Network capture showed the probe AJAX sending `urls[0]=wptavern.com` (the previous test target). The modal correctly displayed wptavern.com results (the server probed the URL it received); the bug was upstream in JS state.
+
+**Fix:** added a 3-line defensive re-read at `admin/js/scanner.js:836` — before deriving `externalUrls`, re-call `getIncludedUrls()` to pull fresh URLs from the textarea when in direct-URL mode (`discoveredUrls.length === 0`). Makes the user-visible textarea the single source of truth at scan-trigger time. Discover Pages mode keeps its existing include/exclude filter logic unchanged.
+
+**Impact severity:** F-DEG-critical pre-fix (silent wrong-target scanning + wrong-host attribution in `cu_scanner_events` telemetry). Defensive re-read closes the symptom without changing the L505 input-handler architecture (which can be reviewed later as a separate followup if needed).
+
+- **Version bump** `1.3.0 → 1.3.1` (cache-bust for `scanner.js`).
+- **Internal `SCANNER_JS_VERSION`** in `admin/js/scanner.js` bumped `1.0.10.9 → 1.0.10.10` (matches the file's own change-tracking).
+
+Refs:
+- Diagnosis: operator DevTools Network + Console capture 2026-05-16 PM (probe AJAX payload showed wptavern.com despite textarea reading customer-a.example).
+- Master tasks: `master-tasks.md` — FU-NEW-6 work-track.
+
+---
+
+## [1.3.0] — 2026-05-16
+
+### Cache-bust release — no code changes
+
+Plugin version bumped `1.2.9 → 1.3.0` to force browser cache-bust on enqueued JS/CSS files (`?ver=1.3.0` query parameter) and provide a clean deploy signal for FU-NEW-4 AC-A validation on wpservice.pro. Internal `SCANNER_JS_VERSION` in `admin/js/scanner.js` remains at `1.0.10.9` (the JS file itself is unchanged).
+
+**No functional changes.** Banner pipeline (`renderBrokenBanner` at `admin/js/scanner.js:1143`), target-stack probe (FU-NEW-2 Phase 6), and submit_job payload contract all carry through unchanged from 1.2.9.
+
+Operator deploy procedure: SFTP `ai-assets-scanner.php` (only file with version-string changes) + `CHANGELOG.md` to wpservice.pro plugin directory. Verify WP Admin → Plugins page shows version `1.3.0`. Hard-refresh any open admin pages.
+
+Refs:
+- Plan: `docs/superpowers/plans/2026-05-16-fu-new-4-fu-new-5-plan.md`
+- Spec: `docs/superpowers/specs/2026-05-16-fu-new-4-fu-new-5-design.md`
+- Work-track: FU-NEW-4 + FU-NEW-5 (bundled) — `master-tasks.md` L51
+
+---
+
+## [1.2.9] — 2026-05-15
+
+### Added — FU-NEW-2: Target-stack-aware bypass-suffix routing for external-URL scans
+
+When scanning an external URL (host differs from the WP install hosting the plugin), the plugin now probes the target server-side via `wp_remote_get` to detect its actual optimizer/cache stack BEFORE scan-credit reservation, then constructs per-URL `bypass_suffixes` from the target's detected class A/A_star plugins instead of leaking the host's bypass keys onto unrelated targets.
+
+Background: prior behavior pushed the AAS-host's class-A bypass keys (e.g., `?nowprocket&perfmattersoff` from a WP-Rocket+Perfmatters host) onto every scan URL regardless of target. On a target running a different cache plugin (e.g., Breeze), the foreign query params bust the target's cache key → un-cached HTML cascade → Phase B `page.goto` timeout. This was discovered during FU-NEW-1 investigation as a test-artifact rather than a production-customer failure (production customers run AAS from their own site, where detection works correctly).
+
+#### Probe mechanism
+
+- New AJAX endpoint `cu_scanner_probe_target_stack` (registered alongside existing `cu_scanner_submit_job`). `manage_options` + nonce-gated.
+- Per-host single probe per scan + 24h transient cache (`cu_scanner_target_stack_<md5(scheme://host:port)>`).
+- 2-attempt fallback: probe URL #1; if inconclusive, probe URL #2 from same host (next selectedUrl) or root `/`.
+- `GET` with `Range: bytes=0-32767` + `User-Agent: CU-Scanner-Probe/1.0 (target-stack-detection)`. 32KB body cap (CPU-bounded regardless of `Range` honor).
+- Scheme allowlist: `http://` + `https://` only. `file://`, `javascript:`, etc. rejected with `probe_failed: invalid_scheme` — `wp_remote_get` never called.
+- WP_Error / 5xx / 403 / 429 → `probe_failed` with sanitized `reason` (IPs + server-internal paths `/home|var|usr|srv|etc|opt|root|tmp/` redacted; 120-char cap).
+- Response field whitelist enforced via `strip_to_whitelist` — never returns raw HTTP body, raw headers, IPs, cookies, or stack traces to the admin JS.
+
+#### Detection table (14 optimizers + WordPress detection)
+
+`OPTIMIZERS` table in `class-plugin-detector.php` extended with `target_headers` + `target_body_markers` sub-keys on every entry. Detection scans HTTP response headers + first 32KB of HTML body (case-insensitive substring). Multi-stack detection allowed.
+
+- **Class A** (have bypass_query): WP Rocket (`nowprocket`), Perfmatters (`perfmattersoff`), Autoptimize (`ao_noptimize=1`), NitroPack (`nonitro`), Asset CleanUp (`wpacu_no_load`)
+- **Class A_star**: LiteSpeed Cache (`LSCWP_CTRL=before_optm`)
+- **Class A — FlyingPress reclassified** (was class C): `no_optimize` query param per FlyingPress changelog v2.3.0 (15 Oct 2020). Strategy class `class-flying-press-bypass.php` + `FlyingPressBypassTest.php` + StrategyFactory match arm DELETED (P8 YAGNI; git history preserves). FlyingPress no longer triggers Class C consent modal on operator-local FlyingPress installs; URL gets `?no_optimize` instead of plugin-side pause/resume orchestration.
+- **Class B** (no bypass query — QS-naive cache plugins): WP Fastest Cache, W3 Total Cache, Breeze, Cache Enabler, Swift Performance
+- **Class B/C (runtime-resolved)**: Hummingbird
+- **Class C** (plugin-side disable): SiteGround Optimizer (FlyingPress moved out; SiteGround is now the only class C remaining)
+- **WordPress detection**: `<meta name="generator" content="WordPress">`, `wp-content/`, `wp-includes/`, `wp-json/` paths, `x-pingback` header
+
+#### Outcome classifier (§5.4 decision tree)
+
+Precedence: `probe_failed` > `non_wordpress` > optimizer classification. Body markers without WP context are NOT trusted (regex may match unrelated customer content; spec §5.4 trust-WP-first rule). Six outcomes:
+
+- `class_a_clean` — ≥1 class A/A_star detected, no class B/C → silent proceed; class A bypass keys applied
+- `class_bc_only` — only class B/C detected → blocking warning naming the stack + bot-protection-disable suggestion; empty bypass_suffixes
+- `hybrid_a_plus_bc` — ≥1 class A/A_star + ≥1 class B/C → blocking warning naming both groups + informed-consent on cache-key conflict; class A bypass keys applied
+- `no_clue` — WP confirmed, no optimizer signal → blocking warning + bot-protection-disable suggestion; empty bypass_suffixes
+- `non_wordpress` — no WP signals → blocking warning naming the unknown-target case; empty bypass_suffixes
+- `probe_failed` — WP_Error / 5xx / 403 / 429 / timeout → blocking warning naming reason + bot-protection-disable suggestion
+
+#### JS dialog flow (`admin/js/scanner.js`)
+
+Existing simple `confirm()` external-URL gate at L656-661 REPLACED with: probe trigger → inline spinner ("Detecting target stack...") → `showProbeOutcomeDialog` outcome dispatcher. Multi-host scans render either uniform single dialog (when all hosts share outcome) or per-host accordion (mixed outcomes). Cancel during probe via `AbortController` (best-effort; degrades to "wait for response" on browsers without it). On confirm, `cu_scanner_submit_job` POST now includes new top-level fields `target_bypass_per_url` (per-URL bypass map from probe) + `target_stack_summary` (per-host telemetry blob).
+
+The existing class C consent flow (for SiteGround Optimizer hosts) is preserved — `class_c_consent_required` retry path now also forwards the new payload fields so the contract is consistent across both paths.
+
+#### `cu_scanner_submit_job` payload changes (per-URL `bypass_suffixes` per §4.2 rule)
+
+For each URL in the scan submission:
+- **Internal URL** (same host as WP install hosting AAS) → uses host-detected `build_bypass_suffixes($detector_typed)` array (today's behavior; no regression on existing same-site scan workflows)
+- **External URL** → uses target-detected suffixes from the probe's `suggested_bypass_per_url[url]` map. Missing entries default to **empty `[]`** (NOT host-leaked, per operator's explicit directive) AND fire `do_action( 'cu_scanner_target_bypass_missing', [ 'url', 'host' ] )` plugin-local hook for operator-side debugging visibility (no SaaS forwarding — telemetry gap deferred as FU-NEW-5).
+
+#### Compliance — wp-compliance review (P10) pre-push pass
+
+wp-compliance review on the full FU-NEW-2 work-track:
+- **Rule 25 fix shipped (commit `b64dbee`)**: `$_POST['target_bypass_per_url']` is a structured multi-level map; the outer `(array) wp_unslash()` left inner-level scalars unsanitized. Now walks the structure, validates URL keys via `esc_url_raw`, restricts suffix values to `[A-Za-z0-9_=.\-]+` (the legal bypass-suffix character class produced by `OPTIMIZERS`). Anything outside the allowlist is dropped silently.
+- **Rule 13 (SSRF) — accept-as-risk**: scheme allowlist enforced (no `file://`, `javascript:`, etc.); private-IP / cloud-metadata-endpoint blocklist intentionally default-off — operator may legitimately scan staging URLs on private IPs. Admin-only access (`manage_options`) is the documented trust boundary (spec §6.1.1).
+- Rules 1, 2-3, 4-5, 10, 11-12, 14-18, 20-22, 23, 26 all pass.
+
+### Files
+
+- `includes/scanner/class-plugin-detector.php` — OPTIMIZERS table extended; `probe_target_stack` + `single_probe_attempt` + `header_match` + `body_match` + `classify_outcome` + `sanitize_reason` + `is_wordpress_target` + `BODY_SCAN_MAX_BYTES` + `ALLOWED_SCHEMES` constants; FlyingPress entry reclassed C → A; FlyingPress dropped from `SOFT_WARN`; orphaned `detect_typed()` PHPDoc relocated to its correct file position.
+- `includes/scanner/class-strategy-factory.php` — `'flying_press' => new FlyingPressBypass()` match arm DELETED + `use FlyingPressBypass` import removed.
+- `includes/scanner/strategies/class-flying-press-bypass.php` — DELETED (78 LOC).
+- `admin/class-scanner-ajax.php` — new `probe_target_stack` AJAX handler + helpers (`group_urls_by_host`, `root_url_for`, `strip_to_whitelist`, `is_uniform_outcome`, `any_outcome_matches`, `build_pages_array`, `capture_target_stack_summary`); existing `submit_job` rewired for per-URL bypass + new payload fields; wp-compliance Rule 25 per-value sanitization on `target_bypass_per_url`.
+- `admin/js/scanner.js` — `confirm()` external-URL gate replaced with probe-first flow + `showProbeOutcomeDialog` + multi-host rendering + abort-during-probe UX + class C consent retry path updated to forward new fields. Cache-bust `SCANNER_JS_VERSION` `1.0.10.8 → 1.0.10.9`.
+- `admin/css/ai-assets-scanner-admin.css` — `.cu-probe-outcome-dialog` styling mirrors existing `.cu-consent-dialog` pattern; `.cu-probe-spinner` icon styles.
+- `tests/PluginDetectorTest.php` — +2 tests (table-shape enforcement, FlyingPress reclass shape assertion).
+- `tests/PluginDetectorTargetProbeTest.php` — NEW file, 24 tests (4 matcher + 7 classifier + 11 probe + 2 absorbed-from-review).
+- `tests/ProbeTargetStackEndpointTest.php` — NEW file, 4 tests (auth, nonce, scheme rejection, response-field whitelist).
+- `tests/SubmitJobPayloadTest.php` — NEW file, 5 tests (per-URL bypass split, defensive fallback, target_bypass_missing event, target_stack_summary capture, empty-input handling).
+- `tests/StrategyFactoryTest.php` + `tests/OptimizerBypassOrchestratorTest.php` + `tests/RestPreflightTest.php` + `tests/MultiOptimizerCompositionTest.php` + `tests/OptimizerStateTest.php` + `tests/PluginDetectorBypassSuffixesTest.php` + `tests/PluginDetectorTypedTest.php` — fixtures updated for FlyingPress class A; `FlyingPressBypassTest.php` DELETED.
+- `ai-assets-scanner.php` — header version `1.2.8 → 1.2.9` + `CU_SCANNER_VERSION` constant.
+- `README.md` — features bullet added; version badge `1.2.8 → 1.2.9`.
+- `CHANGELOG.md` — this entry.
+
+### Cross-repo dependencies
+
+- Requires SaaS plugin `1.2.13+` (defensive sanitization for `scan.target_stack_summary` event at `/service/event`).
+- Worker (cu-scanner-railway) UNCHANGED — per-URL `bypass_suffixes` is already on the wire at `page-analyzer.js:26-33 buildScanUrl` and `worker.js:165` per-page destructure.
+
+### Out of scope (explicit decisions)
+
+- **FU-NEW-5: Railway forwarder for `target_stack_summary` telemetry** — operator chose to minimize inbound HTTP load on wpservice.pro web host; the telemetry data flows plugin → Railway in the existing submit_job payload but is NOT currently forwarded to SaaS `/service/event` for persistent storage. SaaS receiver is prepared (defensive sanitization shipped) for whenever a future Railway-forwarder task lands. Tracked at master-tasks.md ledger row L44b.
+
+### Test coverage delta
+
+- Pre-FU-NEW-2 baseline: 224 tests / 15 errors / 4 failures (pre-existing SnapshotManager/Railway/Rule infra unrelated to this work).
+- Post-FU-NEW-2: 261 tests / 15 errors / 0 failures. **+37 tests, all FlyingPress-class-related failures resolved.** Zero regressions; baseline errors unchanged.
+
+---
+
+## [1.2.8] — 2026-05-08
+
+### Changed — Per-reason action clause in upstream-denied banner
+
+`AIAS_Broken_Banner::reason_copy()` previously rendered a single hardcoded action clause for every blocked reason: *"Your bot protection denied the scanner. ... temporarily disable bot protection during scans."* This was misleading for `tier1_http_rate_limit` (HTTP 429 — a rate limit, not a bot challenge) and `tier1_http_4xx`/`tier1_http_5xx`/`tier1_transport_error` (server-side failures, not bot blocks). Operators reading the banner were nudged to disable bot protection when the actual remediation was different.
+
+Added `reason_category()` + `action_clause()` private static methods that map each blocked reason to one of three remediation categories:
+
+- **`rate`** (`tier1_http_rate_limit`) → "Your server rate-limited the scanner. ... Wait a few minutes between scans, or temporarily raise rate limits during scans."
+- **`error`** (`tier1_http_4xx`, `tier1_http_5xx`, `tier1_transport_error`) → "Your server returned an error or didn't respond. ... Try again later, or check site health."
+- **`bot`** (default — `tier1_zero_bytes`, all `tier2_*`, unknown) → existing "Your bot protection denied the scanner. ... temporarily disable bot protection during scans." copy preserved.
+
+When all reasons in a single scan map to the same category, that category's clause renders. When reasons span multiple categories (e.g. some pages 429, others CF challenge), the banner falls back to the generic `bot` clause to avoid misleading single-cause guidance.
+
+3 new tests in `tests/BannerRenderingTest.php` (rate-limit alone, server-error alone, mixed-reasons fallback). All 7 banner tests + 12 assertions green; full suite baseline unchanged (15 pre-existing `SnapshotManagerTest` errors are unrelated and predate this change).
+
+No JS/CSS changes; no cache-bust required. Plugin Version bump `1.2.7 → 1.2.8` only.
+
+---
+
+## [1.2.7] — 2026-05-07
+
+### Fix — Local scan history reflects admin-kill terminal state (FU-7)
+
+When a SaaS administrator kills an in-flight scan from the SaaS Jobs > Running tab, the SaaS-side row is finalized as `admin_kill` (FU-2 / FU-6 ship 2026-05-06) and the plugin's polling loop already stops animating + shows a banner. But the plugin's *local* `ScanHistory` (wp_options) record was never updated — so the AAS Scan History tab kept showing the killed scan as `in_progress` / `queued` indefinitely, even after page reload.
+
+### Added
+
+- **New AJAX action `cu_scanner_handle_killed`** in `admin/class-scanner-ajax.php`. Mirrors the existing `cancel_job` handler minus the Railway `/cancel` call (Railway already knows about the kill — that's how the plugin learned `status === 'killed'` in the first place). Updates the local `ScanHistory` record to `status='cancelled'` with `credits_used=0` (admin_kill is non-charging), clears the bypass-tokens transient, deletes the active-job transient. Cap + nonce verified via `$this->check()` (Rules 4 + 5 + 11).
+
+### Changed
+
+- **`scanner.js` `handleStatusUpdate` killed branch** now fires `post('cu_scanner_handle_killed')` before showing the banner. Fire-and-forget: UI state is the user-visible signal regardless of whether the AJAX completes. Banner copy clarified to `"Your scan was cancelled by an administrator"` so the user understands it wasn't their click.
+- Cache-bust: `SCANNER_JS_VERSION` `1.0.10.7 → 1.0.10.8` + plugin Version `1.2.6 → 1.2.7`.
+
+### Out of scope (explicit decision)
+
+- **Worker mid-page abort (FU-8 — DROPPED).** SaaS Kill currently does NOT stop in-flight Playwright work mid-page on Railway; the worker keeps running until the natural 180s page-timeout. Per operator decision 2026-05-07: this is acceptable since admin-kill is rare and the worker dies within 180s + does not advance to next pages. AbortController plumbing through `processSinglePage` → page-analyzer → verifier deferred indefinitely.
+
+### Compliance — wp-compliance pre-code checklist clean
+
+- Cap + nonce paired via existing `$this->check()` helper (Rules 4 + 5 + 11).
+- ABSPATH guard inherited via `class-scanner-ajax.php` namespace (Rule 21).
+- No new SQL — uses existing `ScanHistory::update_status()` + `BypassManager::delete_all_tokens()` (Rule 6 vacuously clean).
+- No user input flows into the new handler (state read from a server-side transient keyed by user_id from `get_current_user_id()`).
+
+### Cross-repo dependencies
+
+- Requires SaaS plugin `1.2.10+` (FU-2 + FU-6 deployed) so SaaS-Kill click actually reaches Railway via the `/jobs/admin-kill-by-token-hash` push and Railway flips `meta.status` to `'killed'` on the next plugin poll. Without that the plugin will never see `status === 'killed'` and this handler won't fire.
+- Requires Railway `0904fae+` (FU-6 endpoint live).
+
+---
+
+## [1.2.6] — 2026-05-05
+
+### Feature — Heavy-site / bot-block warning banner (Subsystem D-4)
+
+Adds a dismissable WP admin notice on the scan-results page when one or both devices were blocked from completing the scan (typically Cloudflare challenge, Akamai Bot Manager, Imperva WAF, Rocket-Loader stub, or asymmetric stub responses on the desktop UA while mobile passed cleanly). Pairs with the Railway worker shipping per-device broken-detection (Tier 1 HTTP-level + Tier 2 body-shape signals) and the SaaS plugin shipping the storage + admin Jobs column extension at version 1.2.8.
+
+### Added
+
+- **`AIAS_Broken_Banner` class (`includes/class-broken-banner.php`)** — pure stateless renderer that emits the banner HTML when `pages_blocked.{desktop+mobile} > 0`. Returns empty string when no devices are blocked OR when the banner has been dismissed for the current scan. Reason-aware copy maps the 10 detection enum values to operator-friendly phrases (`tier2_cf_challenge → "Cloudflare challenge"`, `tier2_rocket_loader_stub → "Cloudflare Rocket-Loader stub"`, `tier2_akamai_challenge → "Akamai Bot Manager"`, `tier2_imperva_challenge → "Imperva WAF"`, `tier2_small_body → "asymmetric stub response"`, plus all five Tier-1 HTTP variants).
+- **JS-driven banner rendering in `admin/js/scanner.js`** — `renderBrokenBanner()` populates `#cu-banner-area` in the Step 4 results panel after `build_result` completes. Mirrors the PHP class's reason-phrase map. Mobile-rule-shipping is unaffected (banner is informational; does not gate result display or push-to-CU).
+- **Per-scan dismissal** — clicking the banner's "Got it — don't show again for this scan" button POSTs to a nonce-protected AJAX endpoint that records the dismissal in `wp_options.aias_dismissed_warnings` keyed by `scan_id`. Each new scan submission via `submit_job()` wipes the option to a fresh empty array (`AIAS_Broken_Banner::on_submit_job()`, called immediately after `$this->check()` so the wipe is gated by nonce + capability per WP Compliance Rules 4 + 11). Bounded O(1) growth — only the most recent scan's dismissal can be stored at any time.
+
+### Changed
+
+- **`build_result` AJAX response shape** (`admin/class-scanner-ajax.php`) extended with `scan_id`, `total_pages`, `pages_blocked: {desktop:int, mobile:int}`, and `blocked_reasons: {reason:int}` map. Derived from each page's `broken_devices` array in the Railway poll-status response. Page-count semantics — a page with both desktop+mobile broken for the same `tier2_cf_challenge` contributes 1 to each device counter and 1 (NOT 2) to the reason counter.
+- **Field-name fix in `build_result` per-page loop** — earlier draft read `$page['device']` and `$page['blocked_reason']` (neither field exists on the per-page Railway response). Corrected to iterate `$page['broken_devices']` array and extract `bd['device']` + `bd['reason']` from each entry. Without this fix the banner would never have rendered in production.
+- Plugin version bump `1.2.5 → 1.2.6` (cache-bust for `scanner.js`).
+
+### Compliance — wp-compliance pre-code checklist clean
+
+- ABSPATH guard at top of new `class-broken-banner.php` (Rule 21).
+- AJAX dismissal handler pairs `check_ajax_referer( 'aias_dismiss_banner' )` with `current_user_can( 'manage_options' )` (Rules 4 + 5 + 11). Nonce alone is not authorization.
+- `$_POST['scan_id']` read uses canonical `sanitize_text_field( wp_unslash( $_POST['scan_id'] ?? '' ) )` ordering (Rule 24).
+- All rendered strings escaped at output time: `esc_attr` on the `data-scan-id` attribute, `esc_html__` on translated text, `wp_kses_post` on the assembled copy, `esc_html` on the per-reason phrase fallback.
+- Dual-autoloader discipline preserved: new class registered in BOTH the main plugin file's `spl_autoload_register` map AND `tests/bootstrap.php` (per the operational rule logged 2026-04-25 after a tests-only update fataled production).
+
+### Tests
+
+- **New `tests/BannerRenderingTest.php`** — 4 PHPUnit cases (4/4 green via local PHPUnit):
+  - No banner when both devices have zero blocked pages
+  - Desktop-blocked-with-CF-reason banner contains `Desktop scanner blocked on N of M pages`, `Cloudflare`, and the action clause
+  - Dismissed banner returns empty HTML when the scan_id is recorded in `wp_options.aias_dismissed_warnings`
+  - `submit_job` hook wipes all dismissals (verified via `AIAS_Broken_Banner::on_submit_job()` → `[]` post-condition)
+
+### Internal
+
+- `admin/views/scanner-page.php` — adds a `<div id="cu-banner-area"></div>` placeholder above `#cu-result-summary` so the JS-driven renderer has a stable mount point.
+- `admin/class-admin-pages.php` — adds a second `wp_localize_script` call exposing `aiasBannerL10n.nonce` (separate global from the existing `cuScanner` localization) so the dismissal handler can verify nonces without coupling to the main settings object.
+
+### Operator notes
+
+- Banner is live-only — it renders during `build_result` after the scan completes and is not re-shown after navigating away. No SaaS-side scan-history fetch is involved (the plugin polls Railway directly during active scans).
+- Banner gracefully degrades: if the Railway worker doesn't yet emit per-page `broken_devices` (older worker versions), the AJAX response carries empty `pages_blocked` / `blocked_reasons` and the banner stays hidden. Behaviour identical to a clean-scan result.
+
+### Production verification — AC-INT corpus 2026-05-06
+
+Banner fired correctly on AC-INT1 (`tier1_http_4xx`) and AC-INT2 (`tier1_http_4xx`); did NOT fire on AC-INT3, AC-INT4, AC-INT5 (baseline), or AC-INT7. Reason-aware copy rendered correctly. Surface 3 (plugin frontend) confirmed working end-to-end. Tracked in internal post-AC-INT followups doc.
+
+---
+
+## [1.2.5] — 2026-05-03
+
+Bug fix release. Closes the F-DEG breach in the rule-emission classifier: Phase A demotions emitted by the Railway scanner (which catch console errors when stripping inline-only handles breaks consumer scripts) were being silently dropped on the plugin side, producing safe rules that re-broke production.
+
+### Fixed
+
+- **`CuJsonBuilder::classify()` now reads the per-device `bucket` field emitted by Railway as the authoritative classification signal.** 
+- **Bucket value is whitelist-validated.** Only `'absent' | 'aggressive' | 'needed'` are trusted. Unknown / missing values fall through to the legacy `{loaded, coverage}` derivation as a defense-in-depth safety net (same behavior as pre-1.2.5, so older Railway versions that don't yet emit `bucket` continue to work).
+
+### Internal
+
+- 6 new PHPUnit cases in `tests/CuJsonBuilderTest.php` covering the bucket-passthrough contract: Phase-A-rescued handle does NOT emit a safe rule; Phase-B-rescued aggressive offender does NOT emit any rule; aggressive bucket passes through; absent-on-both-devices still emits Safe (existing behavior preserved); unknown bucket value falls back to legacy; missing bucket field falls back to legacy. 19/19 CuJsonBuilder tests green.
+
+---
+
+## [1.2.4] — 2026-04-30
+
+Security release. Replaces the AES-256-CBC HTTP-auth blob encryption with `sodium_crypto_secretbox` (XSalsa20-Poly1305 AEAD). Existing stored credentials remain valid and migrate transparently on first read.
+
+### Security
+
+- **`Settings::get_http_auth()` / `set_http_auth()` switched to authenticated encryption.** The previous AES-256-CBC primitive had no MAC — an attacker with `wp_options` write access could flip ciphertext bits to manipulate the decrypted plaintext (textbook CBC malleability). New format uses `sodium_crypto_secretbox` (libsodium XSalsa20-Poly1305 AEAD), where any ciphertext or nonce tampering yields a clean decrypt failure rather than silent corruption. Storage prefix `v2:` distinguishes the new format from legacy blobs.
+- **Lazy migration on read.** First `get_http_auth()` call on an existing AES-CBC blob decrypts with the legacy code path, then re-encrypts with `v2:` AEAD before returning. Migration is best-effort and idempotent — failures fall through to the decoded value, retried next read.
+- **Graceful fallback when libsodium is missing.** PHP 7.2+ ships libsodium, but on some Windows / shared-host PHP builds it can be disabled. `set_http_auth()` detects availability at runtime: sodium present → v2 AEAD; sodium absent → legacy AES-CBC (same as 1.2.3, no regression). No customer-visible error in either case. The lazy migration runs only on hosts where sodium is loaded.
+
+### Internal
+
+- New private helpers in `Settings`: `encrypt_http_auth()`, `encrypt_http_auth_v2()`, `decrypt_http_auth_v2()`, `encrypt_http_auth_legacy()`, `decrypt_http_auth_legacy()`, `derive_http_auth_key_v2()`, `derive_http_auth_key_legacy()`, `sodium_available()`. Public surface (`set_http_auth` / `get_http_auth` / `clear_http_auth`) is unchanged.
+- `wp_json_encode` replaces `json_encode` in the encrypt path for WP idiom consistency.
+
+---
+
+## [1.2.3] — 2026-04-30
+
+Security release. Bundles four hardening items from a D-security audit pass plus the four already-shipped items from earlier on the same day. No behavioural changes for end-users; existing API keys, encrypted HTTP-auth blobs, scanner secrets, and active bypass tokens continue to work.
+
+### Security
+
+- **Attribute-safe `esc()` in `admin/js/scanner.js`.** The DOM-roundtrip helper only escaped `&`, `<`, `>` — interpolating it into a quoted attribute (`data-url="${esc(url)}"`) would not have escaped `"` or `'`. Replaced with explicit five-char escape (`& < > " '`). Also wrapped the previously-raw `${type}` interpolations in three `header.innerHTML` / `row.innerHTML` template literals with `esc(...)` for defence-in-depth (post-type slug values are already `sanitize_key`-bounded server-side, so this is belt-and-braces).
+- **`Settings::get_scanner_secret()` switched to `bin2hex( random_bytes( 16 ) )`.** Previous generator was `wp_generate_uuid4()` which is `mt_rand`-derived. Existing stored UUID4 secrets are honoured untouched; only first-run generation on installs without a stored secret picks up the new format.
+- **`Settings::get_http_auth()` corrupted-option guard.** A stored option without the expected `iv:ciphertext` separator now returns `null` instead of triggering an undefined-index notice.
+- **Removed misleading `composer.lock` entry from `.gitignore`.** The lockfile has been tracked since the initial scaffold commit (`4e3dec1`) — the gitignore line was dead and incorrectly suggested the lockfile was excluded. Removed for consistency. No change in tracking behaviour.
+
+### Earlier today (also 1.2.3)
+
+- **9 namespaced class files now ship `defined( 'ABSPATH' ) || exit;`** (Plugin Check Rule 21). Includes both API clients (`class-railway-client.php`, `class-wpservice-client.php`), `class-settings.php`, `class-scan-history.php`, and the five `includes/scanner/class-*.php` files that previously relied on the autoloader for direct-access protection.
+- **`download_json` Content-Disposition filename now whitelists `[A-Za-z0-9._-]`.** `sanitize_text_field` strips CR/LF (no header injection) but did not strip `"` — an admin-authenticated request could break the quoted filename. Mirrors the defensive pattern already used in `build_zip()`.
+- **New `uninstall.php`.** Removes every `cu_scanner_*` option (plaintext API key, encrypted HTTP-auth blob, scanner secret, active bypass tokens, scan history, per-job snapshots) plus plugin-prefixed transients. Guarded by `WP_UNINSTALL_PLUGIN` + `delete_plugins` capability + `esc_like` on `LIKE` patterns.
+- **Railway URL host allowlist.** 
+
+---
+
+## [1.2.2] — 2026-04-30
+
+Cache-bust release. Pairs with Code Unloader 1.4.6's Bug 2 fix.
+
+### Fixed
+
+- **Scanner push did not refresh an open Code Unloader admin Rules tab in the same browser.** The BroadcastChannel emit code was added to `admin/js/scanner.js` in commit `d919945` (1.4.6 Phase 2 in the CU bundle), but `CU_SCANNER_VERSION` stayed at 1.2.1, so browsers continued serving the cached `scanner.js?ver=1.2.1` without the new emit. Bumping `CU_SCANNER_VERSION` 1.2.1 → 1.2.2 forces every browser to re-fetch `scanner.js`. After this bump, pushing rules from Step 4 emits a `cu.rule.changed` BroadcastChannel message; CU's `wireCrossTabSync` listener (since CU 1.4.4) debounces and refreshes the Rules tab in place. Same-browser-same-origin only, with a `localStorage` write/remove fallback for browsers without `BroadcastChannel`.
+
+### Internal
+
+- No code changes in 1.2.2 versus 1.2.1 — the emit code is already in `admin/js/scanner.js` from commit `d919945`. This release only bumps the version constant + plugin-header `Version:` to invalidate the browser cache.
+- Code Unloader plugin stays at 1.4.6; only the Scanner side ships a version bump in this release.
+
+---
+
+## [1.2.1] — 2026-04-28
+
+### Changed
+
+- **License clarified to "Proprietary source-available".** Plugin header `License:` field updated, copyright block expanded to spell out the explicit allow/disallow surface (copy/install/use unmodified = OK; modify/fork/sublicense/resell/rebrand/redistribute/remove-checks/derivative = requires written permission from Ermada / WPservice.pro). Matches the `## License` block now in `README.md`.
+- **Plugin header `Text Domain` aligned to slug.** `Text Domain: cu-scanner` → `Text Domain: AI-Assets-Scanner`. All `__()` / `_e()` / `esc_html__()` / `esc_html_e()` calls updated in step.
+- **README.md** — added shields.io badge row (CI / Claude Code skill / Codex skill / License / Version), added top-level **Prerequisites** section linking Code Unloader, PHP 8.0+, WordPress 6.2+, and reworked the **How it works** diagram into a four-component flow that ends in `Code Unloader (unloads)`.
+
+### Fixed (Plugin Check)
+
+- **`WordPress.WP.I18n.TextDomainMismatch`** (5 errors across `admin/class-admin-pages.php`, `admin/views/history-page.php`, `includes/admin/class-optimizer-state-notices.php`) — text-domain literals replaced.
+- **`WordPress.Security.EscapeOutput.OutputNotEscaped`** in `includes/admin/class-optimizer-state-notices.php` — `printf()` of a pre-built `$message` string refactored to inline the `sprintf( esc_html__(), esc_html() )` call so escaping is visible to the static sniff.
+- **`plugin_header_invalid_license`** — license string upgraded to descriptive `Proprietary source-available`. (Plugin Check still flags this as non-GPL; that warning is accepted — this plugin is not destined for the WordPress.org repo.)
+
+### Suppressed (false positives, justified inline)
+
+- **`WordPress.Security.EscapeOutput.ExceptionNotEscaped`** in `includes/scanner/class-optimizer-bypass-orchestrator.php` (lines 82, 84) and `includes/scanner/class-strategy-factory.php` (line 17) — exception messages composed for `throw`, never echoed; sniff does not trace `throw` boundaries.
+- **`WordPress.Security.NonceVerification.Recommended` / `.Missing`** in `includes/scanner/class-bypass-handler.php` and `admin/class-scanner-ajax.php` — read sites collapsed onto one line so the existing `phpcs:ignore` directives cover the line where the sniff actually fires (per skill Rule 20 placement playbook).
+- **`WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound`** for `cu_scanner_scan_complete` and **`NonPrefixedFunctionFound`** .
+
+---
+
+## [1.2.0f] — 2026-04-24
+
+### Added
+
+- **Scan History — Export to ZIP.** New toolbar button on the Scan History admin page. Downloads a ZIP containing `history.json`, `history.csv` (UTF-8 BOM, RFC 4180, formula-injection defuse for `=+-@\t\r`), `README.txt`, and one `scans/<job_id>.json` per completed scan with a stored snapshot. Missing snapshots are listed under a `Missing snapshots:` line in `README.txt`. Falls back to a standalone `.csv` download on hosts without `ZipArchive` or when `ZipArchive::open()`/`close()` fail (`Content-Type: text/csv; charset=utf-8`). Job IDs are defensively sanitized via `preg_replace('/[^A-Za-z0-9._-]/', '', ...)` before concatenation into archive member names.
+- **Scan History — Delete all history.** New toolbar button, warns the user to export first via `window.confirm()`, then wipes `cu_scanner_history` and every `cu_scanner_json_<job_id>` option. Success rendered via a single-consume transient (`cu_scanner_history_deleted_notice`, 30 s TTL) as a dismissible `notice-success` on the next page load. New helper `ScanHistory::delete_all(): int` owns the cleanup.
+
+Both handlers gate on `cu_scanner_nonce` + `manage_options`. New AJAX actions: `cu_scanner_export_history` (GET-nonce), `cu_scanner_delete_history` (POST-nonce). New JS file `admin/js/history.js` (enqueued per-page) handles button clicks.
+
+---
+
+## [1.2.0c] — 2026-04-22
+
+### Changed
+
+- Reserve-credits errors now surface the HTTP status code and a 80-char response snippet (e.g. `Could not reserve credits: HTTP 429: rate limited`) instead of the generic "may not have enough credits" message — same pattern as v1.2.0b's submit-job fix. Server `error_log` still receives the untruncated exception detail. Refactored `format_submit_error_detail()` + new `format_reserve_error_detail()` to share a private `truncate_error_detail()` helper.
+
+---
+
+## [1.2.0b] — 2026-04-22
+
+### Fixed
+
+- `CU_SCANNER_VERSION` constant no longer drifts from the plugin header (was stuck at `1.1.5` since commit `ce3f311`).
+
+### Changed
+
+- Scan-submission errors now surface the HTTP status code and a 80-char response snippet (e.g. `Scan submission failed: Railway HTTP 401: no such token`) instead of the generic `Could not submit scan job. Check server error logs.` message. Server `error_log` still receives the untruncated exception detail.
+
+---
+
+## [1.2.0] — 2026-04-20
+
+### BREAKING — mandatory update
+
+Older plugin versions (1.1.5 and below) will see all scans fail with **401 Unauthorized** from the Railway scanner service — the scanner now requires a scoped, short-lived `job_token` per submission instead of the account `api_key`.
+
+**If you are on 1.1.5 or earlier, update immediately.**
+
+### Changed
+
+- **`RailwayClient::submit_job`** now sends `Bearer <job_token>` in the Authorization header (previously `Bearer <api_key>`). The `job_token` is short-lived (24 h), scoped to a single scan, and never exposes the account-level api_key to the Railway runtime. Throws `\RuntimeException('job_token required for Railway submit')` if called without a token.
+- **Cancel dialog** — when you click Cancel on an in-progress scan, the plugin now first fetches your current progress from the scanner and shows a confirmation dialog reading *"Cancelling now will charge you for N pages already scanned. Continue?"* You can still back out; confirming proceeds with the cancel and the partial charge.
+
+### Why this matters (security context)
+
+The scanner runtime previously held each active customer's account `api_key` in memory during a scan. A hypothetical compromise of that runtime would have exposed every in-flight key. With the 2026-04-20 service deployment the account `api_key` never leaves your plugin — the scanner runtime only ever sees per-scan `job_tokens`, which expire in 24 h and are scoped to a single job. This is a significant reduction in blast radius on the service side.
+
+---
+
+## [1.1.5] — 2026-04-12
+
+### New features
+
+- **Code Unloader missing warning** — When Code Unloader is not installed or active, a red error notice appears at the top of Step 1 with a direct link to the wordpress.org plugin page.
+- **Contact button** — A "Get in touch" button appears in the Discover Pages row, right-aligned, linking to https://wpservice.pro/contact/. Opens in a new tab.
+- **Credit balance badge** — After discovering pages, a second badge ("X credits available") appears beside the existing scan-cost badge. Turns red when available credits are fewer than the scan cost.
+
+### Improvements
+
+- **Discover Pages button** — Changed to primary style (blue background, white text) to match the Start Scan button.
+- **Security plugin notices** — Removed the "See Settings →" deep-link from Wordfence and Cloudflare warning notices to reduce visual noise.
+
+---
+
+## [1.1.4] — 2026-04-12
+
+### New features
+
+- **Security plugin detection** — Step 1 now detects Wordfence, Wordfence Login Security, and the Cloudflare for WordPress plugin and shows a contextual warning with a "See Settings →" deep-link. Wordfence entries link to the Settings page; the Cloudflare entry links directly to the Cloudflare WAF Bypass section.
+
+---
+
+## [1.1.3] — 2026-04-12
+
+### New features
+
+- **Bot-protection warning notice** — A contextual warning now appears in Step 1 just before the Start Scan button, reminding users to temporarily disable Cloudflare or WordFence bot protection and rate limiting before scanning. Includes a link to the Settings page for users who prefer a permanent bypass.
+- **Scanner Secret** — A persistent UUID secret is auto-generated on first use and displayed in Settings (read-only, with a one-click Copy button). This secret is sent as an `x-cu-scanner` HTTP header by the Railway scanner on every page request.
+- **Cloudflare WAF bypass instructions** — New section in Settings explains step-by-step how to create a Cloudflare WAF Custom Rule matching the `x-cu-scanner` header, so the scanner bypasses Bot Fight Mode automatically without disabling site-wide protection.
+- **WordFence note** — Settings includes guidance for WordFence users: add the Railway server IP to WordFence Allowlisted IPs, or temporarily disable rate limiting before scanning.
+
+### Improvements
+
+- **Realistic desktop User-Agent** — The Railway scanner now identifies itself as a real Windows Chrome browser (`Chrome/124`) on desktop scans instead of the default headless Playwright UA, reducing false-positive bot blocks.
+
+---
+
+## [1.1.2] — 2026-04-11
+
+### Bug fixes
+
+- **Duplicate rows on repeated polls** — `handleStatusUpdate` used `lastPageIndex + idx` to assign row IDs and incremented `lastPageIndex` by `pages.length` after each poll. Because Railway always returns all pages (index 0 to total−1), subsequent polls rendered pages at wrong offsets (rows `total`, `total+1`, ...) instead of updating the existing rows in-place. Fixed by using `idx` directly as the row ID and removing the stale increment.
+
+---
+
+## [1.0.9] — 2026-04-11
+
+### New features
+
+- **Queue status banner** — While a scan is queued on the Railway service, the scanner UI shows a live banner with queue position and estimated wait ("Position X in queue"). The banner hides automatically when the job starts processing.
+- **Variable poll interval** — Status polling now uses 10 s intervals when the job is queued and drops to 2 s once it moves to in-progress, balancing responsiveness against server load.
+- **Cancelled-timeout state** — If a job times out in the Railway queue (> 3 h wait), the plugin detects the `cancelled_timeout` status, stops polling, and shows a user-friendly message explaining the job expired in the queue.
+
+### Bug fixes
+
+- **Double credit release on cancel** — `cancel_job()` was calling `WpserviceClient::release_credits()` directly after also calling the Railway cancel route (which now owns credit release). The PHP-side release call has been removed to prevent double-release.
+- **Initial status set to "queued"** — Scan history records were created with `status = "in_progress"` at submission time. Records now start as `"queued"` and transition when Railway reports the job active.
+
+---
+
+## [1.0.8] — 2026-04-10
+
+### Added
+
+- **Include URLs field** — New "Include URLs (one per line)" textarea in Step 1, above Exclude URLs. Typing URLs here immediately shows the Start Scan button without needing to run Discover Pages.
+- **Include-only scan path** — When URLs are entered in Include URLs and Discover Pages is not clicked, Start Scan scans exactly those URLs directly.
+- **Include + Discover merge** — When Discover Pages is run after filling Include URLs, the included URLs are merged into the discovered set as a pre-selected "Included" group with its own filter pill and `[included]` badge on each row.
+- **Deduplication** — Include URLs already present in discovered pages are not duplicated (normalised comparison: trailing-slash insensitive, case-insensitive).
+- **Discover Pages button repositioned** — Moved to the top of Step 1 with a hint: "or fill Include URLs below to scan specific pages". Button is normal width (not full-width).
+
+---
+
+## [1.0.7] — 2026-04-10
+
+### Rebrand
+
+- **Plugin renamed to AI Assets Scanner** — Plugin name, menu title, admin page headers, and all banner HTML updated from "CU Scanner" to "AI Assets Scanner"
+- **Main file renamed** — `cu-scanner.php` → `ai-assets-scanner.php`; admin CSS renamed from `cu-scanner-admin.css` → `ai-assets-scanner-admin.css`; all enqueue references updated
+- **AI Assets Scanner logo** — New logo image added to all admin page headers; attribution banner updated
+- **Buy Credits URL updated** — Link now points to the correct shop anchor on wpservice.pro
+- **Admin hook names updated** — WordPress admin hooks updated to match the rebranded plugin slug
+
+### Security
+
+- **API key masking** — The API key field in Settings now displays a masked value (`••••••••`) after saving instead of the raw key, preventing accidental exposure in screenshots or screen shares
+- **Keep-key sentinel** — A `keep_api_key` sentinel is sent when submitting the settings form with the masked placeholder, preventing the stored key from being overwritten with the mask string
+- **Null guard on API key input** — Added null guard in `settings.js` to prevent a JS error when the API key input is not present on the page
+
+### Documentation
+
+- **README rewritten** — Full rebrand and expansion with feature list, architecture diagram, quick-start guide, and requirements
+- **INSTALL.md updated** — Folder name, menu references, and plugin name corrected to match rebrand
+
+---
+
+## [1.0.6] — 2026-04-07
+
+### Improvements
+
+- **Versioned groups retain their rules** — Previously, bumping old scanner groups (e.g. "CU Scanner — Safe" → "CU Scanner — Safe v1") also deleted all rules from those groups and from any prior versioned copies. This was a workaround for a table-wide UNIQUE constraint in Code Unloader. Now that Code Unloader's `wp_cu_rules` UNIQUE key includes `group_id`, every group keeps its full rule set after renaming. History groups are fully intact and browsable.
+- **Ungrouped rules captured in snapshot** — Rules that exist outside any group in Code Unloader (always active, no enable/disable) are now included in the "Previously active rules" snapshot taken before each push.
+
+### Bug fixes
+
+- **Ungrouped rules not deactivated after push** — After a successful push, ungrouped rules remained active because they have no group to disable. They are now deleted at commit time (they are already preserved in the snapshot group).
+
+---
+
+## [1.0.5] — 2026-04-05
+
+### New features
+
+- **Push versioning** — When pushing scanner results to Code Unloader, existing "CU Scanner — Safe" and "CU Scanner — Aggressive" groups are now renamed to versioned copies ("CU Scanner — Safe v1", "v2", etc.) and disabled before fresh groups are created. Previous versions are preserved indefinitely and never deleted.
+- **Safe group active by default** — After a push, only the new "CU Scanner — Safe" group is enabled. "CU Scanner — Aggressive" is saved but disabled — enable it manually when you're ready.
+- **Previously active rules backup** — All rules that were active before a push are copied to a new disabled "Previously active rules [date]" group as a full safety snapshot.
+
+### Bug fixes
+
+- **SnapshotManager duplicate-key crash** — Previous buggy 0/0 pushes could leave the same rule in both scanner groups. On the next push, `snapshot()` would hit a DB UNIQUE constraint when copying both copies into the snapshot group, aborting the push with 0 rules added. Duplicate entries are now skipped silently during snapshot.
+- **Version bump rollback** — If creating fresh scanner groups fails after old groups were already renamed, the renamed groups are now restored to their original names and re-enabled.
+
+---
+
+## [1.0.4] — 2026-04-04
+
+### Bug fixes
+
+- **Railway payload format** — `submit_job()` now sends `pages` as an array of `{url, bypass_token}` objects instead of a flat `urls` string array, matching what the Railway worker expects.
+- **Railway base URL** — Plugin was sending `https://***/wp-json` as the `url` field; Railway then appended `/wp-json/...` creating a double path. Added `CU_SCANNER_WPSERVICE_BASE` constant (bare `https://***`) used exclusively for the Railway callback field.
+- **Credits lost on job submission failure** — When `submit_job()` failed before writing job state, `handle_failure()` had no transient to read so it exited early without releasing reserved credits. `handle_failure()` now falls back to the `cu_scanner_pending_token_` transient as a safety net.
+- **Credits lost on PHP fatal** — Added `release_credits()` call directly in the `submit_job()` catch block so credits are always released if the submission throws before the job store is written.
+- **Uncaught fetch rejections** — Added `.catch()` handlers to the `reserve_job` and `submit_job` fetch chains in `scanner.js` so network failures trigger the failure flow instead of an unhandled promise rejection.
+- **Step 4 state lost on navigation** — After completing a scan, navigating away from the CU Scanner page and returning reset the UI to Step 1. Step 4 result data (job ID, safe/aggressive counts, push eligibility) is now saved to `localStorage` on completion and restored on next page load. Clicking "Run Another Scan" clears the saved state.
+
+### Improvements
+
+- **CuJsonBuilder exports Code Unloader-compatible format** — The downloaded JSON and Push to CU button previously created rules that never fired. Three root causes fixed:
+  1. Field renamed `handle` → `asset_handle` (Code Unloader's DB column name)
+  2. Asset type mapped at build time: `style` → `css`, `script` → `js` (DB ENUM only accepts `css`/`js`)
+  3. URL patterns are now full normalized URLs (`https://site.com/blog`) matching Code Unloader's `PatternMatcher::normalize_url()` output — path-only patterns (`/blog/`) never matched
+  - `match_type: exact` and `source_label: CU Scanner` added to every rule
+  - RulePusher updated to pass fields through directly (no more local translation)
+- **Credit balance widget** — Settings page credit balance redesigned with a styled gold card, large bold number, `credits` label, low-balance red state (< 10 credits), and a loading indicator during refresh.
+- **CuJsonBuilder format version** bumped to `1.4.1` to match the targeted Code Unloader version.
+
+---
+
+## [1.0.3] — 2026-04-03
+
+### Security
+
+- **ABSPATH guards** added to `class-plugin.php`, `class-admin-pages.php`, `class-scanner-ajax.php`, `class-settings-ajax.php`, `class-bypass-manager.php` — prevents direct PHP file execution outside WordPress.
+- **`wp_unslash()` added** to all `$_POST` and `$_GET` reads in `class-scanner-ajax.php`, `class-settings-ajax.php`, and `class-bypass-manager.php`.
+- **`gmdate()` replaces `date()`** in `class-snapshot-manager.php` — timestamps are now timezone-safe regardless of server locale.
+- **`wp_parse_url()` replaces `parse_url()`** in `class-cu-json-builder.php` — uses WordPress's safe URL parsing wrapper.
+
+---
+
+## [1.0.2] — 2026-04-03
+
+### New features
+
+- **Domain locking (client side)** — `WpserviceClient` now computes the site's hostname via `wp_parse_url(get_home_url(), PHP_URL_HOST)` and sends it as `domain` on every request to wpservice (`/auth`, `/jobs/reserve`, `/credits`, `/credits/release`). No call sites change — domain extraction is centralised in a private `domain()` helper.
+
+### Other
+
+- **Version display** — Plugin version (`vX.X.X`) shown in the header of all admin pages (Scanner, Settings, Scan History).
+- **Version constant fix** — `CU_SCANNER_VERSION` constant kept in sync with plugin header.
+
+---
+
+## [1.0.1] — 2026-04-03
+
+### Bug fixes
+
+- **API key placeholder** — Settings page placeholder corrected from `sk-...` to `cusk_...` to match the actual key format.
+- **Credit balance display** — Fixed `auth['credits']` key mismatch (server returns `balance`); balance now shows immediately after saving settings without a page refresh.
+- **Reserve endpoint contract** — Updated `reserve_job()` to send `page_count` and receive the server-generated `job_token`; removed the client-side job token parameter that no longer exists.
+
+---
+
+## [1.1.0] — 2026-03-22
+
+### Dashboard redesign
+
+- **Admin menu icon** — Replaced the generic magnifying glass icon with a custom sonar/radar SVG icon
+- **Constrained width layout** — All plugin pages are now capped at 920 px on wide screens
+- **Dark accent header** — Every page shows a dark navy gradient header with the CU Scanner logo, page label, and (on the scanner page) four step progress pips
+- **Grouped URL list** — Discovered URLs are now bucketed into Pages, Posts, and Other groups, each with a dark colour-coded header row
+- **Per-URL checkboxes** — Each URL row has a checkbox; deselected rows are visually struck through. Only checked URLs are submitted to the scanner and counted against credits
+- **Group-level checkboxes** — Check/uncheck an entire group at once; the group checkbox shows an indeterminate state when the group is partially selected
+- **Filter pills** — All / Pages / Posts / Other pills filter the visible groups without affecting selection state; Select All / Deselect All act on the currently visible groups only
+- **Sonar animation** — A radar sweep animation plays while URL discovery is in progress
+- **Live credit badge** — Shows the number of credits the current scan will use, updated in real time as URLs are deselected
+- **Compact bypass notices** — Auto-bypass plugin notices are now a single-line banner instead of a full WP notice block; text reads "[Plugin Name] — temporary bypass applied."
+- **Security** — HTML-escaped all server-supplied values rendered via `innerHTML`
+
+---
+
+## [1.0.0] — 2026-03-20
+
+### Initial release
+
+- Plugin scaffold with autoloader and WordPress hooks
+- wpservice API client (authentication, credit balance, job reservation)
+- Railway API client (job submission, status polling, cancellation)
+- Settings page — API key, HTTP Basic Auth (stored encrypted), credit balance
+- Page discovery — sitemap parser with WP_Query fallback
+- Optimization plugin detector — auto-bypass, soft-block, and soft-warn categories
+- Bypass manager — injects bypass tokens into scanned page requests
+- 4-step scan workflow — Discover → Reserve → Scan → Results
+- CU JSON builder — generates safe and aggressive unload rules from scan results
+- Rule pusher — pushes generated rules directly to Code Unloader
+- Scan history — stores the last 10 scans with download links
+- Full PHPUnit test suite (48 tests)

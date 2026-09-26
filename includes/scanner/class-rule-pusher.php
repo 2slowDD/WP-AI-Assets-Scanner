@@ -1,0 +1,547 @@
+<?php
+namespace CUScanner\Scanner;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Pushes AA Scanner rules directly into Code Unloader's database
+ * via CodeUnloader\Core\RuleRepository (static API).
+ *
+ * CU API (v1.4.0):
+ *   RuleRepository::create_group( string $name, string $description ): int|\WP_Error
+ *   RuleRepository::update_group( int $id, array $data ): bool
+ *   RuleRepository::create_rule( array $data ): int|\WP_Error
+ *   RuleRepository::delete_rule( int $id ): bool
+ *
+ * Push sequence:
+ *   1. snapshot()            – backup ALL active rules to "Previously active [date]"
+ *   2. bump_scanner_groups() – rename+disable old "AA Scanner — Safe/Aggressive"
+ *   3. do_push()             – create fresh Safe (enabled) + Aggressive (disabled)
+ *   4. commit()              – disable groups that were active before step 1
+ */
+class RulePusher {
+    private const CU_PLUGIN = 'code-unloader/code-unloader.php';
+    private const CU_CLASS  = 'CodeUnloader\\Core\\RuleRepository';
+
+    public function __construct(
+        private string $repo = self::CU_CLASS
+    ) {}
+
+    public function can_push(): bool {
+        if ( ! is_plugin_active( self::CU_PLUGIN ) ) return false;
+        return class_exists( $this->repo );
+    }
+
+    public function repository_class(): string {
+        return $this->repo;
+    }
+
+    /** True if Code Unloader currently has rules in any enabled group (a push would overwrite them). */
+    public function has_active_cu_rules(): bool {
+        if ( ! $this->can_push() ) { return false; }
+        return ( new SnapshotManager( $this->repo ) )->has_active_rules();
+    }
+
+    /**
+     * Count, per url_pattern, how many of this scan's rules Code Unloader ALREADY has.
+     *
+     * This is the same question sync() answers at write time via find_duplicate() —
+     * asked at result-build time instead, so the customer is not shown rules they
+     * already own as new findings.
+     *
+     * Bulk by design (spec Q3): one get_all_groups() + one get_all_rules() + an
+     * in-memory set, never a find_duplicate() query per rule.
+     *
+     * ⚠️ Returns NULL when Code Unloader cannot be consulted. NULL means "cannot know"
+     * and is NOT the same as an empty array ("nothing is already present") — the caller
+     * must render no claim at all on NULL.
+     *
+     * ⚠️ READ-ONLY. Group resolution is find-only: unlike find_or_create_group(), a
+     * missing group must NOT be created here. Result-build must never mutate CU.
+     *
+     * @param  array $cu_json CuJsonBuilder::build() output (post-ratchet-merge).
+     * @return array<string,array{safe:int,aggressive:int}>|null
+     */
+    public function already_present_by_pattern( array $cu_json ): ?array {
+        if ( ! $this->can_push() ) {
+            return null;
+        }
+        // Version floor: AAS has no CU version check anywhere, and this method needs the
+        // bulk API. A CU without it degrades to "cannot know" rather than fataling.
+        if ( ! method_exists( $this->repo, 'get_all_rules' ) || ! method_exists( $this->repo, 'get_all_groups' ) ) {
+            return null;
+        }
+
+        $repo = $this->repo;
+
+        // Find-only group resolution: exact name match, highest id wins (mirrors
+        // find_or_create_group's loop, minus the create).
+        $group_ids = [];
+        foreach ( $cu_json['groups'] as $group_def ) {
+            $match = null;
+            foreach ( $repo::get_all_groups() as $g ) {
+                if ( $g->name === $group_def['name'] && ( $match === null || (int) $g->id > (int) $match->id ) ) {
+                    $match = $g;
+                }
+            }
+            if ( $match !== null ) {
+                $group_ids[ $group_def['id'] ] = (int) $match->id;
+            }
+        }
+        $safe_group_id       = $group_ids[1] ?? null;
+        $aggressive_group_id = $group_ids[2] ?? null;
+
+        // Index CU's existing rules by the 5-key identity and the devices they unload
+        // (spec §3.1 coverage-subset).
+        $resolved = array_filter( [ $safe_group_id, $aggressive_group_id ], static fn( $v ) => null !== $v );
+        $index    = $this->coverage_index( $repo, array_values( $resolved ) );
+
+        $by_pattern = [];
+        foreach ( $cu_json['rules'] as $rule ) {
+            // Same else-branch semantics as sync(): aggressive for ANY non-1 group_id.
+            $target_group_id = $rule['group_id'] === 1 ? $safe_group_id : $aggressive_group_id;
+            $pattern         = (string) $rule['url_pattern'];
+
+            if ( ! isset( $by_pattern[ $pattern ] ) ) {
+                $by_pattern[ $pattern ] = [ 'safe' => 0, 'aggressive' => 0 ];
+            }
+            if ( null === $target_group_id ) {
+                continue; // CU has no such group => nothing of this rule's kind is present.
+            }
+
+            // ⚠️ build_rule_payload() reads $rule['device_type'] with no ?? default. sync()
+            // tolerates that because a warning there is harmless noise on an operator
+            // action; result-build runs on EVERY scan, so normalize before delegating.
+            $rule['device_type'] = $rule['device_type'] ?? 'all';
+
+            // Reuse the SAME payload builder sync() uses, so normalize_asset_type and the
+            // match_type/handle/source defaults cannot drift between the two paths.
+            $payload = $this->build_rule_payload( $rule, $target_group_id );
+
+            if ( self::covers( self::present_devices_from_index( $index, $payload ), self::needed_devices( $payload['device_type'] ?? 'all' ) ) ) {
+                $bucket = $rule['group_id'] === 1 ? 'safe' : 'aggressive';
+                $by_pattern[ $pattern ][ $bucket ]++;
+            }
+        }
+
+        return $by_pattern;
+    }
+
+    /**
+     * Snapshot → version-bump → push → commit (or rollback on failure).
+     *
+     * @param  array $cu_json  Output of CuJsonBuilder::build()
+     * @return array { safe_count: int, aggressive_count: int, error_count: int, error_message: string }
+     * @throws \RuntimeException if Code Unloader is not active.
+     */
+    public function push( array $cu_json ): array {
+        if ( ! $this->can_push() ) {
+            throw new \RuntimeException( 'Code Unloader is not active or RuleRepository class not found.' );
+        }
+
+        $repo    = $this->repo;
+        $snapmgr = new SnapshotManager( $repo );
+        $vermgr  = new GroupVersionManager( $repo );
+
+        // --- Phase 1: snapshot active rules (nothing disabled yet) ---
+        $snapshot_attempted = false;
+        if ( $snapmgr->has_active_rules() ) {
+            $snapshot_attempted = true;
+            $snap_result = $snapmgr->snapshot();
+            if ( \is_wp_error( $snap_result ) ) {
+                $snapmgr->rollback();
+                return [
+                    'safe_count'       => 0,
+                    'aggressive_count' => 0,
+                    'error_count'      => 1,
+                    'error_message'    => 'Snapshot failed: ' . $snap_result->get_error_message(),
+                    'created_rule_ids' => [],
+                    'group_ids'        => [],
+                    'created_group_ids'=> [],
+                ];
+            }
+        }
+
+        // --- Phase 2: rename+disable old scanner groups ---
+        $bump_result = $vermgr->bump_scanner_groups();
+        if ( \is_wp_error( $bump_result ) ) {
+            if ( $snapshot_attempted ) { $snapmgr->rollback(); }
+            return [
+                'safe_count'       => 0,
+                'aggressive_count' => 0,
+                'error_count'      => 1,
+                'error_message'    => 'Version bump failed: ' . $bump_result->get_error_message(),
+                'created_rule_ids' => [],
+                'group_ids'        => [],
+                'created_group_ids'=> [],
+            ];
+        }
+
+        // --- Phase 3: push fresh scanner groups and rules ---
+        try {
+            $stats = $this->do_push( $cu_json, $repo );
+        } catch ( \Throwable $e ) {
+            $vermgr->rollback();
+            if ( $snapshot_attempted ) { $snapmgr->rollback(); }
+            throw $e;
+        }
+
+        if ( $stats['error_count'] > 0 ) {
+            $vermgr->rollback();
+            if ( $snapshot_attempted ) { $snapmgr->rollback(); }
+            return $stats;
+        }
+
+        // --- Phase 4: commit (disable pre-push active groups) ---
+        if ( $snapshot_attempted ) {
+            $snapmgr->commit();
+        }
+
+        return $stats;
+    }
+
+    /**
+     * Append the scan's rules to the existing active CU groups (vs push() which
+     * overwrites). No snapshot, no version-bump — purely additive. Both groups
+     * end enabled. Exact duplicates (find_duplicate) and device-covered rules
+     * (spec §3.1 coverage-subset) are reported as already_present, never counted
+     * as appended (spec §4.3 / §4.4 — R9).
+     *
+     * @return array{appended_safe:int,appended_aggressive:int,already_present:int,error_count:int,error_message:string,created_rule_ids:int[],group_ids:int[],created_group_ids:int[]}
+     * @throws \RuntimeException if Code Unloader is not active.
+     */
+    public function sync( array $cu_json ): array {
+        if ( ! $this->can_push() ) {
+            throw new \RuntimeException( 'Code Unloader is not active or RuleRepository class not found.' );
+        }
+        $repo = $this->repo;
+
+        $group_ids         = [];
+        $created_group_ids = [];
+        foreach ( $cu_json['groups'] as $group_def ) {
+            $group_lookup = $this->find_or_create_group( $repo, $group_def['name'], $group_def['description'] ?? '' );
+            if ( \is_wp_error( $group_lookup ) ) {
+                // Group creation precedes rule iteration, so already_present is genuinely 0 here.
+                return [ 'appended_safe' => 0, 'appended_aggressive' => 0, 'already_present' => 0, 'error_count' => 1, 'error_message' => 'Group create failed: ' . $group_lookup->get_error_message(), 'created_rule_ids' => [], 'group_ids' => [], 'created_group_ids' => [] ];
+            }
+            $gid = (int) $group_lookup['id'];
+            $group_ids[ $group_def['id'] ] = $gid;
+            if ( ! empty( $group_lookup['created'] ) ) {
+                $created_group_ids[] = $gid;
+            }
+        }
+        $safe_group_id       = $group_ids[1] ?? null;
+        $aggressive_group_id = $group_ids[2] ?? null;
+
+        $appended_safe = 0; $appended_aggressive = 0; $already_present = 0; $error_count = 0; $first_error = '';
+        $inserted_rule_ids = [];
+
+        foreach ( $cu_json['rules'] as $rule ) {
+            $target_group_id = $rule['group_id'] === 1 ? $safe_group_id : $aggressive_group_id;
+            $payload = $this->build_rule_payload( $rule, $target_group_id );
+
+            // Exact gate FIRST (unchanged): create_rule() silently returns an EXISTING id on an
+            // exact duplicate, so without this gate a rule repeated inside one scan list would
+            // count as appended and its pre-existing id would land in created_rule_ids — and
+            // undo would later delete a row this Sync did not create.
+            if ( $repo::find_duplicate( $payload ) !== null ) {
+                $already_present++;
+                continue;
+            }
+            // Coverage gate (spec §3.2 step 3): present when CU already unloads this rule on
+            // every device it targets (an All row covers a Desktop leg; Desktop + Mobile rows
+            // cover an All rule). Skipped on a null target group, mirroring
+            // already_present_by_pattern()'s find-only resolution (unreachable today: the
+            // builder always emits both group defs).
+            if ( null !== $target_group_id
+              && self::covers( $this->present_devices_by_probe( $repo, $payload ), self::needed_devices( $payload['device_type'] ?? 'all' ) ) ) {
+                $already_present++;
+                continue;
+            }
+
+            $result = $repo::create_rule( $payload );
+            if ( \is_wp_error( $result ) ) {
+                $msg = $result->get_error_message();
+                // DB-UNIQUE backstop — treat as already_present, not error (find_duplicate can miss the prefix-191 column edge).
+                if ( str_contains( $msg, 'Duplicate entry' ) || str_contains( $msg, 'uniq_rule' ) ) {
+                    $already_present++;
+                    continue;
+                }
+                if ( ! $first_error ) { $first_error = $msg; }
+                $error_count++;
+            } else {
+                $inserted_rule_ids[] = (int) $result;
+                if ( $rule['group_id'] === 1 ) { $appended_safe++; } else { $appended_aggressive++; }
+            }
+        }
+
+        if ( $error_count > 0 ) {
+            foreach ( $inserted_rule_ids as $id ) { $repo::delete_rule( $id ); }
+            return [ 'appended_safe' => 0, 'appended_aggressive' => 0, 'already_present' => $already_present, 'error_count' => $error_count, 'error_message' => $first_error, 'created_rule_ids' => [], 'group_ids' => [], 'created_group_ids' => [] ];
+        }
+
+        $this->enable_both_groups( $repo, $safe_group_id, $aggressive_group_id );
+
+        return [ 'appended_safe' => $appended_safe, 'appended_aggressive' => $appended_aggressive, 'already_present' => $already_present, 'error_count' => 0, 'error_message' => '', 'created_rule_ids' => $inserted_rule_ids, 'group_ids' => array_values( $group_ids ), 'created_group_ids' => array_values( array_unique( $created_group_ids ) ) ];
+    }
+
+    // -------------------------------------------------------------------------
+    // Private helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Create fresh scanner groups and insert rules.
+     * Old groups were already renamed by GroupVersionManager — always create new.
+     * On success, disables the Aggressive group (Safe stays enabled by default).
+     */
+    private function do_push( array $cu_json, string $repo ): array {
+        // Create fresh groups — old ones were renamed, so these always succeed as new.
+        $group_ids         = [];
+        $created_group_ids = [];
+        foreach ( $cu_json['groups'] as $group_def ) {
+            $result = $repo::create_group( $group_def['name'], $group_def['description'] ?? '' );
+            if ( \is_wp_error( $result ) ) {
+                throw new \RuntimeException( 'Failed to create group: ' . $result->get_error_message() ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Caught by caller's AJAX handler; passed to wp_send_json_error(), not rendered as HTML.
+            }
+            $gid = (int) $result;
+            $group_ids[ $group_def['id'] ] = $gid;
+            $created_group_ids[] = $gid;
+        }
+
+        $safe_count        = 0;
+        $aggressive_count  = 0;
+        $error_count       = 0;
+        $first_error       = '';
+        $inserted_rule_ids = [];
+
+        $safe_group_id       = $group_ids[1] ?? null;
+        $aggressive_group_id = $group_ids[2] ?? null;
+
+        foreach ( $cu_json['rules'] as $rule ) {
+            $cu_group_id = $rule['group_id'] === 1 ? $safe_group_id : $aggressive_group_id;
+
+            $result = $repo::create_rule( $this->build_rule_payload( $rule, $cu_group_id ) );
+
+            if ( \is_wp_error( $result ) ) {
+                $msg = $result->get_error_message();
+                // Skip duplicate-key violations — occurs when the scan JSON contains
+                // the same rule more than once for the same group.
+                // First copy wins; subsequent copies are silently dropped.
+                if ( str_contains( $msg, 'Duplicate entry' ) || str_contains( $msg, 'uniq_rule' ) ) {
+                    continue;
+                }
+                if ( ! $first_error ) {
+                    $first_error = $msg;
+                }
+                $error_count++;
+            } else {
+                $inserted_rule_ids[] = (int) $result;
+                if ( $rule['group_id'] === 1 ) {
+                    $safe_count++;
+                } else {
+                    $aggressive_count++;
+                }
+            }
+        }
+
+        if ( $error_count > 0 ) {
+            // Clean up partial writes — caller will also rollback the snapshot.
+            foreach ( $inserted_rule_ids as $id ) {
+                $repo::delete_rule( $id );
+            }
+        } else {
+            // Both groups active (Safe + Aggressive) — operator's chosen behavior.
+            $this->enable_both_groups( $repo, $safe_group_id, $aggressive_group_id );
+        }
+
+        return [
+            'safe_count'       => $safe_count,
+            'aggressive_count' => $aggressive_count,
+            'error_count'      => $error_count,
+            'error_message'    => $first_error,
+            'created_rule_ids' => $error_count > 0 ? [] : $inserted_rule_ids,
+            'group_ids'        => array_values( $group_ids ),
+            'created_group_ids'=> $error_count > 0 ? [] : array_values( array_unique( $created_group_ids ) ),
+        ];
+    }
+
+    /** Enable both scanner groups (Safe + Aggressive). Idempotent; shared by do_push() + sync(). */
+    private function enable_both_groups( string $repo, ?int $safe_group_id, ?int $aggressive_group_id ): void {
+        if ( $safe_group_id !== null )       { $repo::update_group( $safe_group_id,       [ 'enabled' => 1 ] ); }
+        if ( $aggressive_group_id !== null ) { $repo::update_group( $aggressive_group_id, [ 'enabled' => 1 ] ); }
+    }
+
+    // -------------------------------------------------------------------------
+    // Device-coverage presence (FU-AAS-SYNC-DEVICE-DUPLICATES, spec §3.1)
+    // One definition of "already present", two providers of what CU holds.
+    // -------------------------------------------------------------------------
+
+    /**
+     * The device set a rule targets. 'all' is BOTH devices; an unknown value targets
+     * nothing and is therefore never covered (covers() is false on an empty set), so
+     * such a rule falls through to create_rule where CU stores its ENUM default.
+     *
+     * @param  mixed $device_type Rule/row device_type (null ⇒ 'all', as find_duplicate does).
+     * @return string[] Subset of ['desktop','mobile'].
+     */
+    private static function needed_devices( $device_type ): array {
+        return match ( (string) ( $device_type ?? 'all' ) ) {
+            'all'     => [ 'desktop', 'mobile' ],
+            'desktop' => [ 'desktop' ],
+            'mobile'  => [ 'mobile' ],
+            default   => [],
+        };
+    }
+
+    /**
+     * Coverage-subset rule (operator ruling 2026-09-05): present iff the rule targets at
+     * least one device AND every device it targets is already unloaded by an active rule
+     * of the same 5-key identity in the same scanner group. The empty-needed-set clause is
+     * explicit on purpose — a vacuous "for all" would call an unknown device covered.
+     *
+     * @param string[] $present Devices CU already unloads for this 5-key.
+     * @param string[] $needed  Devices the rule targets (needed_devices()).
+     */
+    private static function covers( array $present, array $needed ): bool {
+        if ( [] === $needed ) {
+            return false;
+        }
+        foreach ( $needed as $device ) {
+            if ( ! in_array( $device, $present, true ) ) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * The 5-key identity coverage is computed over: find_duplicate's six columns MINUS
+     * device_type, with its normalizations (string casts; IFNULL(group_id, 0)).
+     */
+    private static function coverage_key( array $payload ): string {
+        return implode( '|', [
+            (string) $payload['url_pattern'],
+            (string) $payload['match_type'],
+            (string) $payload['asset_handle'],
+            (string) $payload['asset_type'],
+            (string) ( isset( $payload['group_id'] ) && '' !== $payload['group_id'] && null !== $payload['group_id']
+                ? (int) $payload['group_id'] : 0 ),
+        ] );
+    }
+
+    /**
+     * WRITE-PATH provider: what CU holds for this payload's 5-key, asked through
+     * find_duplicate — which bypasses CU's caches and always reads the DB. ⚠️ Deliberately
+     * NOT get_all_rules(): RuleRepository::create_rule() clears only its request-static
+     * and never wp_cache_delete()s 'cdunloader_all_rules', so on a persistent-object-cache
+     * site the bulk read can predate every insert since the last non-insert mutation
+     * (spec §1.2). ≤3 indexed probes per rule; the exact variant is probed again here so
+     * this provider and the index provider return the SAME set for the same state.
+     *
+     * @return string[] Subset of ['desktop','mobile'].
+     */
+    private function present_devices_by_probe( string $repo, array $payload ): array {
+        $present  = [];
+        $variants = array_values( array_unique( array_merge( [ 'all' ], self::needed_devices( $payload['device_type'] ?? 'all' ) ) ) );
+        foreach ( $variants as $variant ) {
+            if ( $repo::find_duplicate( array_merge( $payload, [ 'device_type' => $variant ] ) ) !== null ) {
+                $present = array_merge( $present, self::needed_devices( $variant ) );
+            }
+        }
+        return array_values( array_unique( $present ) );
+    }
+
+    /**
+     * ADVISORY-PATH provider (result-build): ONE get_all_rules() read, rows of the resolved
+     * scanner groups keyed by coverage_key() with the union of the devices they unload.
+     * ⚠️ May lag on a persistent-object-cache site (RuleRepository::create_rule never
+     * wp_cache_delete()s 'cdunloader_all_rules'); the exposure is one-directional —
+     * UNDER-reporting "already present" (fewer card notices / credit-backs), never over —
+     * and pre-existing, and this path is advisory + read-only. The write path never uses it.
+     *
+     * @param  int[] $group_ids Resolved current scanner group ids.
+     * @return array<string, string[]> coverage_key => subset of ['desktop','mobile'].
+     */
+    private function coverage_index( string $repo, array $group_ids ): array {
+        $index = [];
+        foreach ( $repo::get_all_rules() as $r ) {
+            $gid = (int) ( $r->group_id ?? 0 );
+            if ( ! in_array( $gid, $group_ids, true ) ) {
+                continue;
+            }
+            $key = self::coverage_key( [
+                'url_pattern'  => (string) $r->url_pattern,
+                'match_type'   => (string) $r->match_type,
+                'asset_handle' => (string) $r->asset_handle,
+                'asset_type'   => (string) $r->asset_type,
+                'group_id'     => $gid,
+            ] );
+            // CU's device_type column is ENUM NOT NULL DEFAULT 'all'; ?? 'all' mirrors
+            // find_duplicate's payload-side default, not a column state.
+            $index[ $key ] = array_values( array_unique( array_merge( $index[ $key ] ?? [], self::needed_devices( $r->device_type ?? 'all' ) ) ) );
+        }
+        return $index;
+    }
+
+    /** @return string[] The index entry for this payload's 5-key, or [] when CU holds nothing for it. */
+    private static function present_devices_from_index( array $index, array $payload ): array {
+        return $index[ self::coverage_key( $payload ) ] ?? [];
+    }
+
+    /**
+     * Return the id of the existing un-versioned group with this exact name, or
+     * create it. The bump flow guarantees at most one un-versioned group per base
+     * name; if (abnormally) more than one exists, the highest id (most recent) wins.
+     *
+     * @return array{id:int,created:bool}|\WP_Error
+     */
+    private function find_or_create_group( string $repo, string $name, string $description ): array|\WP_Error {
+        $match = null;
+        foreach ( $repo::get_all_groups() as $g ) {
+            if ( $g->name === $name && ( $match === null || (int) $g->id > (int) $match->id ) ) { $match = $g; }
+        }
+        if ( $match !== null ) {
+            return [
+                'id'      => (int) $match->id,
+                'created' => false,
+            ];
+        }
+
+        $created = $repo::create_group( $name, $description );
+        if ( \is_wp_error( $created ) ) {
+            return $created;
+        }
+
+        return [
+            'id'      => (int) $created,
+            'created' => true,
+        ];
+    }
+
+    /**
+     * Build the create_rule payload from a CuJsonBuilder rule, applying the same
+     * transforms CU stores (normalize_asset_type, match_type/handle/source defaults).
+     * Shared by do_push() AND sync() so Sync's find_duplicate pre-check queries the
+     * identical scope create_rule writes (spec §4.1.4 / §4.4 — R9).
+     */
+    private function build_rule_payload( array $rule, ?int $target_group_id ): array {
+        return [
+            'url_pattern'  => $rule['url_pattern'],
+            'match_type'   => $rule['match_type']                      ?? 'exact',
+            'asset_handle' => $rule['asset_handle'] ?? $rule['handle'] ?? '',
+            'asset_type'   => $this->normalize_asset_type( $rule['asset_type'] ?? '' ),
+            'device_type'  => $rule['device_type'],
+            'group_id'     => $target_group_id,
+            'source_label' => $rule['source_label']                    ?? 'AA Scanner',
+        ];
+    }
+
+    /** Map Railway/old-format asset types to CU DB enum values. */
+    private function normalize_asset_type( string $type ): string {
+        return match ( $type ) {
+            'style'  => 'css',
+            'script' => 'js',
+            default  => $type,
+        };
+    }
+}

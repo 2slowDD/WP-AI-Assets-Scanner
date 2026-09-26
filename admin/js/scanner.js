@@ -1,0 +1,4272 @@
+(function () {
+    'use strict';
+
+    const SCANNER_JS_VERSION = '1.0.11.12';
+    console.log( '[AI Assets Scanner] scanner.js v' + SCANNER_JS_VERSION + ' loaded' );
+
+    const ajax    = cuScanner.ajaxUrl;
+    const nonce   = cuScanner.nonce;
+    const siteUrl = cuScanner.siteUrl || window.location.origin;
+    const initialUndoLastPushSyncState = (cuScanner && cuScanner.lastPushSyncUndo) ? cuScanner.lastPushSyncUndo : { available: false };
+
+    // --- State ---
+    let discoveredUrls = [];   // full set returned by server
+    let discoveryRan   = false; // true once a REAL Discover Pages run completed (distinguishes mixed mode from include-only)
+    let selectedUrls   = [];   // checked subset — used for reserve + submit
+    let extraTimeUrls = []; // FU-AAS-EXTRA-TIME — URLs the operator marked for Extra Time
+    let etCarryOver   = false; // FU-AAS-ET-VIEW-PERSIST — true while showing the post-scan ET carry-over Step-1 view
+    let groupedUrls    = {};   // { page: [...], post: [...], other: [...] }
+    let activeFilter   = 'all';
+    let scanJobId        = null;
+    let scanJobToken     = null;
+    let railwayUrl       = null;
+    let pollTimer        = null;
+    let countdownInterval = null;  // R3 Stage C — single live-countdown ticker
+    let lastPageIndex    = 0;
+    let totalPages       = 0;
+    let lastKnownStatus  = null;
+    let hasSoftBlocks  = false;
+    let includedUrls   = [];   // include URLs not duplicated in discoveredUrls
+    let availableBalance = null; // credit balance fetched from detect_plugins response
+    let outboxTickTimer  = null; // interval id for outbox polling (null = not ticking)
+    let undoLastPushSyncState = initialUndoLastPushSyncState;
+    let step4RenderEpoch = 0;     // bumped by every restoreStep4 render — see lockSyncPush()
+
+    const STEP_LABELS = {
+        1: 'Step 1 \u2014 Discover Pages',
+        2: 'Step 2 \u2014 Reserving Credits\u2026',
+        3: 'Step 3 \u2014 Scanning',
+        4: 'Step 4 \u2014 Done',
+    };
+
+    // --- Utilities ---
+
+    function isExternalUrl(url) {
+        try {
+            const normalised = /^https?:\/\//i.test(url) ? url : 'https://' + url;
+            const urlHost    = new URL(normalised).host.replace(/^www\./, '').toLowerCase();
+            const homeHost   = new URL(siteUrl).host.replace(/^www\./, '').toLowerCase();
+            return urlHost !== homeHost;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function allSelectedAreExternal() {
+        if (selectedUrls.length === 0) return false;
+        return selectedUrls.every(isExternalUrl);
+    }
+
+    function post(action, data, opts) {
+        const form = new FormData();
+        form.append('action', action);
+        // Send nonce under both field names: legacy handlers read `nonce`
+        // (via $this->check()), probe_target_stack reads `_wpnonce`.
+        // Same nonce value, same action — sending both is additive and harmless.
+        form.append('nonce', nonce);
+        form.append('_wpnonce', nonce);
+        Object.entries(data || {}).forEach(([k, v]) => {
+            appendField(form, k, v);
+        });
+        const fetchOpts = { method: 'POST', body: form };
+        if (opts && opts.signal) fetchOpts.signal = opts.signal;
+        return fetch(ajax, fetchOpts).then(r => r.json());
+    }
+
+    // Recursively append a value to a FormData using PHP's bracket array syntax,
+    // so PHP $_POST sees the structure as a native array.
+    //   string/number/bool  → key=value
+    //   array               → key[]=v0, key[]=v1, …  (or key[][child]= for objects)
+    //   plain object        → key[child1]=v1, key[child2]=v2, …
+    //   null/undefined      → skipped (matches today's behavior)
+    function appendField(form, key, value) {
+        if (value === null || value === undefined) return;
+        if (Array.isArray(value)) {
+            value.forEach((item, i) => appendField(form, key + '[' + i + ']', item));
+            return;
+        }
+        if (typeof value === 'object') {
+            Object.entries(value).forEach(([childKey, childVal]) => {
+                appendField(form, key + '[' + childKey + ']', childVal);
+            });
+            return;
+        }
+        form.append(key, value);
+    }
+
+    function esc(s) {
+        // Attribute-safe HTML escape: covers &, <, >, ", '. Round-tripping
+        // via textContent → innerHTML only escapes &/</> — the explicit
+        // quote/apostrophe replacements protect attribute-context interpolation
+        // (e.g. `data-x="${esc(val)}"`).
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function setUndoLastPushSyncState(state) {
+        const nextState = (state && typeof state === 'object') ? state : { available: false };
+        const isActive = !!nextState.available;
+        undoLastPushSyncState = Object.assign({}, nextState, { available: isActive });
+
+        const btn = document.getElementById('cu-btn-undo-last-push-sync');
+        if (!btn) {
+            return;
+        }
+
+        btn.disabled = !isActive;
+        btn.classList.toggle('is-active', isActive);
+        btn.setAttribute('aria-disabled', isActive ? 'false' : 'true');
+    }
+
+    function activateUndoFromResponse(data) {
+        if (data && data.undo_state) {
+            setUndoLastPushSyncState(data.undo_state);
+        }
+    }
+
+    function showStep(n) {
+        document.querySelectorAll('.cu-step').forEach(el => el.style.display = 'none');
+        const el = document.getElementById('step-' + n);
+        if (el) el.style.display = 'block';
+
+        // Update step label in header
+        const label = document.getElementById('cu-step-label');
+        if (label) label.innerHTML = STEP_LABELS[n] || '';
+
+        const app = document.getElementById('cu-scanner-app');
+        if (app) app.setAttribute('data-current-step', String(n));
+
+        // Update pips
+        for (let i = 1; i <= 4; i++) {
+            const pip = document.getElementById('cu-pip-' + i);
+            if (!pip) continue;
+            pip.className = 'cu-pip';
+            if (i < n)      pip.classList.add('is-done');
+            else if (i === n) pip.classList.add('is-active');
+        }
+    }
+
+    // Phase 5 — Class C consent modal duration estimator.
+    // Placeholder constant until Settings exposes a `scan_timeout` knob (Phase 6).
+    // Empirical Railway scan time ≈ 30-50 seconds per URL across desktop+mobile passes.
+    const SCAN_TIME_PER_URL_MINUTES = 0.75;
+    function estimateScanMinutes(urlCount) {
+        return Math.max(1, Math.ceil(urlCount * SCAN_TIME_PER_URL_MINUTES));
+    }
+
+    // Phase 5 — Build the consent dialog DOM tree. Returns a <dialog> element
+    // ready to be appended to document.body and shown via showModal().
+    // Pure DOM construction; no side effects.
+    function buildConsentDialog(classCActive, urlCount) {
+        const dialog = document.createElement('dialog');
+        dialog.className = 'cu-consent-dialog';
+
+        const heading = document.createElement('h2');
+        heading.textContent = 'Temporary plugin pause required';
+        dialog.appendChild(heading);
+
+        const intro = document.createElement('p');
+        intro.textContent = 'Accurate scanning requires that the following optimizer be paused for the duration of this scan:';
+        dialog.appendChild(intro);
+
+        const pluginList = document.createElement('ul');
+        pluginList.className = 'cu-consent-plugins';
+        for (const entry of classCActive) {
+            const li = document.createElement('li');
+            const name = document.createElement('strong');
+            name.textContent = entry.name || entry.slug || 'Unknown plugin';
+            li.appendChild(name);
+            const warning = (entry.warning || '').trim();
+            if (warning) {
+                li.appendChild(document.createTextNode(' — ' + warning));
+            }
+            pluginList.appendChild(li);
+        }
+        dialog.appendChild(pluginList);
+
+        const meansHeader = document.createElement('p');
+        meansHeader.innerHTML = '<strong>What this means while the scan runs:</strong>';
+        dialog.appendChild(meansHeader);
+
+        const minutes = estimateScanMinutes(urlCount);
+        const meansList = document.createElement('ul');
+        meansList.innerHTML =
+            '<li>Your site will load with the un-optimized CSS and JS during the scan window. ' +
+            'Estimated duration: <strong>~' + minutes + ' minute' + (minutes === 1 ? '' : 's') + '</strong> (' + urlCount + ' URLs).</li>' +
+            '<li>Visitors arriving during this window will see the un-optimized site.</li>' +
+            '<li>The plugin’s options will be restored automatically when the scan finishes.</li>';
+        dialog.appendChild(meansList);
+
+        const crashNote = document.createElement('p');
+        crashNote.innerHTML =
+            '<strong>If the scan crashes:</strong> the plugin will still be re-enabled — on the next admin request after the timeout window expires, OR via the watchdog cron job. ' +
+            'On a very low-traffic site without OS cron, this fallback may not be immediate.';
+        dialog.appendChild(crashNote);
+
+        const auditNote = document.createElement('p');
+        auditNote.innerHTML = '<em>Audit trail: every disable and restore is logged in AI Assets Scanner → Logs.</em>';
+        dialog.appendChild(auditNote);
+
+        const actions = document.createElement('div');
+        actions.className = 'cu-consent-actions';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'button';
+        cancelBtn.dataset.cuConsent = 'cancel';
+        cancelBtn.textContent = 'Cancel';
+        const confirmBtn = document.createElement('button');
+        confirmBtn.type = 'button';
+        confirmBtn.className = 'button button-primary';
+        confirmBtn.dataset.cuConsent = 'confirm';
+        confirmBtn.textContent = 'Pause and start scan';
+        actions.appendChild(cancelBtn);
+        actions.appendChild(confirmBtn);
+        dialog.appendChild(actions);
+
+        return dialog;
+    }
+
+    // Phase 5 — Mount the consent dialog and resolve a Promise with the
+    // user's choice. Removes itself from the DOM after resolution.
+    function showConsentDialog(classCActive, urlCount) {
+        return new Promise(function (resolve) {
+            const dialog = buildConsentDialog(classCActive, urlCount);
+            document.body.appendChild(dialog);
+
+            let resolved = false;
+            function done(value) {
+                if (resolved) return;
+                resolved = true;
+                resolve(value);
+                if (dialog.open) dialog.close();
+                dialog.remove();
+            }
+
+            dialog.querySelector('[data-cu-consent="confirm"]').addEventListener('click', function () {
+                done(true);
+            });
+            dialog.querySelector('[data-cu-consent="cancel"]').addEventListener('click', function () {
+                done(false);
+            });
+            // Native <dialog> doesn't auto-close on backdrop click — emulate it.
+            // Click target === dialog itself when the click was on the backdrop padding.
+            dialog.addEventListener('click', function (e) {
+                if (e.target === dialog) done(false);
+            });
+            // Escape, programmatic close, anything else that fires the close event.
+            dialog.addEventListener('close', function () { done(false); });
+
+            dialog.showModal();
+        });
+    }
+
+    // FU-NEW-2 Phase 6 — Inline spinner for cu_scanner_probe_target_stack.
+    // Returns { hide(), signal } — signal is an AbortSignal wired to a Cancel button
+    // so the operator can abort the probe mid-flight (spec §9). Probe typically
+    // completes in 1-3s; cancel UX exists for slow upstream cases.
+    function showInlineSpinner(message) {
+        const host = document.getElementById('cu-probe-spinner-host')
+            || (function () {
+                const h = document.createElement('div');
+                h.id = 'cu-probe-spinner-host';
+                // Append to step-1 container so it lives near the scanning UI.
+                const step1 = document.getElementById('step-1') || document.body;
+                step1.appendChild(h);
+                return h;
+            })();
+
+        host.innerHTML = '';
+        host.className = 'cu-probe-spinner';
+        host.style.display = 'flex';
+
+        const spin = document.createElement('span');
+        spin.className = 'cu-probe-spinner-icon';
+        spin.setAttribute('aria-hidden', 'true');
+
+        const label = document.createElement('span');
+        label.className = 'cu-probe-spinner-label';
+        label.textContent = message || 'Working…';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'button button-secondary cu-probe-spinner-cancel';
+        cancelBtn.textContent = 'Cancel';
+
+        host.appendChild(spin);
+        host.appendChild(label);
+        host.appendChild(cancelBtn);
+
+        const controller = ('AbortController' in window) ? new AbortController() : null;
+        cancelBtn.addEventListener('click', function () {
+            if (controller) controller.abort();
+            host.style.display = 'none';
+            host.innerHTML = '';
+        });
+
+        return {
+            signal: controller ? controller.signal : undefined,
+            hide: function () {
+                host.style.display = 'none';
+                host.innerHTML = '';
+            },
+        };
+    }
+
+    // FDEG Plan B Task 4 — lifetime of the non-blocking outcome toast, and how long
+    // before that it starts fading (matches the .cu-probe-toast opacity transition).
+    const PROBE_TOAST_MS = 10000;
+    const PROBE_TOAST_FADE_MS = 400;
+
+    /**
+     * FDEG Plan B Task 4 — non-blocking counterpart of showProbeOutcomeDialog() for
+     * the case where NO host reported a security stack: there is nothing to bail on,
+     * so the same summary is shown as a self-dismissing toast instead of a modal.
+     *
+     * Escaping discipline is identical to the dialog: static chrome goes in via
+     * textContent, and the ONLY thing assigned to innerHTML is the output of the
+     * shared buildUniformMessage()/buildPerHostList() builders, which esc() every
+     * wire-derived value (host, detected names) before interpolating it.
+     */
+    function showProbeOutcomeToast(probeData, results) {
+        const toast = document.createElement('div');
+        toast.className = 'cu-probe-toast';
+        toast.setAttribute('role', 'status');
+        toast.setAttribute('aria-live', 'polite');
+
+        const title = document.createElement('p');
+        title.className = 'cu-probe-toast-title';
+        title.textContent = 'Target site detection';
+        toast.appendChild(title);
+
+        const uniform = !!(probeData && probeData.summary && probeData.summary.uniform_outcome);
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'cu-probe-toast-body';
+        bodyEl.innerHTML = uniform ? buildUniformMessage(results) : buildPerHostList(results);
+        toast.appendChild(bodyEl);
+
+        document.body.appendChild(toast);
+
+        // Fade, then detach — the CSS transitions opacity, so the class flip has to
+        // land PROBE_TOAST_FADE_MS before the node goes away or nothing is visible.
+        setTimeout(function () { toast.classList.add('cu-probe-toast-hide'); },
+            PROBE_TOAST_MS - PROBE_TOAST_FADE_MS);
+        setTimeout(function () { toast.remove(); }, PROBE_TOAST_MS);
+    }
+
+    /**
+     * FU-NEW-2 Phase 6 — Render an outcome-specific dialog from
+     * cu_scanner_probe_target_stack result. Returns Promise<boolean>:
+     * true = continue with scan, false = cancel. Dialog content per spec §6.3.
+     *
+     * FDEG Plan B Task 4 — the blocking modal below is the WAF bail-BEFORE-credits
+     * gate. Only the INFORMATIONAL case is downgraded to a non-blocking toast.
+     *
+     * The guard deliberately does NOT key on "no security stack" alone. This
+     * function has exactly ONE call site and it is gated on warning_needed, and
+     * compute_warning_needed() (class-scanner-ajax.php:1778) is broader than
+     * stacks: it also fires on ANY host whose outcome !== 'class_a_clean'. So a
+     * stack-only guard would silently auto-proceed — spending credits — on
+     * probe_failed (the probe was blocked, possibly by a WAF we could not
+     * identify), no_clue, and non_wordpress. Those are precisely the states the
+     * bail-before-credits gate exists for. Toast only when every host landed on
+     * an informational outcome AND no stack was detected; block otherwise.
+     */
+    const PROBE_INFORMATIONAL_OUTCOMES = ['class_a_clean', 'class_bc_only', 'hybrid_a_plus_bc'];
+
+    function showProbeOutcomeDialog(probeData) {
+        const hostResults = (probeData && probeData.per_host_results) || [];
+        const hasStack = hostResults.some(function (r) {
+            return !!(r && r.security_stacks && r.security_stacks.length);
+        });
+        // Empty/absent results are NOT treated as informational — unknown state blocks.
+        const allInformational = hostResults.length > 0 && hostResults.every(function (r) {
+            return PROBE_INFORMATIONAL_OUTCOMES.indexOf((r && r.outcome) || '') !== -1;
+        });
+        if (!hasStack && allInformational) {
+            showProbeOutcomeToast(probeData, hostResults);
+            return Promise.resolve(true);
+        }
+
+        return new Promise(function (resolve) {
+            const dialog = document.createElement('dialog');
+            dialog.className = 'cu-probe-outcome-dialog';
+
+            const uniform = !!(probeData.summary && probeData.summary.uniform_outcome);
+            const summaryHtml = uniform
+                ? buildUniformMessage(probeData.per_host_results || [])
+                : buildPerHostList(probeData.per_host_results || []);
+
+            dialog.innerHTML =
+                '<div class="cu-probe-dialog-body">' +
+                    '<h2>Target site detection</h2>' +
+                    summaryHtml +
+                    '<p class="cu-probe-continue-prompt">Continue with scan?</p>' +
+                    '<div class="cu-probe-dialog-actions">' +
+                        '<button type="button" class="button button-secondary cu-probe-cancel">Cancel</button>' +
+                        '<button type="button" class="button button-primary cu-probe-continue">Continue</button>' +
+                    '</div>' +
+                '</div>';
+
+            // FU-ANTIBLOCK-1 (spec §3.3) — surface any security stacks detected on the
+            // probed hosts (security_stacks[] from Tasks 2/4) BEFORE the continue prompt,
+            // so the operator can bail before spending credits. DOM insertion (not string
+            // concat into innerHTML) — stack ids come from the wire, treated as untrusted.
+            const secBlock = buildSecurityStackBlock(probeData.per_host_results || []);
+            if (secBlock) {
+                const body = dialog.querySelector('.cu-probe-dialog-body');
+                const continuePrompt = body.querySelector('.cu-probe-continue-prompt');
+                body.insertBefore(secBlock, continuePrompt);
+            }
+
+            let resolved = false;
+            function done(value) {
+                if (resolved) return;
+                resolved = true;
+                resolve(value);
+                if (dialog.open) dialog.close();
+                dialog.remove();
+            }
+
+            dialog.querySelector('.cu-probe-cancel').addEventListener('click', function () {
+                done(false);
+            });
+            dialog.querySelector('.cu-probe-continue').addEventListener('click', function () {
+                done(true);
+            });
+            dialog.addEventListener('click', function (e) {
+                if (e.target === dialog) done(false);
+            });
+            dialog.addEventListener('close', function () { done(false); });
+
+            document.body.appendChild(dialog);
+            dialog.showModal();
+        });
+    }
+
+    /**
+     * FU-ANTIBLOCK-1 (spec §3.3) — build a DOM block listing the security stacks
+     * detected across the probed hosts (per_host_results[].security_stacks, wired
+     * in Tasks 2/4). Returns null when no host reported any stack ids. All dynamic
+     * bits (stack ids, joined names) go in via textContent/createTextNode — never
+     * string-concatenated into innerHTML — because stack ids come from the wire.
+     */
+    function buildSecurityStackBlock(results) {
+        const ids = [];
+        (results || []).forEach(function (r) {
+            (r.security_stacks || []).forEach(function (id) { if (ids.indexOf(id) === -1) ids.push(id); });
+        });
+        if (!ids.length) return null;
+        const names = (typeof cuReasonCopy === 'object' && cuReasonCopy && cuReasonCopy.stack_names) || {};
+        const wrap = document.createElement('div');
+        wrap.className = 'cu-security-stack-block';
+        const h = document.createElement('p');
+        h.innerHTML = '<strong>Security stack detected:</strong> ';
+        h.appendChild(document.createTextNode(ids.map(function (id) { return names[id] || id; }).join(', ')));
+        wrap.appendChild(h);
+        const p = document.createElement('p');
+        p.textContent = 'The scan may be challenged or blocked. Set up the scanner exemption before spending credits, or continue anyway.';
+        wrap.appendChild(p);
+        // FU-CF-HOST-INTEGRATION-NOTICE — on WPE-style host-integrated Cloudflare the
+        // customer usually CANNOT set up the exemption (no CF dashboard access without a
+        // plan upgrade), so the sentence above alone tells them to do something impossible
+        // (customer report, 2026-08-10). Inference is SAME-HOST only: Cloudflare and a known
+        // CF-integrating platform detected on the one result row — CF on host A plus WPE
+        // on host B proves nothing about either. Platform list matches detected[].name
+        // strings from the OPTIMIZERS registry verbatim; extend it as more CF-integrating
+        // hosts are confirmed. The exemption link below stays either way — some host plans
+        // do allow custom firewall rules. textContent only, per this block's convention.
+        const cfHostPlatforms = [ 'WP Engine Page Cache' ];
+        const hostCf = (results || []).some(function (r) {
+            if (!r || ((r.security_stacks || []).indexOf('cloudflare') === -1)) return false;
+            return (r.detected || []).some(function (d) {
+                return !!d && cfHostPlatforms.indexOf(d.name) !== -1;
+            });
+        });
+        if (hostCf) {
+            const hn = document.createElement('p');
+            hn.className = 'cu-cf-host-note';
+            hn.textContent = 'This site’s Cloudflare appears to come through its hosting platform. '
+                + 'Host-managed Cloudflare usually can’t whitelist individual tools unless the hosting '
+                + 'plan includes custom firewall rules. You can still continue — pages the firewall '
+                + 'blocks are reported as blocked, not silently skipped, and can be rescanned once your '
+                + 'host adds an exception.';
+            wrap.appendChild(hn);
+        }
+        if (typeof cuReasonCopy === 'object' && cuReasonCopy && cuReasonCopy.settings_url) {
+            const a = document.createElement('a');
+            a.setAttribute('href', cuReasonCopy.settings_url);
+            a.setAttribute('target', '_blank');
+            a.textContent = 'Open the exemption instructions';
+            wrap.appendChild(a);
+        }
+        return wrap;
+    }
+
+    /**
+     * FU-ANTIBLOCK-2 (spec §3.4) — same-site pre-scan warning dialog. Mirrors the
+     * showProbeOutcomeDialog() skeleton above (Promise<boolean>, cancel/continue
+     * buttons, backdrop-click + close both resolve false). Fires when a same-site
+     * URL is selected AND either the detected CDN is unacknowledged or a security
+     * plugin is active on this site (gate lives at the Start-Scan click handler,
+     * AFTER the external probe modal — AC-6b ordering).
+     */
+    function showLocalStackDialog(ls, cdnUnacked, secPlugins) {
+        return new Promise(function (resolve) {
+            const dialog = document.createElement('dialog');
+            dialog.className = 'cu-local-stack-dialog';
+
+            const names       = (typeof cuReasonCopy === 'object' && cuReasonCopy && cuReasonCopy.stack_names) || {};
+            const settingsUrl = (typeof cuReasonCopy === 'object' && cuReasonCopy && cuReasonCopy.settings_url) || '';
+
+            dialog.innerHTML =
+                '<div class="cu-probe-dialog-body">' +
+                    '<h2>Your site’s security stack</h2>' +
+                    '<ul class="cu-local-stack-list"></ul>' +
+                    '<p class="cu-probe-continue-prompt">Continue with scan?</p>' +
+                    '<div class="cu-probe-dialog-actions">' +
+                        '<button type="button" class="button button-secondary cu-local-suppress">Don&rsquo;t show this again</button>' +
+                        '<button type="button" class="button button-secondary cu-local-cancel">Cancel</button>' +
+                        '<button type="button" class="button button-primary cu-local-continue">Continue</button>' +
+                    '</div>' +
+                '</div>';
+
+            const list = dialog.querySelector('.cu-local-stack-list');
+
+            // CDN leg — reuses the appendRemediation-style shape (line + settings anchor)
+            // from renderBrokenBanner: textContent for all dynamic bits, DOM-built anchor.
+            if (cdnUnacked) {
+                const li = document.createElement('li');
+                const label = document.createElement('strong');
+                label.textContent = (names[ls.cdn] || ls.cdn) + ': ';
+                li.appendChild(label);
+                li.appendChild(document.createTextNode(
+                    'This CDN may challenge or block the scanner. Consider temporarily disabling it, or setting up the scanner exemption before scanning. '
+                ));
+                if (settingsUrl) {
+                    const a = document.createElement('a');
+                    a.setAttribute('href', settingsUrl);
+                    a.setAttribute('target', '_blank');
+                    a.textContent = 'Open the exemption instructions';
+                    li.appendChild(a);
+                }
+                list.appendChild(li);
+            }
+
+            // Plugin legs — one <li> per active security plugin (label + warning via
+            // textContent); optional settings anchor when the plugin ships one.
+            (secPlugins || []).forEach(function (p) {
+                const li = document.createElement('li');
+                const label = document.createElement('strong');
+                label.textContent = (p.label || 'Security plugin') + ': ';
+                li.appendChild(label);
+                li.appendChild(document.createTextNode(p.warning || ''));
+                if (p.anchor) {
+                    li.appendChild(document.createTextNode(' '));
+                    const a = document.createElement('a');
+                    a.setAttribute('href', 'admin.php?page=cu-scanner-settings#' + p.anchor);
+                    a.textContent = 'Open settings';
+                    li.appendChild(a);
+                }
+                list.appendChild(li);
+            });
+
+            let resolved = false;
+            function done(value) {
+                if (resolved) return;
+                resolved = true;
+                resolve(value);
+                if (dialog.open) dialog.close();
+                dialog.remove();
+            }
+
+            dialog.querySelector('.cu-local-cancel').addEventListener('click', function () {
+                done(false);
+            });
+            dialog.querySelector('.cu-local-continue').addEventListener('click', function () {
+                done(true);
+            });
+            // "Don't show this again" — persist browser-local suppression, then proceed
+            // with this scan (same as Continue). Undo by clearing the localStorage key.
+            dialog.querySelector('.cu-local-suppress').addEventListener('click', function () {
+                try { window.localStorage.setItem('cu_suppress_local_stack_warn', '1'); } catch (e) {}
+                done(true);
+            });
+            dialog.addEventListener('click', function (e) {
+                if (e.target === dialog) done(false);
+            });
+            dialog.addEventListener('close', function () { done(false); });
+
+            document.body.appendChild(dialog);
+            dialog.showModal();
+        });
+    }
+
+    function buildUniformMessage(results) {
+        if (!results.length) return '<p>No probe results.</p>';
+        return '<p>' + outcomeMessage(results[0]) + '</p>';
+    }
+
+    function buildPerHostList(results) {
+        if (!results.length) return '<p>No probe results.</p>';
+        const items = results.map(function (r) {
+            return '<li>' + outcomeMessage(r) + '</li>';
+        }).join('');
+        return '<ul class="cu-probe-host-list">' + items + '</ul>';
+    }
+
+    function outcomeMessage(r) {
+        const host = esc(r.host || 'unknown host');
+        switch (r.outcome) {
+            case 'class_a_clean':
+                return 'Detected ' + listDetected(r.detected) + ' on <strong>' + host + '</strong>.';
+            case 'class_bc_only':
+                return 'Detected cache plugin <strong>' + listDetected(r.detected) + '</strong> on <strong>' + host
+                    + '</strong>. No proper bypass available; results may not be complete. '
+                    + '<em>Consider temporarily disabling any bot protection / firewall / CDN that may be blocking the scanner.</em>';
+            case 'hybrid_a_plus_bc':
+                return 'Detected <strong>' + listDetected(r.detected, ['A', 'A_star']) + '</strong> (will bypass) + '
+                    + 'cache plugin <strong>' + listDetected(r.detected, ['B', 'C']) + '</strong> on <strong>' + host
+                    + '</strong> (may be busted by the bypass; results may not be complete).';
+            case 'no_clue':
+                return 'Couldn’t detect target caching stack on <strong>' + host + '</strong> (probed 2 URLs). '
+                    + 'Results may not be complete. '
+                    + '<em>Consider temporarily disabling any bot protection / firewall / CDN that may be blocking probing.</em>';
+            case 'non_wordpress':
+                return 'Target <strong>' + host + '</strong> may not be WordPress (no WP signals detected on probed URLs). '
+                    + 'Results may not be meaningful.';
+            case 'probe_failed':
+                return 'Target probe to <strong>' + host + '</strong> failed: ' + esc(r.reason || 'unknown') + '. '
+                    + '<em>Consider temporarily disabling any bot protection / firewall / CDN that may be blocking the scanner.</em>';
+            default:
+                return 'Unknown outcome on <strong>' + host + '</strong>.';
+        }
+    }
+
+    function listDetected(detected, classFilter) {
+        const arr = Array.isArray(detected) ? detected : [];
+        const filtered = classFilter
+            ? arr.filter(function (d) { return classFilter.indexOf(d.class) !== -1; })
+            : arr;
+        if (!filtered.length) return 'unknown';
+        return filtered.map(function (d) { return esc(d.name || d.slug || 'unknown'); }).join(', ');
+    }
+
+    /**
+     * FU-AAS-CACHE-STACK-NOTICE-MISSING — surface the detected target cache stack
+     * as a passive inline notice on the silent (uniform class_a_clean) probe path.
+     * The blocking showProbeOutcomeDialog() only fires when warning_needed=true, so a
+     * cleanly-detected stack (suffix applied, no warning) previously showed nothing.
+     * Content reuses the same esc()-escaped builders as the dialog. Pass null/empty to clear.
+     */
+    function renderTargetStackNotice(probeData) {
+        const el = document.getElementById('cu-target-stack-notice');
+        if (!el) return;
+        const results = (probeData && probeData.per_host_results) || [];
+        if (!results.length) { el.innerHTML = ''; return; }
+        const uniform = !!(probeData.summary && probeData.summary.uniform_outcome);
+        const body = uniform ? buildUniformMessage(results) : buildPerHostList(results);
+        el.innerHTML = '<div class="notice notice-info inline">'
+            + '<p><strong>Target site detection</strong></p>'
+            + body
+            + '</div>';
+    }
+
+    // --- Step 1: Plugin detection ---
+
+    let readinessStats = { critical: 0, warnings: 0, bypasses: 0 };
+
+    function renderReadinessSummary() {
+        const summary = document.getElementById('cu-readiness-summary');
+        if (!summary) return;
+        summary.innerHTML = '';
+
+        const copy = document.createElement('span');
+        const bypassCopy = readinessStats.bypasses > 0
+            ? readinessStats.bypasses + ' automatic ' + (readinessStats.bypasses === 1 ? 'bypass' : 'bypasses')
+            : 'No automatic bypasses';
+        const warningCopy = readinessStats.warnings + readinessStats.critical;
+        copy.textContent = bypassCopy + ' · ' + warningCopy + ' ' + (warningCopy === 1 ? 'warning' : 'warnings');
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'button-link cu-readiness-toggle';
+        button.textContent = 'View readiness';
+        button.addEventListener('click', function () {
+            const card = document.getElementById('cu-readiness-card');
+            if (!card) return;
+            const compact = card.classList.toggle('is-compact');
+            button.textContent = compact ? 'View readiness' : 'Hide readiness';
+        });
+
+        summary.appendChild(copy);
+        summary.appendChild(button);
+        summary.hidden = false;
+    }
+
+    function setReadinessCompact(compact) {
+        const card = document.getElementById('cu-readiness-card');
+        if (!card) return;
+        card.classList.toggle('is-compact', !!compact);
+        if (compact) renderReadinessSummary();
+    }
+
+    function detectPlugins() {
+        post('cu_scanner_detect_plugins').then(res => {
+            if (!res.success) return;
+            const warnings = document.getElementById('cu-plugin-warnings');
+            const d = res.data;
+            availableBalance = (typeof d.balance === 'number') ? d.balance : null;
+            const app = document.getElementById('cu-scanner-app');
+            if (app && app.getAttribute('data-current-step') === '4') {
+                setResultText('cu-metric-balance', availableBalance === null ? '\u2014' : Math.max(0, availableBalance));
+            }
+            let html = '';
+            let criticalCount = 0;
+            let warningCount = 0;
+            let bypassCount = 0;
+
+            // Code Unloader missing: red error notice shown at top
+            if (d.cu_missing === true) {
+                criticalCount++;
+                html += `<div class="cu-readiness-row is-critical"><span class="cu-readiness-icon" aria-hidden="true">!</span><div><strong>Code Unloader not detected</strong><p>AI Assets Scanner works with <a href="https://wordpress.org/plugins/code-unloader/" target="_blank" rel="noopener">Code Unloader</a> to apply unload recommendations. Install and activate Code Unloader to enable Push and Sync.</p></div><span class="cu-readiness-badge">Action needed</span></div>`;
+            }
+
+            hasSoftBlocks = Object.keys(d.soft_block || {}).length > 0;
+
+            // Soft-block: full WP notice (user must acknowledge)
+            Object.entries(d.soft_block || {}).forEach(([name, reason]) => {
+                const id = 'override-' + name.replace(/\s+/g, '-');
+                criticalCount++;
+                html += `<div class="cu-readiness-row is-critical"><span class="cu-readiness-icon" aria-hidden="true">!</span><div>
+                    <strong>${esc(name)}</strong><p>${esc(reason)}</p>
+                    <label><input type="checkbox" class="cu-soft-block-override" data-plugin="${esc(name)}" id="${esc(id)}" />
+                    I have disabled ${esc(name)} \u2014 proceed anyway</label></div><span class="cu-readiness-badge">Confirm</span></div>`;
+            });
+
+            // Soft-warn: full WP notice (informational)
+            Object.entries(d.soft_warn || {}).forEach(([name, reason]) => {
+                warningCount++;
+                html += `<div class="cu-readiness-row is-warning"><span class="cu-readiness-icon" aria-hidden="true">!</span><div><strong>${esc(name)}</strong><p>${esc(reason)}</p></div><span class="cu-readiness-badge">Review</span></div>`;
+            });
+
+            // Security-warn: warning notice
+            Object.entries(d.security_warn || {}).forEach(([name, data]) => {
+                warningCount++;
+                html += `<div class="cu-readiness-row is-warning"><span class="cu-readiness-icon" aria-hidden="true">!</span><div><strong>${esc(name)}</strong><p>${esc(data.reason)}</p></div><span class="cu-readiness-badge">Review</span></div>`;
+            });
+
+            // CDN detected: warning notice with deep-link to WAF bypass settings
+            if (d.cdn_notice) {
+                // Capitalise the CDN slug for display (e.g. "cloudflare" → "Cloudflare")
+                const cdnName = esc(d.cdn_notice.name).replace(/^./, c => c.toUpperCase());
+                warningCount++;
+                html += `<div class="cu-readiness-row is-warning"><span class="cu-readiness-icon" aria-hidden="true">!</span><div><strong>CDN detected (${cdnName})</strong><p>If it rate-limits the scanner you may get incomplete results. Whoever manages it can allowlist the scanner; if that is you, <a href="${esc(d.cdn_notice.settings_url)}">open the Cloudflare WAF Bypass settings</a>.</p></div><span class="cu-readiness-badge">Review</span></div>`;
+            }
+
+            // A1: last scan was rate-limited — attribution-branched pre-scan notice (supersedes cdn_notice for same CDN, server-side)
+            if (d.last_scan_throttle) {
+                const t = d.last_scan_throttle;
+                warningCount++;
+                if (t.kind === 'cdn') {
+                    const tName = esc(t.name).replace(/^./, c => c.toUpperCase());
+                    html += `<div class="cu-readiness-row is-warning"><span class="cu-readiness-icon" aria-hidden="true">!</span><div><strong>Your last scan was rate-limited by ${tName}</strong><p>Whoever manages it needs to allowlist the scanner; if that is you, <a href="${esc(t.settings_url)}">open the Cloudflare WAF Bypass settings</a>. If your origin also enforces a limit, an exemption alone will not be enough.</p></div><span class="cu-readiness-badge">Review</span></div>`;
+                } else if (t.kind === 'origin') {
+                    html += `<div class="cu-readiness-row is-warning"><span class="cu-readiness-icon" aria-hidden="true">!</span><div><strong>Your last scan was rate-limited by your origin server</strong><p>A CDN exemption will not help. Temporarily raise or disable Wordfence or host-level rate limiting before scanning.</p></div><span class="cu-readiness-badge">Review</span></div>`;
+                } else {
+                    html += `<div class="cu-readiness-row is-warning"><span class="cu-readiness-icon" aria-hidden="true">!</span><div><strong>Your last scan hit rate-limiting (429)</strong><p>If your site is behind a CDN, set up the exemption; otherwise check your origin or server rate limits.</p></div><span class="cu-readiness-badge">Review</span></div>`;
+                }
+            }
+
+            // Auto-bypass: compact single-line banner
+            Object.keys(d.auto_bypass || {}).forEach(slug => {
+                bypassCount++;
+                // Canonical label from PHP (T7: "SWIS Performance", "WP Rocket", "LiteSpeed Cache");
+                // slug title-case only as a fallback for payloads from older plugin versions.
+                const label = (d.auto_bypass_labels || {})[slug]
+                    || slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                html += `<div class="cu-readiness-row is-ready"><span class="cu-readiness-icon" aria-hidden="true">✓</span><div><strong>${esc(label)}</strong><p>Temporary bypass applied automatically for this scan.</p></div><span class="cu-readiness-badge">Ready</span></div>`;
+            });
+
+            if (!html) {
+                html = '<div class="cu-readiness-row is-ready"><span class="cu-readiness-icon" aria-hidden="true">✓</span><div><strong>Ready to discover pages</strong><p>No scanner compatibility warnings were detected.</p></div><span class="cu-readiness-badge">Ready</span></div>';
+            }
+
+            warnings.innerHTML = html;
+            readinessStats = { critical: criticalCount, warnings: warningCount, bypasses: bypassCount };
+            const readinessState = document.getElementById('cu-readiness-state');
+            if (readinessState) {
+                readinessState.textContent = criticalCount > 0 ? 'Action needed' : (warningCount > 0 ? 'Review warnings' : 'Ready');
+                readinessState.className = 'cu-readiness-state ' + (criticalCount > 0 ? 'is-critical' : (warningCount > 0 ? 'is-warning' : 'is-ready'));
+            }
+
+            if (hasSoftBlocks) {
+                updateStartScanGate();
+                warnings.addEventListener('change', updateStartScanGate);
+            }
+        });
+    }
+
+    function updateStartScanGate() {
+        const overrides  = document.querySelectorAll('.cu-soft-block-override');
+        const allChecked = Array.from(overrides).every(cb => cb.checked);
+        ['cu-btn-next-1', 'cu-btn-next-1-top'].forEach(function (id) {
+            const btn = document.getElementById(id);
+            if (btn) btn.disabled = !allChecked;
+        });
+    }
+
+    // --- Include URLs helpers ---
+
+    function getIncludedUrls() {
+        const el = document.getElementById('cu-included-urls');
+        if (!el) return [];
+        return el.value.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+    }
+
+    function normaliseUrl(u) {
+        // Strip trailing slashes and lowercase for dedup comparison
+        return u.replace(/\/+$/, '').toLowerCase();
+    }
+
+    function updateStartScanVisibility() {
+        const hasIncluded   = getIncludedUrls().length > 0;
+        const hasDiscovered = discoveredUrls.length > 0;
+        const disp = (hasIncluded || hasDiscovered) ? '' : 'none';
+        ['cu-btn-next-1', 'cu-btn-next-1-top'].forEach(function (id) {
+            const btn = document.getElementById(id);
+            if (btn) btn.style.display = disp;
+        });
+    }
+
+    function syncIncludedUrls() {
+        // Only merges when discovery has already run. Include-only path is
+        // handled directly in the Start Scan click handler.
+        if (discoveredUrls.length === 0) return;
+
+        const raw = getIncludedUrls();
+        const discoveredSet = new Set(discoveredUrls.map(normaliseUrl));
+
+        // URLs in the include list that are NOT already discovered (deduped within list too)
+        const seen = new Set();
+        const newIncluded = raw.filter(u => {
+            const n = normaliseUrl(u);
+            if (seen.has(n) || discoveredSet.has(n)) return false;
+            seen.add(n);
+            return true;
+        });
+
+        // Remove previously-tracked included URLs from selectedUrls
+        const oldSet = new Set(includedUrls.map(normaliseUrl));
+        selectedUrls = selectedUrls.filter(u => !oldSet.has(normaliseUrl(u)));
+
+        // Add newly-included URLs to selectedUrls
+        selectedUrls = [...selectedUrls, ...newIncluded];
+
+        includedUrls = newIncluded;
+
+        // 1.7.62b fix — in a carry-over view (Rescan ET / Rescan 0-Results prime), the
+        // carried URLs live in groupedUrls.included but are NOT textarea-sourced (the
+        // primes leave #cu-included-urls empty). Rebuilding `included` from the textarea
+        // alone therefore ERASED the carried URLs from the rendered list on the first
+        // keystroke. Typing in the Include box must ADD to the carried set, never
+        // replace it. (Carried URLs are also in discoveredUrls, so newIncluded can never
+        // duplicate them — the extra carriedSet filter is belt-and-braces.)
+        const carried    = ( etCarryOver && Array.isArray( etCarriedUrls ) ) ? etCarriedUrls.slice() : [];
+        const carriedSet = new Set( carried.map( normaliseUrl ) );
+        const mergedIncluded = [ ...carried, ...newIncluded.filter( u => ! carriedSet.has( normaliseUrl( u ) ) ) ];
+
+        // 1.4.2 fix — only set the `included` marker when there are actual include URLs.
+        // Pre-1.4.2 this line unconditionally set `groupedUrls.included = []` even on the
+        // post-Discover sync (line 546) when the textarea was empty, which made the Start
+        // Scan handler's `groupedUrls.included !== undefined` predicate (the FU-NEW-6
+        // include-only-mode marker, line 841) wrongly TRUE — silent no-op on every
+        // Discover→unselect→select→Scan flow with an empty Include URLs textarea.
+        // (Carry-over views already carry the marker from the prime, so preserving the
+        // carried URLs here does not change the marker's presence semantics.)
+        if ( mergedIncluded.length > 0 ) {
+            groupedUrls.included = mergedIncluded;
+        } else {
+            delete groupedUrls.included;
+        }
+    }
+
+    // --- Step 1: Discovery ---
+
+    document.getElementById('cu-included-urls').addEventListener('input', function () {
+        if (discoveredUrls.length === 0) {
+            selectedUrls = getIncludedUrls();
+            totalPages   = selectedUrls.length;
+            updateCreditBadge();
+        } else {
+            syncIncludedUrls();
+            renderUrlList();
+            updateCreditBadge();
+        }
+        updateStartScanVisibility();
+    });
+
+    document.getElementById('cu-btn-discover').addEventListener('click', function () {
+        // Capture button ref — `this` is not available inside .then() in strict mode
+        const discoverBtn = this;
+
+        // Show sonar animation, hide button row
+        discoverBtn.style.display = 'none';
+        document.getElementById('cu-btn-next-1').style.display = 'none';
+        document.getElementById('cu-url-list-area').style.display = 'none';
+        document.getElementById('cu-sonar-anim').style.display = 'flex';
+
+        post('cu_scanner_discover_pages', {
+            excluded_urls: document.getElementById('cu-excluded-urls').value.split('\n').filter(Boolean),
+        }).then(res => {
+            // Hide sonar anim
+            document.getElementById('cu-sonar-anim').style.display = 'none';
+            // Restore discover button (now labelled Re-discover)
+            discoverBtn.style.display = '';
+            discoverBtn.textContent = 'Re-discover';
+
+            if (!res.success) { alert('Discovery failed: ' + res.data); return; }
+
+            // Initialise state from response — selectedUrls reset here, before any render
+            discoveredUrls = res.data.urls;
+            groupedUrls    = res.data.groups || { page: [], post: [], other: [] };
+            selectedUrls   = discoveredUrls.slice(); // copy — all selected by default
+            totalPages     = discoveredUrls.length;
+            activeFilter   = 'all';
+            discoveryRan   = true; // a real discovery completed — mixed-mode include URLs now MERGE, not replace
+            clearEtCarryOver();    // FU-AAS-ET-VIEW-PERSIST — a fresh discovery exits the ET carry-over view
+            sessionStorage.removeItem('cu_scanner_rescan_requeue'); // clear stale "Scan again" dormant-origin flag on re-discover (parity with clearEtCarryOver)
+
+            syncIncludedUrls();
+            renderUrlList();
+            updateCreditBadge();
+
+            document.getElementById('cu-url-list-area').style.display = 'block';
+            updateStartScanVisibility();
+        });
+    });
+
+    // --- URL list rendering ---
+
+    const GROUP_META = {
+        page:     { label: 'Pages',    cls: 'cu-group-header--page',     more: 'pages' },
+        post:     { label: 'Posts',    cls: 'cu-group-header--post',     more: 'posts' },
+        other:    { label: 'Other',    cls: 'cu-group-header--other',    more: '' },
+        included: { label: 'Included', cls: 'cu-group-header--included', more: 'included' },
+    };
+
+    function renderUrlList() {
+        const list = document.getElementById('cu-url-list');
+        list.innerHTML = '';
+
+        // Update filter pill counts and visibility
+        ['page', 'post', 'other', 'included'].forEach(type => {
+            const pill = document.getElementById('cu-pill-' + type);
+            const count = (groupedUrls[type] || []).length;
+            if (pill) {
+                pill.style.display = count > 0 ? '' : 'none';
+                pill.textContent = GROUP_META[type].label + ' ' + count;
+            }
+        });
+        const allPill = document.getElementById('cu-pill-all');
+        if (allPill) allPill.textContent = 'All ' + totalPages;
+
+        // Render each group
+        ['page', 'post', 'other', 'included'].forEach(type => {
+            const urls = groupedUrls[type] || [];
+            if (urls.length === 0) return;
+
+            const meta = GROUP_META[type];
+            const visible = (activeFilter === 'all' || activeFilter === type);
+
+            const groupDiv = document.createElement('div');
+            groupDiv.dataset.groupType = type;
+            groupDiv.style.display = visible ? '' : 'none';
+
+            // Group header
+            const header = document.createElement('div');
+            header.className = 'cu-group-header ' + meta.cls;
+            header.innerHTML = `
+                <label>
+                    <input type="checkbox" class="cu-group-cb" data-type="${esc(type)}" checked>
+                    ${meta.label} <span class="cu-group-count">${urls.length}</span>
+                </label>
+                <button class="cu-group-toggle-link" data-type="${esc(type)}">deselect all ${meta.label.toLowerCase()}</button>
+            `;
+            groupDiv.appendChild(header);
+
+            // URL rows (first 20 visible, rest hidden)
+            urls.forEach((url, idx) => {
+                const row = document.createElement('div');
+                row.className = 'cu-url-row';
+                row.dataset.url = url;
+                row.dataset.type = type;
+                const isChecked = selectedUrls.includes(url);
+                if (!isChecked) row.classList.add('is-deselected');
+                const badge = type === 'included' ? ' <span class="cu-included-badge">[included]</span>' : '';
+                row.innerHTML = `<input type="checkbox" class="cu-row-cb" data-url="${esc(url)}" data-type="${esc(type)}"${isChecked ? ' checked' : ''}>
+                    <span class="cu-url-text">${esc(url)}</span>${badge}
+                    <label class="cu-et-label"><input type="checkbox" class="cu-et-cb" data-url="${esc(url)}"${extraTimeUrls.includes(url) ? ' checked' : ''}>
+                    Extra Time</label><span class="cu-help" tabindex="0" aria-label="Extra Time gives the worker more time on this URL — likely more unloads — and costs an additional credit."><span class="cu-help-box">Extra Time means more time for the worker to go through this URL, but it costs an additional credit.</span></span>`;
+                row.style.display = idx < 20 ? '' : 'none';
+                groupDiv.appendChild(row);
+            });
+
+            // Overflow expand link
+            if (urls.length > 20) {
+                const more = document.createElement('div');
+                more.className = 'cu-url-more';
+                const label = meta.more ? `more ${meta.more}` : 'more';
+                more.textContent = `\u2026 and ${urls.length - 20} ${label}`;
+                more.addEventListener('click', function () {
+                    groupDiv.querySelectorAll('.cu-url-row').forEach(r => r.style.display = '');
+                    this.remove();
+                });
+                groupDiv.appendChild(more);
+            }
+
+            list.appendChild(groupDiv);
+        });
+
+        // Bind group header events
+        list.querySelectorAll('.cu-group-cb').forEach(cb => {
+            cb.addEventListener('change', onGroupCheckboxChange);
+        });
+        list.querySelectorAll('.cu-group-toggle-link').forEach(btn => {
+            btn.addEventListener('click', onGroupToggleLinkClick);
+        });
+        list.querySelectorAll('.cu-row-cb').forEach(cb => {
+            cb.addEventListener('change', onRowCheckboxChange);
+        });
+        list.querySelectorAll('.cu-et-cb').forEach(cb => { cb.addEventListener('change', onEtRowCheckboxChange); });
+        if (discoveryRan) setReadinessCompact(true);
+    }
+
+    // --- Checkbox logic ---
+
+    function onGroupCheckboxChange(e) {
+        const type    = e.target.dataset.type;
+        const checked = e.target.checked;
+        const urls    = groupedUrls[type] || [];
+
+        // Check/uncheck all rows in this group
+        document.querySelectorAll(`.cu-row-cb[data-type="${type}"]`).forEach(cb => {
+            cb.checked = checked;
+            cb.closest('.cu-url-row').classList.toggle('is-deselected', !checked);
+        });
+
+        // Rebuild selectedUrls for this group
+        selectedUrls = selectedUrls.filter(u => !urls.includes(u));
+        if (checked) selectedUrls = selectedUrls.concat(urls);
+
+        updateGroupToggleLink(type);
+        updateCreditBadge();
+    }
+
+    function onGroupToggleLinkClick(e) {
+        const type = e.target.dataset.type;
+        const urls  = groupedUrls[type] || [];
+        const anyChecked = urls.some(u => selectedUrls.includes(u));
+        const willCheck  = !anyChecked; // if any are checked → deselect all; if none → select all
+
+        document.querySelectorAll(`.cu-row-cb[data-type="${type}"]`).forEach(cb => {
+            cb.checked = willCheck;
+            cb.closest('.cu-url-row').classList.toggle('is-deselected', !willCheck);
+        });
+
+        selectedUrls = selectedUrls.filter(u => !urls.includes(u));
+        if (willCheck) selectedUrls = selectedUrls.concat(urls);
+
+        updateGroupCheckbox(type);
+        updateGroupToggleLink(type);
+        updateCreditBadge();
+    }
+
+    function onRowCheckboxChange(e) {
+        const url     = e.target.dataset.url;
+        const checked = e.target.checked;
+        e.target.closest('.cu-url-row').classList.toggle('is-deselected', !checked);
+
+        if (checked) {
+            if (!selectedUrls.includes(url)) selectedUrls.push(url);
+        } else {
+            selectedUrls = selectedUrls.filter(u => u !== url);
+        }
+
+        updateGroupCheckbox(e.target.dataset.type);
+        updateGroupToggleLink(e.target.dataset.type);
+        updateCreditBadge();
+    }
+
+    function onEtRowCheckboxChange(e) {
+        const url = e.target.dataset.url;
+        if (e.target.checked) { if (!extraTimeUrls.includes(url)) extraTimeUrls.push(url); }
+        else { extraTimeUrls = extraTimeUrls.filter(u => u !== url); }
+        updateCreditBadge();
+    }
+
+    // FU-AAS-ET-VIEW-PERSIST — snapshot/clear the post-scan ET carry-over view so it survives
+    // WP-admin navigation (mirrors the Step-4 cu_scanner_result restore). saveEtCarryOver()
+    // no-ops outside that view (etCarryOver gate), so it is safe to call from updateCreditBadge().
+    function saveEtCarryOver() {
+        if (!etCarryOver) return;
+        try {
+            localStorage.setItem('cu_scanner_et_carry_over', JSON.stringify({
+                discoveredUrls: discoveredUrls,
+                groupedUrls:    groupedUrls,
+                selectedUrls:   selectedUrls,
+                extraTimeUrls:  extraTimeUrls,
+                etCarriedUrls:  etCarriedUrls, // FU-AAS-SUFFIX-DROP-ON-RESOLVE
+            }));
+        } catch (_e) {}
+    }
+    function clearEtCarryOver() {
+        etCarryOver = false;
+        etCarriedUrls = []; // FU-AAS-SUFFIX-DROP-ON-RESOLVE — leaving the carry-over view restores normal resolution
+        try { localStorage.removeItem('cu_scanner_et_carry_over'); } catch (_e) {}
+    }
+
+    function updateGroupCheckbox(type) {
+        const urls    = groupedUrls[type] || [];
+        const cb      = document.querySelector(`.cu-group-cb[data-type="${type}"]`);
+        if (!cb) return;
+        const selectedInGroup = urls.filter(u => selectedUrls.includes(u)).length;
+        if (selectedInGroup === 0) {
+            cb.checked = false;
+            cb.indeterminate = false;
+        } else if (selectedInGroup === urls.length) {
+            cb.checked = true;
+            cb.indeterminate = false;
+        } else {
+            cb.checked = false;
+            cb.indeterminate = true;
+        }
+    }
+
+    function updateGroupToggleLink(type) {
+        const btn = document.querySelector(`.cu-group-toggle-link[data-type="${type}"]`);
+        if (!btn) return;
+        const urls = groupedUrls[type] || [];
+        const label = GROUP_META[type].label.toLowerCase();
+        const anySelected = urls.some(u => selectedUrls.includes(u));
+        btn.textContent = anySelected ? `deselect all ${label}` : `select all ${label}`;
+    }
+
+    // --- Filter pills ---
+
+    document.getElementById('cu-filter-bar').addEventListener('click', function (e) {
+        const pill = e.target.closest('.cu-filter-pill');
+        if (!pill) return;
+
+        if (pill.id === 'cu-btn-et-all')  { setAllExtraTimeInFilter(true);  return; }
+        if (pill.id === 'cu-btn-et-none') { setAllExtraTimeInFilter(false); return; }
+
+        if (pill.id === 'cu-btn-select-all') {
+            setAllInFilter(true);
+            return;
+        }
+        if (pill.id === 'cu-btn-deselect-all') {
+            setAllInFilter(false);
+            return;
+        }
+
+        const filter = pill.dataset.filter;
+        if (!filter) return;
+        activeFilter = filter;
+
+        // Update pill active state
+        document.querySelectorAll('.cu-filter-pill[data-filter]').forEach(p => {
+            p.classList.toggle('is-active', p.dataset.filter === activeFilter);
+        });
+
+        // Show/hide groups
+        document.querySelectorAll('#cu-url-list [data-group-type]').forEach(g => {
+            const t = g.dataset.groupType;
+            g.style.display = (activeFilter === 'all' || activeFilter === t) ? '' : 'none';
+        });
+    });
+
+    function setAllInFilter(checked) {
+        // Operate on currently visible groups
+        const types = activeFilter === 'all'
+            ? ['page', 'post', 'other', 'included']
+            : [activeFilter];
+
+        types.forEach(type => {
+            const urls = groupedUrls[type] || [];
+            document.querySelectorAll(`.cu-row-cb[data-type="${type}"]`).forEach(cb => {
+                cb.checked = checked;
+                cb.closest('.cu-url-row').classList.toggle('is-deselected', !checked);
+            });
+            selectedUrls = selectedUrls.filter(u => !urls.includes(u));
+            if (checked) selectedUrls = selectedUrls.concat(urls);
+            updateGroupCheckbox(type);
+            updateGroupToggleLink(type);
+        });
+        updateCreditBadge();
+    }
+
+    function setAllExtraTimeInFilter(on) {
+        // Mirror setAllInFilter — operate on the same URL set the active filter covers.
+        const types = activeFilter === 'all'
+            ? ['page', 'post', 'other', 'included']
+            : [activeFilter];
+
+        types.forEach(type => {
+            const urls = groupedUrls[type] || [];
+            // The ET checkbox carries data-url (not data-type); scope by URL membership
+            // in this group — the same set setAllInFilter operates on.
+            document.querySelectorAll('.cu-et-cb').forEach(cb => {
+                if (urls.includes(cb.dataset.url)) cb.checked = on;
+            });
+            extraTimeUrls = extraTimeUrls.filter(u => !urls.includes(u));
+            if (on) extraTimeUrls = extraTimeUrls.concat(urls);
+        });
+        updateCreditBadge();
+    }
+
+    // --- Credit badge ---
+
+    function updateCreditBadge() {
+        saveEtCarryOver(); // FU-AAS-ET-VIEW-PERSIST — persists the ET carry-over view (no-op otherwise)
+        const badge      = document.getElementById('cu-credit-badge');
+        const notice     = document.getElementById('cu-bot-notice');
+        const numEl      = document.getElementById('cu-credit-num');
+        const desEl      = document.getElementById('cu-credit-deselected');
+        const selected   = selectedUrls.length;
+        const etCount    = extraTimeUrls.filter(u => selectedUrls.includes(u)).length; // only count ET on SELECTED URLs
+        const totalCredits = selected + etCount;
+        const total      = discoveredUrls.length + includedUrls.length;
+        const deselected = total - selected;
+
+        if (!badge) return;
+        badge.style.display = '';
+        if (notice) notice.style.display = '';
+        numEl.textContent = totalCredits;
+
+        if (deselected > 0) {
+            desEl.textContent = `(${deselected} deselected)`;
+            desEl.style.display = '';
+        } else {
+            desEl.style.display = 'none';
+        }
+
+        const balBadge = document.getElementById('cu-balance-badge');
+        const balNumEl = document.getElementById('cu-balance-num');
+        if (balBadge && balNumEl) {
+            if (availableBalance !== null) {
+                balNumEl.textContent = availableBalance;
+                balBadge.style.display = '';
+                if (availableBalance < totalCredits) {
+                    balBadge.classList.add('cu-credit-badge--low');
+                } else {
+                    balBadge.classList.remove('cu-credit-badge--low');
+                }
+            } else {
+                balBadge.style.display = 'none';
+                balBadge.classList.remove('cu-credit-badge--low');
+            }
+        }
+    }
+
+    // --- Phase O: Outbox banner + tick ---
+
+    /**
+     * Show a persistent "queued locally" banner in the step-3 scan-status area.
+     * Mirrors the showQueueBanner() DOM pattern (notice notice-info inline, inserted
+     * before the progress bar) so it uses the same markup conventions.
+     */
+    function showOutboxBanner() {
+        showStep(3);
+        let banner = document.getElementById('cu-outbox-banner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'cu-outbox-banner';
+            banner.className = 'notice notice-info inline';
+            banner.style.marginTop = '10px';
+            const progressBar = document.getElementById('cu-progress-bar');
+            if (progressBar && progressBar.parentNode) {
+                progressBar.parentNode.insertBefore(banner, progressBar);
+            }
+        }
+        banner.innerHTML = '<p><strong>Backend temporarily unavailable</strong> — your scan is queued locally and will dispatch automatically when the backend is reachable.</p>';
+        banner.style.display = '';
+        const pb = document.getElementById('cu-progress-bar');
+        if (pb) pb.style.display = 'none';
+        const pt = document.getElementById('cu-progress-text');
+        if (pt) pt.style.display = 'none';
+    }
+
+    function hideOutboxBanner() {
+        const banner = document.getElementById('cu-outbox-banner');
+        if (banner) banner.style.display = 'none';
+    }
+
+    /**
+     * Poll cu_scanner_outbox_tick every 30 s.
+     * Terminal states (dispatched / failed / none) stop the interval.
+     * Guard: does nothing if an interval is already running.
+     */
+    function startOutboxTick() {
+        if (outboxTickTimer !== null) return; // already ticking
+        outboxTickTimer = setInterval(function () {
+            post('cu_scanner_outbox_tick', {}).then(function (res) {
+                if (!res.success) return; // server error — keep ticking
+                const d = res.data || {};
+                const state = d.state || 'none';
+
+                if (state === 'queued') {
+                    // Still waiting — keep the banner, keep ticking.
+                    // Optionally show next-attempt time if provided.
+                    return;
+                }
+
+                // Terminal state — stop polling.
+                clearInterval(outboxTickTimer);
+                outboxTickTimer = null;
+
+                if (state === 'dispatched') {
+                    hideOutboxBanner();
+                    scanJobId     = d.job_id    || null;
+                    scanJobToken  = d.job_token  || null;
+                    railwayUrl    = d.railway_url || null;
+                    lastPageIndex = 0;
+                    sessionStorage.setItem('cu_scanner_active_job', JSON.stringify({
+                        job_id:      scanJobId,
+                        job_token:   scanJobToken,
+                        railway_url: railwayUrl,
+                    }));
+                    // 1.8.6 — a dispatched outbox entry is a NEW scan (a submit that hit a network
+                    // error), so start it like one: the previous scan's rows, live-table page and
+                    // latched bypass status must not carry over. On the page-load outbox path the
+                    // table is still empty, so the clear is a no-op there.
+                    beginScanPolling();
+                } else if (state === 'failed') {
+                    hideOutboxBanner();
+                    showStep(1);
+                    alert('Scan failed: ' + esc(d.message || 'Unknown error. Please try again.'));
+                } else {
+                    // state === 'none' — nothing queued (e.g. cleared externally).
+                    hideOutboxBanner();
+                    showStep(1);
+                }
+            });
+        }, 30000);
+    }
+
+    /**
+     * Helper: build the outbox intent payload from the current scan state.
+     * Must include the same fields that cu_scanner_submit_job sends so the
+     * server's intent_from_post() can reconstruct the scan.
+     */
+    // All handler-local values (bypassPerUrl, stackSummary, consentGiven) are passed in
+    // as parameters: this function lives at IIFE scope and must NOT read the `let`s that
+    // are block-scoped to the Step-2 click handler (doing so throws ReferenceError under
+    // 'use strict'). Only selectedUrls / resolvedByUrl are genuinely IIFE-scope here.
+    function buildOutboxPayload( pageCount, etCount, etSelected, jobToken, bypassPerUrl, stackSummary, consentGiven ) {
+        const payload = {
+            urls:                  selectedUrls.map(u => resolvedByUrl[u] || u),
+            submitted_urls:        selectedUrls,
+            extra_time_urls:       etSelected.map(u => resolvedByUrl[u] || u),
+            target_bypass_per_url: bypassPerUrl,
+            target_stack_summary:  stackSummary,
+            page_count:            pageCount,
+            extra_time_count:      etCount,
+            class_c_consent_given: consentGiven || '',
+        };
+        if (jobToken) {
+            payload.job_token = jobToken;
+        }
+        return payload;
+    }
+
+    // Group C: surface a reserve/submit error. A `scan_already_active` (409 from the gate
+    // or SaaS reserve) gets the server's friendly account-busy message verbatim — no
+    // "Error:" prefix — since it's an expected state, not a fault. Everything else keeps
+    // the "Error:" prefix.
+    function submitErrorAlert(data, msg) {
+        if (data && data.error === 'scan_already_active') {
+            alert(msg);
+        } else {
+            alert('Error: ' + msg);
+        }
+    }
+
+    // --- Step 2: Reserve + Submit ---
+
+    // Top "Start Scan" button (above the URL list) mirrors the bottom one —
+    // delegate to the same handler so there is a single submit path.
+    (function () {
+        var topBtn = document.getElementById('cu-btn-next-1-top');
+        if (topBtn) topBtn.addEventListener('click', function () {
+            document.getElementById('cu-btn-next-1').click();
+        });
+    })();
+
+    document.getElementById('cu-btn-next-1').addEventListener('click', async function () {
+        // Clear any prior scan's target-stack notice so it never lingers into a
+        // warning-path or no-external scan (FU-AAS-CACHE-STACK-NOTICE-MISSING).
+        renderTargetStackNotice(null);
+        // Mode is keyed on `discoveryRan` (set true only by a completed Discover Pages
+        // run), NOT on `groupedUrls.included`. syncIncludedUrls() sets `included` whenever
+        // ANY include URL exists, so the old `groupedUrls.included !== undefined` marker
+        // mis-flagged MIXED mode (discovery pages selected + an external include URL) as
+        // include-only and REPLACED the selected discovery pages with just the include URL
+        // — operator-reported: only the external URL got scanned. Mixed mode now merges.
+        const isIncludeOnlyMode = !discoveryRan;
+        if (isIncludeOnlyMode) {
+            // No real discovery — (re-)read the textarea so a 2nd+ Start Scan click in the
+            // same page session submits the current URLs, not a prior scan's (FU-NEW-6 rev 2).
+            const includeList = getIncludedUrls();
+            if (includeList.length === 0) return; // nothing to scan
+            selectedUrls     = includeList;
+            discoveredUrls   = includeList;
+            groupedUrls      = { page: [], post: [], other: [], included: includeList };
+            totalPages       = includeList.length;
+        } else {
+            // Mixed / Discover mode: merge the include-URL textarea into the selected
+            // discovery pages so BOTH are scanned (union). syncIncludedUrls() keeps the
+            // checked discovery pages on selectedUrls and adds the include URLs.
+            syncIncludedUrls();
+            totalPages = selectedUrls.length;
+            // 1.7.71b — empty-selection guard (mirrors the include-only branch's guard
+            // above, but loud). Without it an empty selection sailed into Step 2 and
+            // failed server-side with the opaque "Invalid page count" (reserve_job
+            // page_count<1). Reachable via a restored carry-over view with nothing
+            // checked, or an include-box URL swallowed by syncIncludedUrls()'s
+            // already-discovered dedupe.
+            if (selectedUrls.length === 0) {
+                alert('No URLs selected. Tick at least one URL in the list (or add one under Include URLs) before starting the scan.');
+                return;
+            }
+        }
+
+        // FU-NEW-2 Phase 6 — target-stack-aware bypass routing for external URLs.
+        // Replaces the simple external-URL confirm() with a probe + outcome-specific dialog.
+        // Probe runs BEFORE cu_scanner_reserve_job — does NOT consume credit by construction.
+        const externalUrls = selectedUrls.filter(isExternalUrl);
+        let targetBypassPerUrl = {};
+        let targetStackSummary = null;
+        // AC-RC-8a — per-URL resolved-URL map (mirrors targetBypassPerUrl). Populated
+        // from the probe response; maps each submitted URL to its post-redirect resolved
+        // URL (or itself when no redirect). We scan the resolved URL but carry the
+        // original submitted URL through to the server for honest attribution.
+        // NOTE: declared at IIFE scope (see resolvedByUrl declaration near cuUrlListState) so
+        // renderResultUrlListPage() — a sibling fn — can read it. Reset (not redeclared) per scan.
+        resolvedByUrl = {};
+
+        if (externalUrls.length > 0) {
+            // 1.3.4 (2026-05-16) — Pre-probe external-URL safety gate (restores the
+            // pre-FU-NEW-2 confirm before the probe AJAX hits the external site).
+            const uniqueHosts = [...new Set(externalUrls.map(function (u) {
+                try { return new URL(u).host; } catch (e) { return u; }
+            }))];
+            const hostLabel = uniqueHosts.length === 1 ? 'host' : 'hosts';
+            if (!window.confirm(
+                'You\'re about to scan ' + externalUrls.length + ' URL(s) on external '
+                + hostLabel + ': ' + uniqueHosts.join(', ') + '.\n\n'
+                + 'External sites may have firewalls or CDNs that affect scanning. Continue?'
+            )) {
+                return;
+            }
+
+            const spinnerCtl = showInlineSpinner('Detecting target stack…');
+            let probeResult;
+            try {
+                probeResult = await post(
+                    'cu_scanner_probe_target_stack',
+                    { urls: externalUrls },
+                    { signal: spinnerCtl.signal }
+                );
+            } catch (err) {
+                spinnerCtl.hide();
+                if (err && err.name === 'AbortError') return; // operator cancelled spinner
+                alert('Target stack probe error: ' + (err && err.message ? err.message : String(err)));
+                return;
+            }
+            spinnerCtl.hide();
+            if (!probeResult || !probeResult.success) {
+                const errMsg = probeResult && probeResult.data
+                    ? (typeof probeResult.data === 'string' ? probeResult.data : JSON.stringify(probeResult.data))
+                    : (probeResult && probeResult.error ? probeResult.error : 'unknown error');
+                alert('Probe failed: ' + errMsg);
+                return;
+            }
+            targetBypassPerUrl = probeResult.data.suggested_bypass_per_url || {};
+            targetStackSummary = probeResult.data.per_host_results || [];
+            // AC-RC-8a — store resolved_url per submitted URL (default to identity).
+            const respResolved = probeResult.data.resolved_per_url || {};
+            externalUrls.forEach(function (submittedUrl) {
+                resolvedByUrl[submittedUrl] = respResolved[submittedUrl] || submittedUrl;
+            });
+
+            if (probeResult.data.warning_needed) {
+                const userConfirmed = await showProbeOutcomeDialog(probeResult.data);
+                if (!userConfirmed) return;
+            } else {
+                // Uniform class_a_clean: no blocking dialog, but surface WHICH stack
+                // was detected as a passive inline notice (FU-AAS-CACHE-STACK-NOTICE-MISSING).
+                renderTargetStackNotice(probeResult.data);
+            }
+        }
+
+        // FU-ANTIBLOCK-2 (spec §3.4) — same-site pre-scan warning. Fires at most
+        // once per Start-Scan, AFTER the external probe modal (AC-6b ordering).
+        const hasSameSite = selectedUrls.some(function (u) { return !isExternalUrl(u); });
+        const ls = (typeof cuLocalStack === 'object' && cuLocalStack) || {};
+        const cdnUnacked = ls.cdn && ls.cdn !== ls.acknowledged;
+        const secPlugins = ls.security_plugins || [];
+        // "Don't show this again" — browser-local suppression of the same-site warning
+        // (localStorage; per-browser). Guarded in case storage is unavailable/blocked.
+        let localStackSuppressed = false;
+        try { localStackSuppressed = window.localStorage.getItem('cu_suppress_local_stack_warn') === '1'; } catch (e) {}
+        if (hasSameSite && !localStackSuppressed && (cdnUnacked || secPlugins.length > 0)) {
+            const proceed = await showLocalStackDialog(ls, cdnUnacked, secPlugins);
+            if (!proceed) return; // Cancel aborts BEFORE cu_scanner_reserve_job (AC-6b)
+        }
+
+        // FU-AAS-SUFFIX-DROP-ON-RESOLVE — carried-over ET URLs are scanned byte-identically;
+        // resolution fires only on a URL's first scan (operator directive 2026-06-11). Identity
+        // entries are inert downstream: the submission maps yield u unchanged and the
+        // "← resolved from" note has a resolved !== submitted guard.
+        etCarriedUrls.forEach(function (u) { resolvedByUrl[u] = u; });
+
+        showStep(2);
+        // Scroll to the top so the operator sees the scanning progress UI
+        // instead of being stuck at the bottom of the long URL selection list.
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        // FU-AAS-EXTRA-TIME — only ET URLs that are actually selected count toward billing/payload.
+        const etSelected = extraTimeUrls.filter(u => selectedUrls.includes(u));
+        // Use selectedUrls.length — only charge for URLs that will actually be scanned.
+        // extra_time_count drives the SaaS reserve gate (N pages + M extra-time = N+M credits).
+        const pageCount = selectedUrls.length;
+        const etCount   = etSelected.length;
+        // Class C optimizer-disable consent: '' until the user confirms the consent
+        // dialog (then '1'). Carried into the outbox intent so a cron/closed-tab replay
+        // of a consented Class-C scan isn't terminal-failed for "missing consent".
+        let classCConsentGiven = '';
+
+        // Helper: route a retryable outbox failure. Enqueues the scan intent
+        // and shows the queued-locally banner + starts the 30 s tick poll.
+        // jobToken: pass the reserve token when available (post-reserve failure),
+        // or omit/null when the reserve itself failed (token not yet issued).
+        // targetBypassPerUrl / targetStackSummary / classCConsentGiven come from THIS
+        // handler's scope (routeToOutbox is nested here) and are passed as params —
+        // buildOutboxPayload is at IIFE scope and cannot read these block-scoped lets.
+        function routeToOutbox( jobToken ) {
+            post('cu_scanner_outbox_enqueue', buildOutboxPayload( pageCount, etCount, etSelected, jobToken, targetBypassPerUrl, targetStackSummary, classCConsentGiven ))
+                .then(function () {
+                    showOutboxBanner();
+                    startOutboxTick();
+                });
+        }
+
+        post('cu_scanner_reserve_job', { page_count: pageCount, extra_time_count: etCount })
+            .then(res => {
+                if (!res.success) {
+                    // res.data is now {message, retryable} — defensive: handle legacy string too.
+                    const retryable = res.data && res.data.retryable === true;
+                    const msg       = (res.data && res.data.message) ? res.data.message : res.data;
+                    if (retryable) {
+                        routeToOutbox( null );
+                    } else {
+                        showStep(1);
+                        submitErrorAlert(res.data, msg);
+                    }
+                    return;
+                }
+                const job_token = res.data.job_token;
+                post('cu_scanner_submit_job', {
+                    // AC-RC-8a — scan the resolved URL, carry the original submitted URL.
+                    // submitted_urls[] is index-aligned with urls[] (both mapped from the
+                    // same selectedUrls array in the same order).
+                    urls: selectedUrls.map(u => resolvedByUrl[u] || u),
+                    submitted_urls: selectedUrls,
+                    job_token,
+                    extra_time_urls: etSelected.map(u => resolvedByUrl[u] || u),
+                    target_bypass_per_url: targetBypassPerUrl,
+                    target_stack_summary: targetStackSummary,
+                })
+                    .then(async res2 => {
+                        // Phase 5 — Class C consent gate.
+                        // submit_job returns class_c_consent_required when Class C optimizers
+                        // are active and the user hasn't yet confirmed. Render the modal,
+                        // retry on confirm, fall back to existing failure path on cancel.
+                        if (!res2.success && res2.data && res2.data.error === 'class_c_consent_required') {
+                            const consented = await showConsentDialog(
+                                res2.data.class_c_active || [],
+                                selectedUrls.length
+                            );
+                            if (!consented) {
+                                post('cu_scanner_handle_failure');
+                                showStep(1);
+                                return;
+                            }
+                            classCConsentGiven = '1'; // carry consent into any later outbox enqueue (incl. a retry network-failure)
+                            const retry = await post('cu_scanner_submit_job', {
+                                // AC-RC-8a — same resolved/submitted threading as above.
+                                urls: selectedUrls.map(u => resolvedByUrl[u] || u),
+                                submitted_urls: selectedUrls,
+                                job_token: job_token,
+                                class_c_consent_given: '1',
+                                extra_time_urls: etSelected.map(u => resolvedByUrl[u] || u),
+                                target_bypass_per_url: targetBypassPerUrl,
+                                target_stack_summary: targetStackSummary,
+                            });
+                            if (!retry.success) {
+                                // res.data is now {message, retryable} — defensive: handle legacy string too.
+                                const retryable = retry.data && retry.data.retryable === true;
+                                const msg       = (retry.data && retry.data.message) ? retry.data.message : retry.data;
+                                post('cu_scanner_handle_failure');
+                                if (retryable) {
+                                    routeToOutbox( job_token );
+                                } else {
+                                    showStep(1);
+                                    submitErrorAlert(retry.data, msg);
+                                }
+                                return;
+                            }
+                            res2 = retry;
+                        }
+                        if (!res2.success) {
+                            // res.data is now {message, retryable} — defensive: handle legacy string too.
+                            const retryable = res2.data && res2.data.retryable === true;
+                            const msg       = (res2.data && res2.data.message) ? res2.data.message : res2.data;
+                            post('cu_scanner_handle_failure');
+                            if (retryable) {
+                                routeToOutbox( job_token );
+                            } else {
+                                showStep(1);
+                                submitErrorAlert(res2.data, msg);
+                            }
+                            return;
+                        }
+                        scanJobId     = res2.data.job_id;
+                        scanJobToken  = res2.data.job_token;
+                        railwayUrl    = res2.data.railway_url;
+                        lastPageIndex = 0;
+                        // FU-AAS-YELLOW-S0A0-ROWS — a "Scan again" rescan reuses the 429 dormant
+                        // button state: mark this job as a re-queue so restoreStep4 disables Push
+                        // (Sync-only) when CU rules already exist. Mirrors reQueueRemainder (:1832).
+                        if ( sessionStorage.getItem('cu_scanner_rescan_requeue') ) {
+                            localStorage.setItem('cu_scanner_requeue_' + scanJobId, '1');
+                            sessionStorage.removeItem('cu_scanner_rescan_requeue');
+                        }
+                        sessionStorage.setItem( 'cu_scanner_active_job', JSON.stringify({
+                            job_id:      scanJobId,
+                            job_token:   scanJobToken,
+                            railway_url: railwayUrl,
+                        }) );
+                        clearEtCarryOver(); // FU-AAS-ET-VIEW-PERSIST — scan started; resume Step 3 on return, not the ET view
+                        beginScanPolling();
+                    })
+                    .catch(() => {
+                        // Network error on submit — retryable (canonical outage case).
+                        post('cu_scanner_handle_failure');
+                        routeToOutbox( job_token );
+                    });
+            })
+            .catch(() => {
+                // Network error on reserve — retryable (canonical outage case).
+                routeToOutbox( null );
+            });
+    });
+
+    // --- Step 3: Polling + Progress ---
+
+    function startPolling() {
+        // FU-MAINPAGE-SCAN-RUNNING: clear any stale handle first — stopPolling() is a
+        // no-op when pollTimer is null, so this is double-call-safe (two reattach paths
+        // on one load) AND restart-safe (a new scan whose prior timer is still live).
+        stopPolling();
+        pollProgress(); // poll immediately, then self-schedule via scheduleNextPoll
+    }
+
+    // beginScanPolling() — called on new-scan-start paths ONLY: main submit, reQueueRemainder, and (1.8.6)
+    // the outbox tick's 'dispatched' branch — a queued submit that starts late is still a new scan.
+    // Clears the Step-3 URL table so rows from a previous (longer) scan don't linger, then starts polling.
+    // Do NOT call from the resume-after-reload path (cu_scanner_check_job / restoreOutboxState) —
+    // those paths legitimately repopulate the table from the worker's pages[] array.
+    function beginScanPolling() {
+        document.getElementById('cu-pages-tbody').innerHTML = '';
+        resetBypassStatus(); // 1.8.1b — clear a previous scan's latched "Applied".
+        // 1.8.6 — a new scan opens the live table on page 1. Applied NOW, not on the next poll: a
+        // queued scan returns before the row loop, so the old pager would otherwise sit over the
+        // empty table for the whole queue wait.
+        liveTablePage = 0;
+        applyLiveTablePage();
+        showStep(3);
+        startPolling();
+    }
+
+    function stopPolling() {
+        if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    }
+
+    function scheduleNextPoll() {
+        // 10s while queued (no active scan work), 2s once in_progress
+        const interval = lastKnownStatus === 'queued' ? 10000 : 2000;
+        pollTimer = setTimeout(pollProgress, interval);
+    }
+
+    var PAUSED_COUNTDOWN_TICK_MS = 1000, PAUSED_POLL_FLOOR_MS = 15000,
+        PAUSED_POLL_BUFFER_MS = 3000, PAUSED_CATCHUP_MS = 10000;
+    var pausedResumeAt = 0;   // latest resume_at (ms) — countdown reads this
+
+    function formatEtaShort(s) {
+        if (s < 3600) return Math.max(1, Math.round(s / 60)) + ' min';
+        return (s / 3600).toFixed(1) + ' h';
+    }
+
+    // R3 Stage C — countdown formatter for the paused banner. ms<1h → "M:SS",
+    // ms>=1h → "H:MM:SS"; non-positive → "0:00". Pure (no DOM/network).
+    function formatCountdown(ms) {
+        var s = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+        var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+        var two = function (n) { return (n < 10 ? '0' : '') + n; };
+        return h > 0 ? h + ':' + two(m) + ':' + two(sec) : m + ':' + two(sec);
+    }
+
+    function showQueueBanner(position, total, message, etaS) {
+        let banner = document.getElementById('cu-queue-banner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'cu-queue-banner';
+            banner.className = 'notice notice-info inline';
+            banner.style.marginTop = '10px';
+            const progressBar = document.getElementById('cu-progress-bar');
+            if (progressBar && progressBar.parentNode) {
+                progressBar.parentNode.insertBefore(banner, progressBar);
+            }
+        }
+        if (message) {
+            banner.innerHTML = '<p>' + esc(message) + '</p>';
+        } else if (position !== null && position !== undefined) {
+            var etaTxt = (typeof etaS === 'number' && etaS > 0)
+                ? ' Estimated start: ~' + esc(formatEtaShort(etaS)) + ' (estimate).'
+                : '';
+            banner.innerHTML = '<p>Your scan is queued \u2014 position #' + esc(String(position)) +
+                ' of ' + esc(String(total)) + '.' + etaTxt + ' It will start automatically.</p>';
+        } else {
+            banner.innerHTML = '<p>Your scan is queued. It will start automatically.</p>';
+        }
+        banner.style.display = '';
+        const pb = document.getElementById('cu-progress-bar');
+        if (pb) pb.style.display = 'none';
+        const pt = document.getElementById('cu-progress-text');
+        if (pt) pt.style.display = 'none';
+    }
+
+    function hideQueueBanner() {
+        const banner = document.getElementById('cu-queue-banner');
+        if (banner) banner.style.display = 'none';
+        const pb = document.getElementById('cu-progress-bar');
+        if (pb) pb.style.display = '';
+        const pt = document.getElementById('cu-progress-text');
+        if (pt) pt.style.display = '';
+    }
+
+    function pollProgress() {
+        const url = `${railwayUrl}/jobs/${scanJobId}/status?from=${lastPageIndex}`;
+        // Live poll MUST bypass the HTTP cache. This is a FIXED url (?from=0 — lastPageIndex
+        // never advances), so any cached response strands a stale in-progress snapshot over
+        // the terminal status:'complete', wedging Step 3 at N-1/N until a hard refresh.
+        // cache:'no-store' forces a fresh network read every tick; pairs with the worker's
+        // Cache-Control: no-store on /status (defense in depth across browser + edge/proxy).
+        fetch(url, { cache: 'no-store', headers: { 'Authorization': 'Bearer ' + scanJobToken } })
+            .then(r => r.json())
+            .then(data => { handleStatusUpdate(data); })
+            .catch(() => {
+                post('cu_scanner_poll_status', { job_id: scanJobId, job_token: scanJobToken, from: lastPageIndex })
+                    .then(res => { if (res.success) handleStatusUpdate(res.data); });
+            });
+    }
+
+    function handleStatusUpdate(data) {
+        var __rn = document.getElementById('cu-resume-notice'); if (__rn) __rn.remove();
+        lastKnownStatus = data.status;
+
+        // R3 Stage C — one teardown point: clear the live countdown on EVERY
+        // non-paused state (resumed/terminal/Stop&keep all pass through here).
+        if (countdownInterval && data.status !== 'paused') {
+            clearInterval(countdownInterval);
+            countdownInterval = null;
+        }
+        if (data.status !== 'paused') {
+            var pb = document.getElementById('cu-paused-banner');
+            if (pb) pb.style.display = 'none';
+        }
+
+        if (data.status === 'queued') {
+            showQueueBanner(data.queue_position, data.total_queued, null, data.eta_s);
+            scheduleNextPoll();
+            return;
+        }
+
+        if (data.status === 'cancelled_timeout') {
+            stopPolling();
+            sessionStorage.removeItem('cu_scanner_active_job');
+            showQueueBanner(null, null, data.message || 'Your scan was cancelled after waiting 3 hours in queue. Credits have been returned. Please try again later.');
+            return;
+        }
+
+        // Task 5 — shared {pages, completed, total} computation hoisted ABOVE the
+        // killed branch so killed/complete/failed can all use it. queued +
+        // cancelled_timeout returned already (they don't need page data).
+        const pages     = data.pages || [];
+        const completed = data.completed || 0;
+        const total     = data.total || totalPages;
+
+        if (data.status === 'killed') {
+            stopPolling();
+            sessionStorage.removeItem('cu_scanner_active_job');
+            // FU-7 — also update the plugin's local ScanHistory record so the
+            // History tab no longer shows this scan as in_progress/queued.
+            // Fire-and-forget; UI banner is the user-visible signal regardless.
+            post('cu_scanner_handle_killed');
+            // Killed = admin kill: charged 0, no rules delivered → no build_result.
+            // Route through the unified terminal-incomplete handler for the banner.
+            handleTerminalIncomplete({
+                status:       'killed',
+                completed:    completed,
+                total:        total,
+                pages:        pages,
+                selectedUrls: selectedUrls.slice(),
+            });
+            return;
+        }
+
+        if (data.status === 'paused_exhausted') {
+            stopPolling();
+            sessionStorage.removeItem('cu_scanner_active_job');
+            // Charged partial: worker already finalized source='partial' (X pages).
+            // Deliver the X-page rules + the honest banner via the existing path.
+            buildResult({ status: 'paused_exhausted', completed: completed, total: total,
+                          pages: pages, selectedUrls: selectedUrls.slice() }).then(function (built) {
+                if (!built) showStep(1);
+            });
+            return;
+        }
+
+        hideQueueBanner(); // clears banner if transitioning from queued → in_progress
+
+        document.getElementById('cu-progress-bar').value = total ? (completed / total) * 100 : 0;
+        document.getElementById('cu-progress-text').textContent = `${completed} / ${total}`;
+
+        const tbody = document.getElementById('cu-pages-tbody');
+        pages.forEach((page, idx) => {
+            // Railway always returns all pages in order from index 0.
+            // Use idx directly — lastPageIndex offset caused duplicate rows after first poll.
+            const globalIdx   = idx;
+            const existing    = document.getElementById('cu-row-' + globalIdx);
+            const statusLabel = page.status === 'done' ? '\u2713 Done' : page.status === 'error' ? '\u2717 Error' : '\u2026';
+            // FU-AAS-UNDEFINED-URL (1.7.53b) \u2014 a pending (not-yet-started) page comes back
+            // without a `url` (worker returns {status:'pending'} for indices beyond
+            // PAGE_CONCURRENCY at 0/N), so page.url was undefined \u2192 esc(undefined) printed the
+            // literal "undefined" in those rows. Fall back to the resolved submitted URL (what
+            // we sent + what the worker echoes) so pending rows match the started rows.
+            // selectedUrls (let) + resolvedByUrl (var) are IIFE-scope \u2192 safe to read here.
+            const rowUrl = page.url || resolvedByUrl[selectedUrls[idx]] || selectedUrls[idx] || '';
+            if (existing) {
+                existing.innerHTML = rowHtml(rowUrl, statusLabel);
+            } else {
+                const tr = document.createElement('tr');
+                tr.id = 'cu-row-' + globalIdx;
+                tr.innerHTML = rowHtml(rowUrl, statusLabel);
+                tbody.appendChild(tr);
+            }
+        });
+
+        applyLiveTablePage(); // 1.8.6 — hide the rows off the current page. Never resets the page.
+        updateBypassStatus(pages); // the FULL array, never the page on screen
+
+        if (data.status === 'paused') {
+            renderPausedBanner(data);
+            if (!countdownInterval) {                 // AC-C-4: never a second timer
+                countdownInterval = setInterval(function () {
+                    var el = document.getElementById('cu-paused-countdown');
+                    if (el) el.textContent = formatCountdown(pausedResumeAt - Date.now());
+                }, PAUSED_COUNTDOWN_TICK_MS);
+            }
+            schedulePausedPoll(data);                 // AC-C-3: aligned, not 2s
+            return;                                   // do NOT hit scheduleNextPoll
+        }
+
+        if (data.status === 'complete' || data.status === 'failed') {
+            stopPolling();
+            sessionStorage.removeItem('cu_scanner_active_job');
+            if (data.status === 'complete') {
+                buildResult();
+            } else if (completed >= total) {
+                // failed but every page actually completed → treat as a normal
+                // complete (deliver rules + Step-4, no partial banner).
+                buildResult();
+            } else if (completed > 0) {
+                // Charged partial: 0 < completed < total. Deliver the X-page rules
+                // (build_result) AND show the partial banner. If build_result errors
+                // we fall back to the pre-submit-fatal failure path below.
+                buildResult({
+                    status:       'failed',
+                    completed:    completed,
+                    total:        total,
+                    pages:        pages,
+                    selectedUrls: selectedUrls.slice(),
+                }).then((built) => {
+                    // built === false means build_result returned res.success === false
+                    // (do_build_result threw "No coverage data" — nothing was delivered).
+                    if (!built) {
+                        post('cu_scanner_handle_failure').then(() => {
+                            showStep(1);
+                            alert('Scan failed. Credits have been released. You may retry the scan.');
+                        });
+                    }
+                });
+            } else {
+                // completed === 0 → pre-submit fatal / zero delivered. Existing path.
+                post('cu_scanner_handle_failure').then(() => {
+                    showStep(1);
+                    alert('Scan failed. Credits have been released. You may retry the scan.');
+                });
+            }
+        } else {
+            scheduleNextPoll();
+        }
+    }
+
+    // 1.8.1b — the optimizer-bypass query params the scanner appends to a scan URL.
+    // Sourced from PluginDetector::OPTIMIZERS `bypass_query` keys plus Code Unloader's own
+    // `nowpcu` (auto_bypass['code-unloader']). Keep in sync with class-plugin-detector.php.
+    //
+    // Testing for a bare "?" instead would be a FALSE POSITIVE: a user-submitted URL keeps
+    // its own query string, and only these keys mean "the scanner suppressed an optimizer
+    // for this request".
+    var CU_BYPASS_PARAM_KEYS = [
+        'nowprocket', 'perfmattersoff', 'ao_noptimize', 'nonitro',
+        'wpacu_no_load', 'LSCWP_CTRL', 'swis_disable', 'no_optimize', 'nowpcu'
+    ];
+
+    // Index of the separator ('?' or '&') that begins the appended bypass suffix, or -1
+    // when the URL carries none. class-scanner-ajax.php build_scan_url() always appends
+    // bypass params LAST, so everything from that separator to the end IS the suffix.
+    function cuBypassSuffixStart( url ) {
+        var u = String( url == null ? '' : url );
+        var i = u.indexOf( '?' );
+        if ( i === -1 ) return -1;
+        while ( i !== -1 && i < u.length ) {
+            var next = u.indexOf( '&', i + 1 );
+            var pair = u.slice( i + 1, next === -1 ? u.length : next );
+            var eq   = pair.indexOf( '=' );
+            var key  = eq === -1 ? pair : pair.slice( 0, eq );
+            if ( CU_BYPASS_PARAM_KEYS.indexOf( key ) !== -1 ) return i;
+            i = next;
+        }
+        return -1;
+    }
+
+    function rowHtml(url, status) {
+        var u   = String( url == null ? '' : url );
+        var cut = cuBypassSuffixStart( u );
+        // Both halves go through the same attribute-safe esc() — splitting the string must
+        // not drop an escape on either side.
+        var urlCell = cut === -1
+            ? esc( u )
+            : esc( u.slice( 0, cut ) ) +
+              '<span class="cu-live-bypass-suffix">' + esc( u.slice( cut ) ) + '</span>';
+        return `<td>${urlCell}</td><td>${esc(status)}</td>`;
+    }
+
+    // 1.8.1b — Step-3 optimizer-bypass status. The markup used to hardcode "Applied",
+    // which lied on every scan where no optimizer was detected.
+    //
+    // Latching matters: pages arrive progressively, and a not-yet-started page comes back
+    // from the worker WITHOUT a `url` (see the FU-AAS-UNDEFINED-URL fallback in the poll
+    // handler), so its row falls back to the CLEAN submitted URL. Declaring "not applied"
+    // off that early state would just be a different wrong label. So: latch to applied on
+    // first sighting, and only declare "not applied" once every page has a real
+    // worker-echoed URL.
+    var bypassStatusLatched = false;
+
+    function resetBypassStatus() {
+        bypassStatusLatched = false;
+        applyBypassStatus( 'pending' );
+    }
+
+    function applyBypassStatus( state ) {
+        var row   = document.getElementById( 'cu-bypass-status-row' );
+        var icon  = document.getElementById( 'cu-bypass-status-icon' );
+        var label = document.getElementById( 'cu-bypass-status-label' );
+        var copy  = document.getElementById( 'cu-bypass-status-copy' );
+        if ( ! row || ! icon || ! label || ! copy ) return;
+        row.classList.toggle( 'is-not-applicable', state === 'none' );
+        if ( state === 'applied' ) {
+            icon.textContent  = '✓';
+            label.textContent = 'Applied';
+            copy.textContent  = 'Detected bypass rules are applied per URL when available.';
+        } else if ( state === 'none' ) {
+            icon.textContent  = '–';
+            label.textContent = 'Not applied (N/A)';
+            copy.textContent  = 'No optimizer bypass was needed for the URLs in this scan.';
+        } else {
+            icon.textContent  = '–';
+            label.textContent = 'Checking…';
+            copy.textContent  = 'Detected bypass rules are applied per URL when available.';
+        }
+    }
+
+    function updateBypassStatus( pages ) {
+        if ( bypassStatusLatched ) return;
+        var list        = Array.isArray( pages ) ? pages : [];
+        var anyBypass   = false;
+        var allResolved = list.length > 0;
+        list.forEach( function ( p ) {
+            if ( p && p.url ) {
+                if ( cuBypassSuffixStart( p.url ) !== -1 ) anyBypass = true;
+            } else {
+                allResolved = false;
+            }
+        } );
+        if ( anyBypass ) {
+            bypassStatusLatched = true;
+            applyBypassStatus( 'applied' );
+            return;
+        }
+        applyBypassStatus( allResolved ? 'none' : 'pending' );
+    }
+
+    // 1.8.6 — the Step-3 live table shows LIVE_TABLE_PER_PAGE rows at a time. Every row stays in
+    // the DOM and keeps updating in place by id; rows off the current page are only HIDDEN, so the
+    // row ids, the global-idx URL fallback and updateBypassStatus(pages) (whose verdict needs EVERY
+    // page) are untouched. The page moves only when the user clicks (operator: no auto-follow),
+    // survives every poll, and is reset only by beginScanPolling() — a new scan.
+    //
+    // The pager is static markup in scanner-page.php, NOT re-rendered per poll the way Step 4's is:
+    // rebuilding the buttons every 2 s would knock keyboard focus off "Next" on every tick. Its ids
+    // are its own because Step 4's cu-url-prev / cu-url-next live in the same document.
+    var LIVE_TABLE_PER_PAGE = 15;
+    var liveTablePage = 0;
+
+    function liveTablePageCount() {
+        return Math.ceil( document.getElementById( 'cu-pages-tbody' ).children.length / LIVE_TABLE_PER_PAGE );
+    }
+
+    function applyLiveTablePage() {
+        var pager = document.getElementById( 'cu-live-pager' );
+        var label = document.getElementById( 'cu-live-page-label' );
+        var prev  = document.getElementById( 'cu-live-prev' );
+        var next  = document.getElementById( 'cu-live-next' );
+        // Fail OPEN: without the pager (a partial deploy, an id drift) hide nothing — rows past the
+        // first page would otherwise be unreachable, which is worse than no pagination at all.
+        if ( ! pager || ! label || ! prev || ! next ) return;
+        var rows  = document.getElementById( 'cu-pages-tbody' ).children;
+        var first = liveTablePage * LIVE_TABLE_PER_PAGE;
+        for ( var i = 0; i < rows.length; i++ ) {
+            rows[ i ].hidden = i < first || i >= first + LIVE_TABLE_PER_PAGE;
+        }
+        var pageCount = liveTablePageCount();
+        pager.hidden      = pageCount <= 1;
+        label.textContent = 'Page ' + ( liveTablePage + 1 ) + ' of ' + pageCount;
+        prev.disabled     = liveTablePage === 0;
+        next.disabled     = liveTablePage >= pageCount - 1;
+    }
+
+    ( function bindLiveTablePager() {
+        var prev = document.getElementById( 'cu-live-prev' );
+        var next = document.getElementById( 'cu-live-next' );
+        if ( prev ) prev.addEventListener( 'click', function () {
+            if ( liveTablePage > 0 ) { liveTablePage--; applyLiveTablePage(); }
+        } );
+        if ( next ) next.addEventListener( 'click', function () {
+            if ( liveTablePage < liveTablePageCount() - 1 ) { liveTablePage++; applyLiveTablePage(); }
+        } );
+    }() );
+
+    // buildResult([terminalInfo]) — delivers the X-page rules and renders Step 4.
+    // When terminalInfo is supplied (a charged terminal-incomplete: failed/user_cancel
+    // partial), after Step 4 renders we route it through handleTerminalIncomplete() for
+    // the partial banner. Returns a Promise<boolean> resolving true when the result was
+    // built (res.success) and false when build_result errored (no coverage delivered),
+    // so callers can fall back to the pre-submit-fatal failure path.
+    function buildResult(terminalInfo) {
+        const externalOnly = allSelectedAreExternal();
+        // R2 1.7.43b: on a partial, pass the SaaS-charged page count (the cancel/failed
+        // completed count) so History's credits_used mirrors the actual charge (= the banner),
+        // not the build-time delivered pages a fast-cancel race can inflate.
+        const chargedCount = (terminalInfo && terminalInfo.completed != null) ? terminalInfo.completed : '';
+        // FU-BILLING-BLOCKED-NOOPT (E3): plumb the terminal source so PHP renders the
+        // Credits column cancel-aware (user_cancel skips ALL noopt display-zeroing —
+        // rows must sum to the charged amount). Only sent when a terminal-incomplete
+        // status is known; a complete scan sends '' (PHP maps it to null). Server-side
+        // whitelist: user_cancel|failed|paused_exhausted|killed.
+        const terminalSource = (terminalInfo && terminalInfo.status) ? terminalInfo.status : '';
+        return post('cu_scanner_build_result', { job_id: scanJobId, job_token: scanJobToken, charged_count: chargedCount, terminal_source: terminalSource })
+            .then(res => {
+                if (!res.success) {
+                    // For a terminal-incomplete partial, an error here means nothing was
+                    // delivered (do_build_result threw "No coverage data"). Signal the
+                    // caller (return false) so it can run the failure fallback rather
+                    // than alerting — avoids a double "error" surface.
+                    if (terminalInfo) return false;
+                    alert('Error building result: ' + res.data);
+                    return false;
+                }
+                const d = res.data;
+                const bannerData = {
+                    scan_id:         d.scan_id          || '',
+                    pages_blocked:   d.pages_blocked    || { desktop: 0, mobile: 0 },
+                    blocked_reasons: d.blocked_reasons  || {},
+                    total_pages:     d.total_pages      || 0,
+                    // T0-C: this object is a whitelist projection of `d` - a field absent
+                    // here never reaches renderBrokenBanner, however well-formed the PHP
+                    // payload is. Carries who rate-limited the scan; '' degrades to the
+                    // 'unknown' copy variant via the allowlist in renderBrokenBanner().
+                    rate_limit_attribution: d.rate_limit_attribution || '',
+                };
+                restoreStep4({
+                    jobId: scanJobId, safeCount: d.safe_count, aggCount: d.aggressive_count,
+                    canPush: d.can_push, externalOnly: externalOnly, bannerData: bannerData,
+                    urlsScanned: d.total_pages, pages: d.pages, scanId: d.scan_id,
+                    hasActiveCuRules: d.has_active_cu_rules,
+                    hasInternalRules: d.has_internal_rules,
+                    applySafeCount: d.apply_safe_count, applyAggCount: d.apply_aggressive_count,
+                    alreadyPresent: ( 'already_present' in d ) ? d.already_present : null,
+                    creditsRefunded: d.credits_refunded,
+                    cuRulesActive: d.cu_rules_active,
+                    keptProtectionSummary: d.kept_protection_summary
+                });
+                localStorage.setItem( 'cu_scanner_result', JSON.stringify({
+                    job_id:        scanJobId,
+                    safe_count:    d.safe_count,
+                    agg_count:     d.aggressive_count,
+                    can_push:      d.can_push,
+                    external_only: externalOnly,
+                    total_pages:   d.total_pages || 0,
+                    pages:         d.pages   || [],
+                    scan_id:       d.scan_id || '',
+                    // Result-truth: same field NAMES as the payload and the PHP option.
+                    // (agg_count above is a pre-existing rename; do not add a second one.)
+                    // 'already_present' in d distinguishes an absent key from a null value:
+                    // null is the meaningful "CU could not be consulted" signal.
+                    already_present:  ( 'already_present' in d ) ? d.already_present : null,
+                    credits_refunded: d.credits_refunded,
+                    // Persisted alongside the other result-truth fields: without this the
+                    // restored Step 4 would silently fall back to the "please rescan" copy.
+                    cu_rules_active:  d.cu_rules_active,
+                    // Same UNRENAMED name as the PHP payload, the aias_last_result option and
+                    // menu-badge.js's writer. Absent (not zero) when nothing was kept. Without
+                    // this the kept-protection note shows after a live scan and vanishes on the
+                    // next page load.
+                    kept_protection_summary: d.kept_protection_summary,
+                    // FU-AAS-SYNC-SCOPE-LAST-SCAN \u2014 UNRENAMED, same as the payload, the PHP
+                    // option and menu-badge.js's writer. Host-internal, scoped counts (Task 1);
+                    // restoreStep4's derived Push/Sync flag reads these back on restore.
+                    apply_safe_count: d.apply_safe_count,
+                    apply_aggressive_count: d.apply_aggressive_count,
+                    // banner data not persisted \u2014 shown once per live build_result call only.
+                }) );
+                // Task 5 \u2014 charged terminal-incomplete partial: after Step 4 renders,
+                // route through the unified handler for the partial banner.
+                if (terminalInfo) {
+                    // R2 1.7.43b: use the BUILD-TIME result rows (d.pages) for the remainder
+                    // discriminator, not the stale cancel-click snapshot \u2014 so a page that
+                    // finished in-flight after the cancel isn't re-queued.
+                    terminalInfo.pages = (d.pages || terminalInfo.pages || []);
+                    handleTerminalIncomplete(terminalInfo);
+                }
+                return true;
+            });
+    }
+
+    // Task 5 \u2014 IIFE-scoped stash of the most recent terminal-incomplete info so
+    // Tasks 6 (banner/remainder persistence) and 7 (re-queue) can consume it.
+    let currentPartialInfo = null;
+
+    // handleTerminalIncomplete(info) \u2014 unified routing target for every terminal
+    // path that ends a scan before all selected pages completed:
+    //   - killed     (admin kill; charged 0, no rules)
+    //   - failed     (worker failure mid-scan; charged {completed}, X-page rules)
+    //   - user_cancel (operator cancel mid-scan; charged {completed}, X-page rules)
+    //   - paused_exhausted (R3 12h-ladder kill; worker charged source='partial', X-page rules)
+    // info = { status, completed, total, pages, selectedUrls }.
+    // Task 6: stash info, compute + persist remainder, render full banner.
+    function handleTerminalIncomplete(info) {
+        // currentPartialInfo is assigned to partialPayload below (after the remainder is
+        // computed) so it carries remainder_urls — reQueueRemainder reads
+        // currentPartialInfo.remainder_urls. Setting it to the raw `info` here left it
+        // undefined on the live path → "No remaining pages to re-queue" (1.7.43b fix).
+
+        // --- Compute remainder ---
+        // Strip any query string (bypass params) from a URL for clean comparison.
+        // normaliseUrl() already strips trailing slashes + lowercases; we also
+        // drop the ?query portion so bypass-baked pages[].url matches selectedUrls.
+        function cleanUrl(u) {
+            return normaliseUrl(String(u || '').replace(/\?.*$/, ''));
+        }
+
+        const submitted = Array.isArray(info && info.selectedUrls) ? info.selectedUrls : [];
+        const pages     = Array.isArray(info && info.pages)        ? info.pages        : [];
+
+        // Build the set of clean URLs that GENUINELY scanned (captured real assets).
+        // info.pages here is the BUILD-TIME result set (buildResult passes do_build_result's
+        // d.pages). A cut-off page (in-flight when cancelled) is marked done by the worker but
+        // has zero assets / zero S:A:N — it is NOT genuinely scanned, so it stays in the
+        // remainder to be re-queued (alongside the never-reached pages). (1.7.43b)
+        function isGenuinelyScanned(p) {
+            if (!p) return false;
+            var san = (Number(p.safe) || 0) + (Number(p.aggressive) || 0) + (Number(p.needed) || 0);
+            if (san > 0) return true;                              // build-time result row (real rules/needed)
+            return Array.isArray(p.assets) && p.assets.length > 0; // raw worker row (killed/fallback)
+        }
+        const doneSet = new Set();
+        pages.forEach(function (p) {
+            if (p && p.url && isGenuinelyScanned(p)) {
+                doneSet.add(cleanUrl(p.url));
+            }
+        });
+
+        // Remainder = submitted URLs to re-queue.
+        // killed → ALL submitted (admin kill delivered zero rule file for any page;
+        //   "Retry the scan" re-runs everything regardless of how many pages polled done).
+        // failed / user_cancel → non-done set-difference (charged pages already delivered).
+        const remainderUrls = (info.status === 'killed')
+            ? submitted.slice()
+            : submitted.filter(function (u) { return !doneSet.has(cleanUrl(u)); });
+
+        // --- Persist to localStorage ---
+        // Key is 'cu_scanner_partial' (un-namespaced). The spec calls for
+        // 'cu_scanner_partial_{user_id}' but cuScanner exposes no user_id to JS;
+        // the sibling key 'cu_scanner_result' is also un-namespaced \u2014 staying
+        // consistent keeps this task scanner.js-only (no PHP changes needed).
+        var partialPayload = {
+            job_id:        scanJobId,
+            status:        info.status,
+            completed:     Number(info.completed) || 0,
+            total:         Number(info.total)     || 0,
+            remainder_urls: remainderUrls,
+        };
+        // Stash the payload WITH remainder_urls so reQueueRemainder works on the LIVE path
+        // (it reads currentPartialInfo.remainder_urls) — identical to the reload-restore path
+        // (restorePartialBanner sets currentPartialInfo to this same shape). (1.7.43b fix.)
+        currentPartialInfo = partialPayload;
+        try {
+            localStorage.setItem('cu_scanner_partial', JSON.stringify(partialPayload));
+        } catch (_e) { /* localStorage unavailable \u2014 banner still renders live */ }
+
+        // --- Render banner (uses persisted payload so reload-restore uses same path) ---
+        renderPartialBanner(partialPayload);
+
+        // --- killed visibility: #cu-banner-area lives on Step 4; killed skips
+        // buildResult/showStep(4), so we must advance to Step 4 here. ---
+        // For failed/user_cancel, restoreStep4() inside buildResult already called
+        // showStep(4) before we arrive here, so this is a no-op for those paths.
+        if (info.status === 'killed') {
+            showStep(4);
+        }
+    }
+
+    // R3 Stage C \u2014 idempotent paused banner. Re-render updates resume_at; the
+    // countdown text node (#cu-paused-countdown) is rewritten by the 1s interval.
+    function renderPausedBanner(data) {
+        pausedResumeAt = Number(data.resume_at) || 0;
+        var area = document.getElementById('cu-paused-banner');
+        if (!area) {
+            area = document.createElement('div');
+            area.id = 'cu-paused-banner';
+            area.className = 'notice notice-warning inline';
+            var bar = document.getElementById('cu-progress-bar');
+            if (bar && bar.parentNode) bar.parentNode.insertBefore(area, bar);
+        }
+        if (!area._cuPausedBuilt) {
+            area.innerHTML =
+                '<p>&#9208; <strong>Scan paused</strong> \u2014 your origin repeatedly rate-limited or ' +
+                'blocked the scanner. Auto-retrying in <span id="cu-paused-countdown">' +
+                esc(formatCountdown(pausedResumeAt - Date.now())) + '</span>\u2026 (no action needed)</p>' +
+                '<p><button type="button" class="button" id="cu-paused-stopkeep">' +
+                'Stop &amp; keep results now</button></p>';
+            area._cuPausedBuilt = true;
+            var btn = document.getElementById('cu-paused-stopkeep');
+            if (btn) btn.addEventListener('click', stopAndKeep);   // Task 3
+        }
+        area.style.display = '';
+    }
+
+    // R3 Stage C \u2014 align the next /status poll to resume_at; once we're at/past
+    // it, poll every PAUSED_CATCHUP_MS until the status leaves 'paused'.
+    function schedulePausedPoll(data) {
+        stopPolling();                                    // clear any prior timer before rescheduling
+        var remaining = (Number(data.resume_at) || 0) - Date.now();
+        var delay = remaining > 0
+            ? Math.max(remaining + PAUSED_POLL_BUFFER_MS, PAUSED_POLL_FLOOR_MS)
+            : PAUSED_CATCHUP_MS;
+        pollTimer = setTimeout(pollProgress, delay);
+    }
+
+    // renderPartialBanner(payload) \u2014 renders the full partial-failure banner into
+    // #cu-banner-area. Accepts either a live info object or a reloaded payload from
+    // localStorage (both share the same shape after Task 6 normalisation).
+    // Task 7 wires the button click handlers \u2014 do NOT add click logic here.
+    function renderPartialBanner(payload) {
+        const area = document.getElementById('cu-banner-area');
+        if (!area) return;
+
+        const status    = (payload && payload.status)    || '';
+        const completed = Number(payload && payload.completed) || 0;
+        const total     = Number(payload && payload.total)     || 0;
+        const remainder = Array.isArray(payload && payload.remainder_urls)
+            ? payload.remainder_urls : [];
+        const N = remainder.length;
+
+        var html;
+        if (status === 'killed') {
+            html = '<div class="notice notice-warning inline aias-partial-banner">' +
+                '<p><strong>&#9888; Your scan was stopped by an administrator.</strong> ' +
+                '<strong>You were not charged.</strong></p>' +
+                '<p><button type="button" class="button" id="cu-partial-retry-btn">' +
+                'Retry the scan' +
+                '</button></p>' +
+                '</div>';
+        } else if (status === 'paused_exhausted') {
+            html = '<div class="notice notice-warning inline aias-partial-banner">' +
+                '<p><strong>&#9888; Scan stopped after repeated origin throttling/blocking.</strong> ' +
+                'Your origin repeatedly rate-limited or blocked the scanner (e.g. HTTP 429 / 403 / 5xx). ' +
+                'You were charged for the ' + esc(String(completed)) + ' completed page' +
+                (completed === 1 ? '' : 's') + '.</p>' +
+                '<p><button type="button" class="button" id="cu-partial-requeue-btn">' +
+                'Re-queue the remaining ' + esc(String(N)) + ' page' + (N === 1 ? '' : 's') +
+                '</button></p>' +
+                '</div>';
+        } else {
+            var reason = (status === 'user_cancel')
+                ? 'You cancelled this scan.'
+                : 'Your scan was interrupted before it finished.';
+            html = '<div class="notice notice-warning inline aias-partial-banner">' +
+                '<p><strong>&#9888; Scan stopped at page ' + esc(String(completed)) +
+                ' of ' + esc(String(total)) + '.</strong> ' +
+                esc(reason) + ' You were charged for the ' +
+                esc(String(completed)) + ' completed page' + (completed === 1 ? '' : 's') + '.</p>' +
+                '<p><button type="button" class="button" id="cu-partial-requeue-btn">' +
+                'Re-queue the remaining ' + esc(String(N)) + ' page' + (N === 1 ? '' : 's') +
+                '</button></p>' +
+                '</div>';
+        }
+        area.innerHTML = html;
+
+        // killed has no rule file — hide the download button so it is not
+        // shown as a non-functional href="#". Push/sync are already display:none
+        // by default in the template, but hide them explicitly for robustness.
+        // This guard covers BOTH the live path (handleTerminalIncomplete →
+        // renderPartialBanner) and the reload-restore path (restorePartialBanner
+        // IIFE → renderPartialBanner) because both converge here.
+        if (status === 'killed') {
+            var dlBtn  = document.getElementById('cu-btn-download');
+            var pshBtn = document.getElementById('cu-btn-push');
+            var synBtn = document.getElementById('cu-btn-sync');
+            if (dlBtn)  dlBtn.style.display  = 'none';
+            if (pshBtn) pshBtn.style.display = 'none';
+            if (synBtn) synBtn.style.display = 'none';
+            // 1.7.44b — killed reaches Step 4 via renderPartialBanner WITHOUT running
+            // restoreStep4, so the top "Run Another Scan" row keeps its template-default
+            // visibility and duplicates the always-shown bottom one. killed has no results
+            // table, so the top row is purely redundant — hide it. Covers both the live path
+            // (handleTerminalIncomplete) and the reload path (restorePartialBanner), which
+            // both converge here. (Charged partials keep restoreStep4's own rescan-row logic.)
+            var topRescanRow = document.querySelector('#step-4 .cu-rescan-row');
+            if (topRescanRow) topRescanRow.style.display = 'none';
+        }
+
+        // Wire click handlers for the banner buttons.
+        // Must run after area.innerHTML is set — buttons are recreated on each render.
+        wirePartialBannerHandlers();
+    }
+
+    // wirePartialBannerHandlers() — attach click handlers to whichever partial-banner
+    // button is currently in the DOM. Called at the end of renderPartialBanner so it
+    // covers both the live path and the reload-restore path (both call renderPartialBanner).
+    function wirePartialBannerHandlers() {
+        var requeueBtn = document.getElementById('cu-partial-requeue-btn');
+        var retryBtn   = document.getElementById('cu-partial-retry-btn');
+        if (requeueBtn) requeueBtn.addEventListener('click', reQueueRemainder);
+        if (retryBtn)   retryBtn.addEventListener('click',   reQueueRemainder);
+    }
+
+    // reQueueRemainder() — shared handler for both partial-banner buttons.
+    // Reads the URL set from currentPartialInfo.remainder_urls (persisted payload),
+    // which survives a page reload (resolvedByUrl / selectedUrls do NOT).
+    // Mirrors the reserve → submit flow in the main submit handler (L1182-L1284).
+    async function reQueueRemainder() {
+        if (reQueueRemainder._inFlight) return;
+        reQueueRemainder._inFlight = true;
+        try {
+            var requeueUrls = (currentPartialInfo && Array.isArray(currentPartialInfo.remainder_urls))
+                ? currentPartialInfo.remainder_urls : [];
+            var N = requeueUrls.length;
+            if (N === 0) {
+                alert('No remaining pages to re-queue.');
+                return;
+            }
+
+            // Reserve credits for N pages (no extra-time on re-queue).
+            var resRes;
+            try {
+                resRes = await post('cu_scanner_reserve_job', { page_count: N, extra_time_count: 0 });
+            } catch (_e) {
+                // Network error on reserve — retryable path mirrors main flow.
+                // No outbox integration here (no targetBypassPerUrl / classCConsent scope).
+                alert('Network error reserving credits. Please try again.');
+                return;
+            }
+
+            if (!resRes.success) {
+                // Covers Phase-G 409 scan_already_active + insufficient-credits messages.
+                // submitErrorAlert() already has the right copy for both — reuse it.
+                var resMsg = (resRes.data && resRes.data.message) ? resRes.data.message : resRes.data;
+                var resRetryable = resRes.data && resRes.data.retryable === true;
+                if (resRetryable) {
+                    alert('Network error reserving credits. Please try again.');
+                } else {
+                    showStep(1);
+                    submitErrorAlert(resRes.data, resMsg);
+                }
+                return;
+            }
+
+            var job_token = resRes.data.job_token;
+
+            // Submit the re-queue. remainder_urls are already clean (bypass-stripped by
+            // handleTerminalIncomplete). Send them as both urls and submitted_urls; no
+            // resolvedByUrl mapping (absent after reload — remainder already clean).
+            // Class-C consent gate is handled the same way as the main submit handler.
+            var submitPayload = {
+                urls:           requeueUrls,
+                submitted_urls: requeueUrls,
+                job_token:      job_token,
+                extra_time_urls: [],
+            };
+
+            var subRes;
+            try {
+                subRes = await post('cu_scanner_submit_job', submitPayload);
+            } catch (_e) {
+                post('cu_scanner_handle_failure');
+                alert('Network error submitting re-queue. Please try again.');
+                return;
+            }
+
+            // Class-C consent gate — mirrors main submit handler pattern.
+            if (!subRes.success && subRes.data && subRes.data.error === 'class_c_consent_required') {
+                var consented = await showConsentDialog(subRes.data.class_c_active || [], N);
+                if (!consented) {
+                    post('cu_scanner_handle_failure');
+                    showStep(1);
+                    return;
+                }
+                var retryPayload = Object.assign({}, submitPayload, { class_c_consent_given: '1' });
+                try {
+                    subRes = await post('cu_scanner_submit_job', retryPayload);
+                } catch (_e) {
+                    post('cu_scanner_handle_failure');
+                    alert('Network error submitting re-queue. Please try again.');
+                    return;
+                }
+                if (!subRes.success) {
+                    var retryMsg      = (subRes.data && subRes.data.message) ? subRes.data.message : subRes.data;
+                    var retryRetryable = subRes.data && subRes.data.retryable === true;
+                    post('cu_scanner_handle_failure');
+                    if (!retryRetryable) {
+                        showStep(1);
+                        submitErrorAlert(subRes.data, retryMsg);
+                    } else {
+                        alert('Network error submitting re-queue. Please try again.');
+                    }
+                    return;
+                }
+            }
+
+            if (!subRes.success) {
+                var subMsg      = (subRes.data && subRes.data.message) ? subRes.data.message : subRes.data;
+                var subRetryable = subRes.data && subRes.data.retryable === true;
+                post('cu_scanner_handle_failure');
+                if (!subRetryable) {
+                    showStep(1);
+                    submitErrorAlert(subRes.data, subMsg);
+                } else {
+                    alert('Network error submitting re-queue. Please try again.');
+                }
+                return;
+            }
+
+            // Success — transition to Step 3 polling, same as main submit handler.
+            scanJobId     = subRes.data.job_id;
+            scanJobToken  = subRes.data.job_token;
+            railwayUrl    = subRes.data.railway_url;
+            lastPageIndex = 0;
+            sessionStorage.setItem('cu_scanner_active_job', JSON.stringify({
+                job_id:      scanJobId,
+                job_token:   scanJobToken,
+                railway_url: railwayUrl,
+            }));
+            // Task 9 marker — set AFTER reserve returns the new job_id.
+            localStorage.setItem('cu_scanner_requeue_' + scanJobId, '1');
+            // Clear the persisted remainder so a reload no longer shows the old banner.
+            localStorage.removeItem('cu_scanner_partial');
+            beginScanPolling();
+        } finally {
+            reQueueRemainder._inFlight = false;
+        }
+    }
+
+    /**
+     * Result-truth copy builders. Pure functions so they are testable without a DOM.
+     * Copy rule: "already in Code Unloader" — NEVER "already optimised" or "already
+     * applied". A CU rule can exist and still not take effect (spec Q6).
+     */
+    /**
+     * The summary sentence as an ordered list of { text, bold } segments. ONE source feeds
+     * both consumers — buildSummaryLine (the plain string) and renderSummaryParts (the
+     * nodes) — so the copy and its markup cannot drift apart. Segments concatenate with no
+     * separator, and `text` is built with `'' + value` so the join is byte-identical to the
+     * string concatenation this replaced.
+     */
+    function buildSummaryParts( o ) {
+        var parts = [];
+        function push( value, bold ) { parts.push( { text: '' + value, bold: !! bold } ); }
+        // Bold the count together with its noun as ONE segment, and only when the count is a
+        // real, non-zero number: zero is not news, and a NaN/undefined count must never be
+        // shouted. o.urls is NEVER bold — it renders the literal '?' whenever the scanned-URL
+        // count is unknown, and '?' is not a quantity.
+        function isNonZero( n ) { return Number( n ) > 0; }
+        // FU-I: singular fires ONLY on an exact numeric 1 — NaN / 'abc' / undefined / null /
+        // negative numbers all fall through to the plural noun, same as before this branch.
+        function noun( n, singular, plural ) { return ( Number( n ) === 1 ) ? singular : plural; }
+
+        push( 'Scan complete. ' );
+        push( o.urls );
+        // Operator ruling 2026-08-16: the same singular fix as the rule counts, keyed the
+        // same way (Number(n) === 1). o.urls stays plain here too — this segment only ever
+        // carries the noun, never the count, so o.urls above keeps its own unbold push. The
+        // '?' unknown-count fallback is not 1, so it falls through to the plural exactly
+        // like NaN/undefined do for the rule counts.
+        push( ' ' + noun( o.urls, 'URL scanned', 'URLs scanned' ) + ', ' );
+        push( o.safeCount + ' ' + noun( o.safeCount, 'safe rule', 'safe rules' ), isNonZero( o.safeCount ) );
+        push( ', ' );
+        push( o.aggCount + ' ' + noun( o.aggCount, 'aggressive rule', 'aggressive rules' ), isNonZero( o.aggCount ) );
+        push( ' generated.' );
+
+        var ap = o.alreadyPresent;
+        if ( !ap ) return parts;                       // null => cannot know => no claim
+        var total   = ( Number(o.safeCount) || 0 ) + ( Number(o.aggCount) || 0 );
+        var already = ( Number(ap.safe) || 0 ) + ( Number(ap.aggressive) || 0 );
+        if ( total === 0 ) return parts;
+        // already <= total is guaranteed by the server's group-level min(); Math.max is
+        // belt-and-braces so a future payload change can never render "-1 new".
+        var fresh = Math.max( 0, total - already );
+        // The new/already tail stays unbolded — it is a comparison, not a headline count.
+        push( ' → ' + fresh + ' new, ' + already + ' already in Code Unloader' );
+        return parts;
+    }
+
+    function buildSummaryLine( o ) {
+        return buildSummaryParts( o ).map( function ( p ) { return p.text; } ).join( '' );
+    }
+
+    /**
+     * Renders buildSummaryParts output into `el`. The one DOM writer among these builders —
+     * it lives here because it is buildSummaryParts' other consumer, and keeping the two
+     * adjacent is what makes a drift between copy and markup visible in one screenful.
+     * A bold segment becomes a <strong> wrapping a TEXT node; every other segment is a bare
+     * text node. Never innerHTML — the counts are
+     * server-sourced, and trading a text sink for an HTML sink would be an injection
+     * downgrade for no gain. Clears first, because restoreStep4 runs more than once per page
+     * life (a live build_result after a localStorage restore): the second render must
+     * REPLACE the first, not append to it.
+     */
+    /**
+     * R20 — the Step-4 keeplist sentence, built from the aggregation's per-label `rows`.
+     *
+     * Returns a STRING and touches no DOM: every value in it comes from the Railway worker,
+     * so the caller assigns it with textContent and this must never learn to build markup.
+     *
+     * Shape: "<label> (<n>)" when a label kept more than one file, "(protection)" for the
+     * protection field, and both in one parenthetical when both apply. Every row whose
+     * category is 'core' collapses into a single "WordPress core (n): member, member" row —
+     * the group label lives HERE, not on the wire, which is why the worker ships those
+     * entries with member-only display names ("wp.hooks", not "WordPress Core: wp.hooks").
+     * A "(n)" expands its members only when those members are themselves rows: Gravity Forms'
+     * 2 are two handles inside ONE entry with no per-handle name, and inventing names for
+     * them would break naming rule R3.
+     *
+     * Falls back to the pre-R20 sentence when `rows` is missing or malformed. That is not
+     * defensive noise: a user who updates the plugin has their previous scan in localStorage
+     * in the old {count, vendors} shape, and it must still render.
+     */
+    function buildKeptNoteText( summary ) {
+        var rows = summary && summary.rows;
+        if ( ! Array.isArray( rows ) || rows.length === 0 ) {
+            var vendors = ( ( summary && summary.vendors ) || [] ).join( ', ' );
+            return '🛡 ' + summary.count + ' protection script' + ( summary.count === 1 ? '' : 's' )
+                + ' kept' + ( vendors ? ' (' + vendors + ')' : '' )
+                + ' — anti-bot/anti-spam scripts detected on pages with forms are never unloaded.';
+        }
+
+        var byLabel = function ( a, b ) {
+            return String( a ).toLowerCase().localeCompare( String( b ).toLowerCase() );
+        };
+        var coreMembers = [];
+        var coreCount   = 0;
+        var rendered    = [];
+
+        rows.forEach( function ( row ) {
+            if ( ! row || typeof row.label !== 'string' || row.label === '' ) {
+                return;
+            }
+            var count = Number( row.count );
+            if ( ! ( count > 0 ) ) {
+                return;  // AC-12 — a zero-count label never renders.
+            }
+            if ( row.category === 'core' ) {
+                coreMembers.push( row.label );
+                coreCount += count;
+                return;
+            }
+            var notes = [];
+            if ( count > 1 ) { notes.push( String( count ) ); }
+            if ( row.category === 'protection' ) { notes.push( 'protection' ); }
+            rendered.push( {
+                sort: row.label,
+                text: row.label + ( notes.length ? ' (' + notes.join( ', ' ) + ')' : '' ),
+            } );
+        } );
+
+        if ( coreMembers.length ) {
+            coreMembers.sort( byLabel );
+            rendered.push( {
+                sort: 'WordPress core',
+                text: 'WordPress core (' + coreCount + '): ' + coreMembers.join( ', ' ),
+            } );
+        }
+        rendered.sort( function ( a, b ) { return byLabel( a.sort, b.sort ); } );
+
+        return '🛡 ' + summary.count + ' asset' + ( summary.count === 1 ? '' : 's' )
+            + ' kept by the known-asset whitelist — '
+            + rendered.map( function ( r ) { return r.text; } ).join( ', ' )
+            + '. These are kept, not unloaded.';
+    }
+
+    function renderSummaryParts( el, parts ) {
+        el.textContent = '';
+        parts.forEach( function ( p ) {
+            var node = document.createTextNode( p.text );
+            if ( p.bold ) {
+                var strong = document.createElement( 'strong' );
+                strong.appendChild( node );
+                node = strong;
+            }
+            el.appendChild( node );
+        } );
+    }
+
+    function buildSyncCopy( o ) {
+        // The externalOnly branch hides both buttons and OWNS #cu-push-result. Returning
+        // anything here would clobber the "External URLs scanned" notice.
+        if ( o.externalOnly ) return '';
+        var ap = o.alreadyPresent;
+        if ( !ap ) return '';
+        var total   = ( Number(o.safeCount) || 0 ) + ( Number(o.aggCount) || 0 );
+        var already = ( Number(ap.safe) || 0 ) + ( Number(ap.aggressive) || 0 );
+        if ( total === 0 || total - already > 0 ) return '';
+        return 'Nothing new to sync — all ' + total + ' rules already in Code Unloader';
+    }
+
+    /**
+     * Next-step hint appended to the summary line — "you have N rules, here is how to apply
+     * them". The states below mirror restoreStep4's button branches EXACTLY and in the same
+     * order: the copy may only name a control that is actually visible and enabled in that
+     * state, or it sends the operator hunting for a button that isn't on the page. In
+     * particular an external-only scan hides Push AND Sync (both are unusable when every
+     * scanned URL is off-host), so it must never be invited to "push or sync".
+     * Controls are named by their BUTTON LABEL, never by position ("above"/"below"): the copy
+     * then survives any layout change to scanner-page.php, and the label is what the operator
+     * actually scans the page for. Returns '' whenever there is nothing the operator can
+     * usefully do — silence beats a hint that points nowhere.
+     */
+    function buildNextStepCopy( o ) {
+        if ( o.noRules )      return '';   // both buttons dormant, Download inert — nothing to apply
+        if ( o.noInternalRules ) return ''; // aggregate recommendations exist, but none belong to this site
+        if ( o.nothingNew )   return '';   // every rule is already in CU; buildSyncCopy says so — don't contradict it
+        if ( o.externalOnly ) return ' You can download the CU import file and import it into Code Unloader.';
+        if ( o.syncOnly )     return ' You can add them to your existing rules with the Sync button.';
+        if ( o.canPush )      return ' You can apply them now with the Push or Sync buttons.';
+        return '';                         // no branch fired — promise nothing
+    }
+
+    function buildRefundLine( o ) {
+        var n = Number( o.creditsRefunded ) || 0;
+        if ( n < 1 ) return '';
+        return n + ' page credit' + ( n === 1 ? '' : 's' ) +
+               ' returned — pages whose rules were already in Code Unloader are not billed.';
+    }
+
+    function setResultText( id, value ) {
+        var el = document.getElementById( id );
+        if ( el ) el.textContent = String( value );
+    }
+
+    // 1.8.1b — Step-4 Scan ID + copy control. The id text lives in its own child span so
+    // the copy button survives the write (the old code set textContent on the .cu-scan-id
+    // wrapper itself, which would wipe any sibling markup). The value is passed through
+    // DOM APIs only (textContent / setAttribute), never innerHTML, so there is no HTML
+    // interpolation to escape here.
+    // Single source for the label, so the rendered text and the copied text cannot drift
+    // apart — the copy control puts the SAME "Scan ID: <id>" string on the clipboard that
+    // the operator can see on screen, which is what makes a pasted id self-describing.
+    var CU_SCAN_ID_LABEL = 'Scan ID: ';
+
+    function setScanId( scanId ) {
+        var textEl = document.getElementById( 'cu-complete-scan-id-text' );
+        var btn    = document.getElementById( 'cu-complete-scan-id-copy' );
+        var id     = scanId ? String( scanId ) : '';
+        if ( textEl ) textEl.textContent = id ? CU_SCAN_ID_LABEL + id : '';
+        if ( btn ) {
+            btn.hidden = ( id === '' );
+            btn.setAttribute( 'data-scan-id', id );
+        }
+    }
+
+    // execCommand fallback: navigator.clipboard is undefined on non-secure origins, and
+    // plenty of wp-admin installs still run plain HTTP. Returns true on success.
+    function cuLegacyCopy( text ) {
+        var ta = document.createElement( 'textarea' );
+        ta.value = text;
+        ta.setAttribute( 'readonly', '' );
+        ta.style.position = 'fixed';
+        ta.style.top      = '-1000px';
+        ta.style.opacity  = '0';
+        document.body.appendChild( ta );
+        var ok = false;
+        try {
+            ta.select();
+            ta.setSelectionRange( 0, ta.value.length );
+            ok = document.execCommand( 'copy' );
+        } catch ( e ) {
+            ok = false;
+        }
+        document.body.removeChild( ta );
+        return ok;
+    }
+
+    function cuCopyScanId( btn ) {
+        var id = btn.getAttribute( 'data-scan-id' ) || '';
+        if ( ! id ) return;
+        // Copy the labelled string, not the bare id: a pasted "Scan ID: ad4ada7c9bbc" is
+        // self-describing in a ticket or chat, where a lone 12-hex token is not.
+        var payload = CU_SCAN_ID_LABEL + id;
+        var status = document.getElementById( 'cu-complete-scan-id-status' );
+        var settle = function ( ok ) {
+            btn.classList.toggle( 'is-copied', ok );
+            btn.setAttribute( 'aria-label', ok ? 'Scan ID copied to clipboard' : 'Copy scan ID to clipboard' );
+            if ( status ) status.textContent = ok ? 'Scan ID copied to clipboard' : 'Could not copy scan ID';
+            if ( btn.cuCopyTimer ) clearTimeout( btn.cuCopyTimer );
+            btn.cuCopyTimer = setTimeout( function () {
+                btn.classList.remove( 'is-copied' );
+                btn.setAttribute( 'aria-label', 'Copy scan ID to clipboard' );
+                if ( status ) status.textContent = '';
+            }, 2000 );
+        };
+        if ( navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext ) {
+            navigator.clipboard.writeText( payload ).then(
+                function () { settle( true ); },
+                function () { settle( cuLegacyCopy( payload ) ); }
+            );
+        } else {
+            settle( cuLegacyCopy( payload ) );
+        }
+    }
+
+    ( function () {
+        var copyBtn = document.getElementById( 'cu-complete-scan-id-copy' );
+        if ( copyBtn ) {
+            copyBtn.addEventListener( 'click', function () { cuCopyScanId( copyBtn ); } );
+        }
+    } )();
+
+    function renderResultDashboard( o ) {
+        var resultPages = Array.isArray( o.pages ) ? o.pages : [];
+        var urlCount = ( typeof o.urlsScanned === 'number' ) ? o.urlsScanned : resultPages.length;
+        var safe = Number( o.safeCount ) || 0;
+        var aggressive = Number( o.aggCount ) || 0;
+        // FU-AAS-SYNC-SCOPE-LAST-SCAN (spec §3.3 wire site 4) — a SECOND pair for the Ready-to-apply
+        // card: the host-internal, scoped counts do_build_result emits as apply_*. The pair above
+        // stays on the metric tiles (scan totals, external pages included). Known only when BOTH are
+        // finite numbers — no Number() coercion, so null/''/strings are NOT "known 0/0"; a blob
+        // persisted before 1.8.3b has neither field and falls back to the scan totals.
+        var applyKnown = Number.isFinite( o.applySafeCount ) && Number.isFinite( o.applyAggCount );
+        var applySafe = applyKnown ? o.applySafeCount : safe;
+        var applyAgg  = applyKnown ? o.applyAggCount  : aggressive;
+        var kept = o.keptProtectionSummary && Number( o.keptProtectionSummary.count ) > 0
+            ? Number( o.keptProtectionSummary.count )
+            : resultPages.reduce( function ( total, page ) {
+                var count = Number( page.kept_count );
+                return total + ( Number.isFinite( count ) && count > 0 ? count : 0 );
+            }, 0 );
+        var credits = resultPages.reduce( function ( total, page ) {
+            if ( page && page.all_already ) return total;
+            var value = Number( page && page.credits );
+            return total + ( Number.isFinite( value ) && value > 0 ? value : 0 );
+        }, 0 );
+        var balanceBeforeScan = ( typeof o.availableBalance === 'number' && Number.isFinite( o.availableBalance ) )
+            ? o.availableBalance
+            : availableBalance;
+
+        setResultText( 'cu-metric-urls', urlCount );
+        setResultText( 'cu-metric-safe', safe );
+        setResultText( 'cu-metric-aggressive', aggressive );
+        setResultText( 'cu-metric-credits', credits );
+        setResultText(
+            'cu-metric-balance',
+            ( typeof balanceBeforeScan === 'number' && Number.isFinite( balanceBeforeScan ) )
+                ? Math.max( 0, balanceBeforeScan - credits )
+                : '\u2014'
+        );
+        setResultText( 'cu-apply-safe', applySafe );
+        setResultText( 'cu-apply-aggressive', applyAgg );
+        setResultText( 'cu-apply-kept', kept );
+        setResultText( 'cu-ready-rule-total', applySafe + applyAgg );
+        setResultText( 'cu-ready-credits', credits + ' credit' + ( credits === 1 ? ' was' : 's were' ) + ' used' );
+        var successful = resultPages.reduce( function ( total, page ) {
+            return total + ( page && page.status_class === 'ok' ? 1 : 0 );
+        }, 0 );
+        setResultText( 'cu-results-success-count', successful + ' of ' + urlCount + ' successful' );
+        var balanceEl = document.getElementById( 'cu-ready-balance' );
+        if ( balanceEl ) {
+            if ( typeof balanceBeforeScan === 'number' && Number.isFinite( balanceBeforeScan ) ) {
+                balanceEl.textContent = 'Estimated balance after this scan: ' + Math.max( 0, balanceBeforeScan - credits ) + ' credits';
+                balanceEl.hidden = false;
+            } else {
+                balanceEl.textContent = '';
+                balanceEl.hidden = true;
+            }
+        }
+        setScanId( o.scanId );
+        setResultText(
+            'cu-complete-copy',
+            urlCount + ' ' + ( Number( urlCount ) === 1 ? 'URL' : 'URLs' ) + ' processed. Recommendations are ready.'
+        );
+    }
+
+    function renderResultSidebar( o ) {
+        var externalOnly = !! o.externalOnly;
+        var noRules = !! o.noRules;
+        var noInternalRules = !! o.noInternalRules;
+        var syncOnly = !! o.syncOnly;
+        var canPush = !! o.canPush;
+        var nothingNew = !! o.nothingNew;
+        var hasActiveCuRules = !! o.hasActiveCuRules;
+        var settingsLink = document.getElementById( 'cu-cu-settings-link' );
+
+        if ( externalOnly ) {
+            setResultText( 'cu-recommendations-copy', 'Download the CU import JSON and apply it manually to the scanned site.' );
+            setResultText( 'cu-recommendations-footnote', 'Push and Sync are unavailable for external-only tests.' );
+        } else if ( noInternalRules ) {
+            setResultText( 'cu-recommendations-copy', 'No rules from this site are available to Push or Sync.' );
+            setResultText( 'cu-recommendations-footnote', 'Download JSON remains available for review or manual import.' );
+        } else {
+            setResultText( 'cu-recommendations-copy', 'Sync is the safest way to add these rules while keeping your existing Code Unloader setup.' );
+            setResultText( 'cu-recommendations-footnote', 'You can undo the last Push/Sync after applying changes.' );
+        }
+
+        if ( externalOnly ) {
+            setResultText( 'cu-cu-status-title', 'External URLs scanned' );
+            setResultText( 'cu-cu-status-copy', 'Push and Sync are unavailable for external-only tests.' );
+            if ( settingsLink ) settingsLink.hidden = true;
+        } else if ( canPush || hasActiveCuRules ) {
+            setResultText( 'cu-cu-status-title', 'Code Unloader is active' );
+            setResultText( 'cu-cu-status-copy', 'All available integrations are ready.' );
+            if ( settingsLink ) settingsLink.hidden = false;
+        } else {
+            setResultText( 'cu-cu-status-title', 'Manual import available' );
+            setResultText( 'cu-cu-status-copy', 'Download the JSON file to apply these recommendations manually.' );
+            if ( settingsLink ) settingsLink.hidden = false;
+        }
+
+        if ( externalOnly ) {
+            setResultText( 'cu-next-step-title', 'Download the JSON file' );
+            setResultText( 'cu-next-step-copy', 'Import it manually into the Code Unloader setup for the scanned site.' );
+        } else if ( noRules || noInternalRules ) {
+            setResultText( 'cu-next-step-title', 'No rules to apply' );
+            setResultText( 'cu-next-step-copy', noInternalRules
+                ? 'No recommendations from this site are eligible for direct application.'
+                : 'Review the URL rows or run another scan.' );
+        } else if ( nothingNew ) {
+            setResultText( 'cu-next-step-title', 'Everything is already synced' );
+            setResultText( 'cu-next-step-copy', 'Every generated rule is already present in Code Unloader.' );
+        } else if ( syncOnly ) {
+            setResultText( 'cu-next-step-title', 'Sync the new rules' );
+            setResultText( 'cu-next-step-copy', 'Sync adds these recommendations without replacing existing rules.' );
+        } else if ( canPush ) {
+            setResultText( 'cu-next-step-title', 'Choose Sync or Push' );
+            setResultText( 'cu-next-step-copy', 'Sync is safest; Push replaces the current AAS rules.' );
+        } else {
+            setResultText( 'cu-next-step-title', 'Download the JSON file' );
+            setResultText( 'cu-next-step-copy', 'Use the manual import when direct actions are unavailable.' );
+        }
+    }
+
+    function renderKeptAssetsPanel( keptProtection ) {
+        var panel = document.getElementById( 'cu-kept-assets-panel' );
+        var summary = document.getElementById( 'cu-kept-assets-summary' );
+        var toggle = document.getElementById( 'cu-kept-details-toggle' );
+        var detail = document.getElementById( 'cu-kept-protection-note' );
+
+        if ( keptProtection && Number( keptProtection.count ) > 0 ) {
+            if ( ! detail ) {
+                var summaryEl = document.getElementById( 'cu-result-summary' );
+                if ( summaryEl && summaryEl.parentNode ) {
+                    detail = document.createElement( 'p' );
+                    detail.id = 'cu-kept-protection-note';
+                    detail.className = 'cu-kept-protection';
+                    summaryEl.parentNode.insertBefore( detail, summaryEl.nextSibling );
+                }
+            }
+            if ( panel ) panel.hidden = false;
+            if ( summary ) {
+                var count = Number( keptProtection.count );
+                summary.textContent = count + ' crucial asset' + ( count === 1 ? '' : 's' ) + ' kept';
+            }
+            if ( detail ) {
+                detail.textContent = buildKeptNoteText( keptProtection );
+                if ( panel && detail.parentNode === panel ) detail.hidden = true;
+            }
+            if ( toggle && detail ) {
+                toggle.hidden = false;
+                toggle.textContent = 'View details';
+                toggle.setAttribute( 'aria-expanded', 'false' );
+                toggle.onclick = function () {
+                    var opening = detail.hidden;
+                    detail.hidden = ! opening;
+                    toggle.textContent = opening ? 'Hide details' : 'View details';
+                    toggle.setAttribute( 'aria-expanded', opening ? 'true' : 'false' );
+                };
+            }
+            return;
+        }
+
+        if ( panel ) panel.hidden = true;
+        if ( summary ) summary.textContent = '0 crucial assets kept';
+        if ( detail ) {
+            if ( panel && detail.parentNode === panel ) {
+                detail.textContent = '';
+                detail.hidden = true;
+            } else {
+                detail.remove();
+            }
+        }
+        if ( toggle ) {
+            toggle.hidden = true;
+            toggle.setAttribute( 'aria-expanded', 'false' );
+        }
+    }
+
+    /**
+     * ⚠️ Takes an OPTIONS OBJECT, not positional params. It previously took 10 positional
+     * arguments; adding more would have turned a missed call site into a silent
+     * positional SHIFT (every later argument landing in the wrong slot) rather than an
+     * obvious undefined. Both call sites and the JS tests pass the object.
+     */
+    function restoreStep4( o ) {
+        var jobId            = o.jobId;
+        var safeCount        = o.safeCount;
+        var aggCount         = o.aggCount;
+        var canPush          = o.canPush;
+        var externalOnly     = o.externalOnly;
+        var bannerData       = o.bannerData;
+        var urlsScanned      = o.urlsScanned;
+        var pages            = o.pages;
+        var scanId           = o.scanId;
+        var hasActiveCuRules = o.hasActiveCuRules;
+        var totalRules       = ( Number( safeCount ) || 0 ) + ( Number( aggCount ) || 0 );
+        // FU-AAS-SYNC-SCOPE-LAST-SCAN (spec §3.3 wire site 4) — the Push/Sync flag is DERIVED from the
+        // two persisted apply_* counts, so flag ≡ card on every path (live, localStorage restore,
+        // background writer). The counts ARE the build-time predicate (rule_counts_from_rules is total
+        // over the same list has_internal_rules is computed from), so they win over a payload flag.
+        // Neither hand-built localStorage writer ever carried has_internal_rules, so a restored screen
+        // used to derive it from the SCAN totals — external pages included — and could show live
+        // buttons beside a card that reads 0. No Number() coercion: Number( null ) === 0 would make
+        // explicit nulls "known 0/0" and dormant the buttons.
+        var applyKnown = Number.isFinite( o.applySafeCount ) && Number.isFinite( o.applyAggCount );
+        var hasInternalRules = applyKnown
+            ? ( o.applySafeCount + o.applyAggCount ) > 0
+            : ( o.hasInternalRules === undefined ? totalRules > 0 : !! o.hasInternalRules );
+        var alreadyPresent   = ( o.alreadyPresent === undefined ) ? null : o.alreadyPresent;
+        var creditsRefunded  = o.creditsRefunded;
+        // Defaults FALSE on every path that does not carry it (legacy rows restored from
+        // pre-release storage), so a missing flag degrades to today's copy — never to a
+        // "no new unloads" claim we cannot support.
+        var cuRulesActive    = !! o.cuRulesActive;
+        // Absent (or count 0) on every path that kept nothing — the PHP omits the field
+        // entirely rather than sending a zero, so presence AND count are both gated below.
+        var keptProtection   = o.keptProtectionSummary;
+
+        renderResultDashboard( {
+            urlsScanned: urlsScanned,
+            safeCount: safeCount,
+            aggCount: aggCount,
+            pages: pages,
+            scanId: scanId,
+            keptProtectionSummary: keptProtection,
+            availableBalance: o.availableBalance,
+            applySafeCount: o.applySafeCount,
+            applyAggCount: o.applyAggCount,
+        } );
+
+        const urls = (typeof urlsScanned === 'number') ? urlsScanned : '?';
+        renderSummaryParts(
+            document.getElementById('cu-result-summary'),
+            buildSummaryParts({ urls: urls, safeCount: safeCount, aggCount: aggCount, alreadyPresent: alreadyPresent })
+        );
+
+        // Worker-provided labels stay in a textContent-only details region. The compact blue
+        // strip is count-first; the operator can expand the full producer-derived list.
+        renderKeptAssetsPanel( keptProtection );
+
+        // Refund line lives with the SUMMARY, not in #cu-push-result — the externalOnly
+        // branch below overwrites that element wholesale (AC-15).
+        var refundEl = document.getElementById('cu-result-refund');
+        if ( refundEl ) { refundEl.textContent = buildRefundLine({ creditsRefunded: creditsRefunded }); }
+        const dlBtn = document.getElementById('cu-btn-download');
+        dlBtn.href = ajax + '?action=cu_scanner_download_json&job_id=' + jobId + '&nonce=' + nonce;
+        dlBtn.setAttribute('download', 'cu-scanner-' + jobId + '.json');
+
+        const pushBtn    = document.getElementById('cu-btn-push');
+        const syncBtn    = document.getElementById('cu-btn-sync');
+        const pushResult = document.getElementById('cu-push-result');
+
+        // 1.8.7 — a Sync / Push still in flight belongs to the PREVIOUS render (a re-queued scan can
+        // finish while it is out). New epoch: its release() becomes a no-op, so it cannot undo the
+        // button state set below (G6's sync-only Push lock included); its busy line goes with it.
+        step4RenderEpoch++;
+        const busyLine = document.getElementById('cu-sync-push-busy');
+        if ( busyLine ) { busyLine.textContent = ''; }
+
+        // G6: re-queue partial scans must not clobber already-pushed rules.
+        const isRequeue = !!localStorage.getItem('cu_scanner_requeue_' + jobId);
+        const syncOnly  = isRequeue && !!hasActiveCuRules;
+        // FU \u2014 a completed scan that produced 0 rules (0 safe + 0 aggressive) has nothing to
+        // push or sync; both buttons stay dormant.
+        const noRules         = totalRules === 0;
+        const noInternalRules = ! noRules && ! hasInternalRules;
+        // 1.7.60b — a 0-rule scan has nothing to import; the Download button goes dormant
+        // (same noRules gate as push/sync below; href removed so the anchor is inert).
+        if ( noRules ) {
+            dlBtn.classList.add( 'cu-btn-dormant' );
+            dlBtn.setAttribute( 'aria-disabled', 'true' );
+            dlBtn.removeAttribute( 'href' );
+        } else {
+            dlBtn.classList.remove( 'cu-btn-dormant' );
+            dlBtn.removeAttribute( 'aria-disabled' );
+        }
+
+        if (externalOnly) {
+            pushBtn.style.display = 'none';
+            syncBtn.style.display = 'none';
+            // 1.7.63b \u2014 on a 0-rule external scan the Download button is dormant, so the
+            // "rules can only be downloaded" notice is redundant; suppress it.
+            pushResult.innerHTML = noRules ? '' : '<div class="notice notice-info inline"><p><strong>External URLs scanned.</strong> Rules can only be downloaded \u2014 direct push/sync to Code Unloader is not available when all scanned URLs are from external sites.</p></div>';
+        } else if (noRules || noInternalRules) {
+            pushBtn.style.display = '';
+            syncBtn.style.display = '';
+            pushBtn.disabled = true;
+            syncBtn.disabled = true;
+            pushBtn.classList.add('cu-btn-dormant');
+            syncBtn.classList.add('cu-btn-dormant');
+            pushResult.innerHTML = noInternalRules
+                ? '<div class="notice notice-info inline"><p>This scan produced no rules for this site \u2014 Push and Sync are unavailable.</p></div>'
+                : '<div class="notice notice-info inline"><p>This scan produced no rules \u2014 nothing to push or sync.</p></div>';
+        } else if (syncOnly) {
+            syncBtn.style.display = '';
+            pushBtn.style.display = '';
+            pushBtn.disabled = true;
+            pushBtn.classList.add('cu-btn-dormant');
+            syncBtn.disabled = false;
+            syncBtn.classList.remove('cu-btn-dormant');
+            pushResult.innerHTML = '<div class="notice notice-info inline"><p>These rules are from a re-scan. Use <strong>Sync</strong> to add them to your existing pushed rules \u2014 Push is disabled so it can\u2019t replace them.</p></div>';
+        } else if (canPush) {
+            pushBtn.style.display = '';
+            syncBtn.style.display = '';
+            pushBtn.disabled = false;
+            syncBtn.disabled = false;
+            pushBtn.classList.remove('cu-btn-dormant');
+            syncBtn.classList.remove('cu-btn-dormant');
+        }
+
+        // Result-truth Sync notice — COMPUTED here rather than at its append site below,
+        // because the next-step hint needs it. A non-empty syncNotice is exactly the
+        // "nothing new to sync, every rule is already in Code Unloader" state, and inviting
+        // the operator to Push/Sync would contradict that notice on the same screen. Reusing
+        // the predicate (instead of re-deriving it) means the two can never drift apart.
+        var syncNotice = buildSyncCopy({
+            externalOnly: externalOnly, safeCount: safeCount,
+            aggCount: aggCount, alreadyPresent: alreadyPresent
+        });
+
+        // Next-step hint, appended to the summary once the button state above is settled
+        // (noRules/syncOnly are computed there, so this cannot run earlier). Appended as a
+        // TEXT NODE, never `textContent +=`: that form reads the element's text back —
+        // DISCARDING the <strong> wrappers renderSummaryParts just built — and reassigns it
+        // as flat text, silently un-bolding the counts on every path that has a hint. Still
+        // a text sink, so the sentence stays inert; only the write form changed.
+        var nextStep = buildNextStepCopy( {
+            noRules: noRules, noInternalRules: noInternalRules,
+            externalOnly: externalOnly, syncOnly: syncOnly,
+            canPush: canPush, nothingNew: !! syncNotice
+        } );
+        if ( nextStep ) {
+            document.getElementById('cu-result-summary').appendChild( document.createTextNode( nextStep ) );
+        }
+
+        // Appended, never assigned: the branches above own #cu-push-result, and buildSyncCopy
+        // returns '' for externalOnly so the "External URLs scanned" notice is never
+        // clobbered (AC-15).
+        if ( syncNotice ) {
+            pushResult.innerHTML += '<div class="notice notice-info inline"><p>' + syncNotice + '</p></div>';
+        }
+
+        renderResultSidebar( {
+            externalOnly: externalOnly,
+            noRules: noRules,
+            noInternalRules: noInternalRules,
+            syncOnly: syncOnly,
+            canPush: canPush,
+            nothingNew: !! syncNotice,
+            hasActiveCuRules: hasActiveCuRules,
+        } );
+
+        setUndoLastPushSyncState(undoLastPushSyncState);
+
+        // Consume the re-queue marker now that the result screen has rendered.
+        if (isRequeue) {
+            localStorage.removeItem('cu_scanner_requeue_' + jobId);
+        }
+
+        // Subsystem D-4: render broken-banner if pages were blocked.
+        renderBrokenBanner( bannerData || {} );
+
+        // Per-URL results table (hidden when pages is empty/undefined).
+        renderResultUrlList( pages, scanId, cuRulesActive );
+
+        // Top "Run Another Scan" is redundant on a short results list. Hide it for
+        // <10 scanned URLs, but RESERVE its space (visibility:hidden, not display:none)
+        // so the content below does not shift (no CLS). Bottom button always shows.
+        var topRescan = document.getElementById('cu-top-rescan-row');
+        if (topRescan) {
+            var scannedCount = Array.isArray(pages) ? pages.length : ((typeof urlsScanned === 'number') ? urlsScanned : 0);
+            topRescan.style.visibility = (scannedCount < 10) ? 'hidden' : 'visible';
+        }
+
+        // Reveal "Rescan ET Candidates" (both rows) when at least one ET candidate exists.
+        var hasEtCandidate = Array.isArray(pages) && pages.some(function (p) { return p && p.et_candidate; });
+        if (hasEtCandidate) {
+            // 1.7.61b — primary (blue) ONLY while a noopt ET-candidate row exists (the
+            // "Needs Extra Time" dead-end the row note points at). After an ET rescan
+            // yields results, the residual et_candidate flag ("still starved after ET")
+            // keeps the button AVAILABLE for another pass, but as a secondary action.
+            var hasNooptEtCandidate = pages.some(function (p) {
+                return p && p.status_class === 'ok' && Number(p.safe) === 0 && Number(p.aggressive) === 0
+                    && p.et_candidate && ! p.et_charged;
+            });
+            document.querySelectorAll('#step-4 .cu-btn-rescan-et').forEach(function (btn) {
+                btn.style.display = '';
+                btn.classList.toggle('button-primary', hasNooptEtCandidate);
+                btn.classList.toggle('button-secondary', ! hasNooptEtCandidate);
+            });
+        }
+
+        // Reveal "Rescan 0-Results URLs" (both rows) when at least one S:0 A:0 (noopt) row exists.
+        var hasNoopt = Array.isArray(pages) && pages.some(function (p) { return p && p.status_class === 'ok' && Number(p.safe) === 0 && Number(p.aggressive) === 0; });
+        document.querySelectorAll('#step-4 .cu-btn-rescan-noopt-all').forEach(function (btn) {
+            btn.style.display = hasNoopt ? '' : 'none';
+        });
+
+        showStep(4);
+    }
+
+    // --- Per-URL results table (Step 4) -------------------------------------
+    // cuRulesActive is SCAN-level, not per-row: the scan ran with Code Unloader's rules live
+    // (?nowpcu suffix omitted), so assets CU already unloads never became candidates and a zero
+    // S/A is the expected outcome rather than a miss. Lives on the state because pagination
+    // re-renders per page and the flag must survive every re-render, like etChecked.
+    var cuUrlListState = { pages: [], scanId: '', page: 0, perPage: 25, etChecked: new Set(), cuRulesActive: false };
+    // AC-RC-8b — resolved→submitted map, IIFE-scoped so both the submit handler (which
+    // populates it from the probe response) and renderResultUrlListPage() (which reads it
+    // for the "← resolved from" note) can see it. Was previously let-scoped inside the submit
+    // handler → ReferenceError in renderResultUrlListPage → Step-4 render threw on every scan.
+    var resolvedByUrl = {};
+
+    // FU-AAS-SUFFIX-DROP-ON-RESOLVE — URLs carried over from a prior scan result (ET rescan /
+    // carry-over view). These are scanned byte-identically: the submit handler forces
+    // resolvedByUrl[u] = u for each, so the probe's fresh redirect resolution never rewrites
+    // them (resolution fires only on a URL's first scan — operator directive 2026-06-11).
+    // Writers (all with this one semantic): primeRescanEt(), restoreEtCarryOver(),
+    // clearEtCarryOver() (reset). IIFE-scoped for the same cross-function reason as above.
+    var etCarriedUrls = [];
+
+    function cuEscHtml( v ) { var d = document.createElement('div'); d.textContent = ( v == null ? '' : String( v ) ); return d.innerHTML; }
+
+    // FU-VFM-MASKING: the two normative tooltip strings (spec §3.2.3, r2-M3). %s is the
+    // <devices> token — every occurrence, substituted at render time via
+    // split('%s').join(list). AC-M8's independent verification copy of these two strings
+    // lives in tests/js/channel-off-note.test.js (CU_CHOFF_ARIA / CU_CHOFF_BOX_BODY) — keep
+    // both copies in sync with spec §3.2.3 if either changes.
+    var CU_CHOFF_ARIA = 'Visual comparison off (%s): this page\'s normal variation between visits is larger than any visual difference the scanner could detect, so the visual check was switched off for this page on %s during this scan. Other checks (code coverage, console, network) still decide here. Deliberate, evidence-based — not an error.';
+    var CU_CHOFF_BOX_BODY = 'this page\'s own normal variation between visits is measured to be larger than any visual difference the scanner could detect, so the visual check was switched off for this page on %s during this scan. Unload decisions here are made by the scanner\'s other checks (code coverage, console, network). This is a deliberate, evidence-based state — not an error.';
+
+    // FU-VFM-MASKING: the channel-off "?" tooltip. Two sinks per the cu-help convention
+    // (scanner.js:2450): plain-text aria-label (attribute context — esc(), the attribute-safe
+    // helper, scanner.js:96-104) and the cu-help-box HTML (text context — static markup, device
+    // list interpolated via cuEscHtml). Takes the pre-joined device list (see call site).
+    function cuChoffHelp( list ) {
+        return '<span class="cu-help" tabindex="0" aria-label="' + esc( CU_CHOFF_ARIA.split( '%s' ).join( list ) ) + '">'
+             + '<span class="cu-help-box"><strong>Visual comparison off (' + cuEscHtml( list ) + '):</strong> '
+             + CU_CHOFF_BOX_BODY.split( '%s' ).join( cuEscHtml( list ) ) + '</span></span>';
+    }
+
+    // FU-KEPT-BADGE-HOVER-INFO — one row's kept_breakdown ([{label, count}], producer-derived)
+    // as the chip's title text. Guards mirror buildKeptNoteText: label must be a non-empty
+    // string, count Number-coerced and > 0, count 1 renders bare, > 1 parenthesized. Returns
+    // '' when nothing survives (legacy rows, junk shapes) — the caller then leaves the chip
+    // untitled rather than showing an empty tooltip. The return value is assigned to the
+    // title PROPERTY only; it must never be concatenated into markup (ruling R19).
+    // FU-SAN-HOVER-BREAKDOWN (1.8.2b) — the shared [{label,count}] -> tooltip renderer behind all
+    // three hovers (kept, S:, A:). One builder rather than three near-copies: the guards below are
+    // the contract for what a producer-side breakdown row must look like, and three copies of a
+    // contract is three chances for one to drift. Returns '' when nothing survives, which the
+    // callers treat as "leave it untitled" rather than showing an empty tooltip.
+    function buildAssetListTitle( rows, prefix ) {
+        if ( ! Array.isArray( rows ) ) { return ''; }
+        var parts = [];
+        rows.forEach( function ( r ) {
+            if ( ! r || typeof r.label !== 'string' || r.label === '' ) { return; }
+            var n = Number( r.count );
+            if ( ! ( n > 0 ) ) { return; }
+            parts.push( r.label + ( n > 1 ? ' (' + n + ')' : '' ) );
+        } );
+        if ( ! parts.length ) { return ''; }
+        return prefix + parts.join( ', ' );
+    }
+
+    function buildKeptChipTitle( rows ) {
+        return buildAssetListTitle( rows, 'Kept on this page — never unloaded: ' );
+    }
+
+    // Prefixes for the S: / A: hovers. Worded to say what the number MEANS, since the token itself
+    // is a bare letter and a digit.
+    var CU_SAN_TITLE_PREFIX = {
+        safe:       'Safe to unload on this page: ',
+        aggressive: 'Aggressive — loaded but unused on this page: '
+    };
+
+    function renderResultUrlList( pages, scanId, cuRulesActive ) {
+        var host = document.getElementById('cu-result-url-list');
+        if ( ! host ) { return; }
+        if ( ! pages || ! pages.length ) { host.innerHTML = ''; host.style.display = 'none'; return; }
+        cuUrlListState.pages  = pages;
+        cuUrlListState.scanId = scanId || '';
+        cuUrlListState.page   = 0;
+        cuUrlListState.cuRulesActive = !! cuRulesActive;
+        // Seed ET-checkbox state ONCE from et_candidate rows (first render only).
+        // Pagination re-renders host.innerHTML each page change; the persistent Set
+        // is what survives across pages, so it must be seeded here, not per-page.
+        cuUrlListState.etChecked = new Set();
+        pages.forEach( function ( p ) { if ( p.et_candidate ) { cuUrlListState.etChecked.add( p.url ); } } );
+        host.style.display = '';
+        renderResultUrlListPage();
+    }
+
+    function renderResultUrlListPage() {
+        var host = document.getElementById('cu-result-url-list'), st = cuUrlListState;
+        var total = st.pages.length, pageCount = Math.ceil( total / st.perPage );
+        var slice = st.pages.slice( st.page * st.perPage, st.page * st.perPage + st.perPage );
+        var c = { ok: 0, partial: 0, blocked: 0, error: 0, skipped: 0, cancelled: 0 };
+        st.pages.forEach( function ( p ) { if ( c[ p.status_class ] != null ) { c[ p.status_class ]++; } } );
+        // AC-RC-8b — build reverse map (resolved → submitted) from the probe-session
+        // resolvedByUrl map. Only populated during a live scan; gracefully absent when
+        // results are restored from localStorage after a page reload.
+        var submittedByResolved = {};
+        if ( typeof resolvedByUrl !== 'undefined' && resolvedByUrl ) {
+            Object.keys( resolvedByUrl ).forEach( function ( submitted ) {
+                var resolved = resolvedByUrl[ submitted ];
+                if ( resolved && resolved !== submitted ) {
+                    submittedByResolved[ resolved ] = submitted;
+                }
+            } );
+        }
+        var rows = slice.map( function ( p, sliceIdx ) {
+            // Operator ruling 2026-08-05: a page whose every rule was ALREADY in Code Unloader
+            // delivered nothing new, so it reads as a zero-yield page — S:0 A:0, 0 credits, the
+            // same yellow noopt row as any other zero. `all_already` is the SERVER's refund
+            // predicate (attribute_already_present), so a row renders zero EXACTLY when it was
+            // credited back: the screen and the money cannot drift apart.
+            var allAlready = !! p.all_already;
+            var effSafe    = allAlready ? 0 : Number( p.safe );
+            var effAgg     = allAlready ? 0 : Number( p.aggressive );
+            // FU-AAS-YELLOW-S0A0-ROWS — completed row that optimized nothing. Number() mirrors
+            // the existing coercion at scanner.js:1586 (safe/aggressive are PHP int → JSON number).
+            var noopt = ( p.status_class === 'ok' && effSafe === 0 && effAgg === 0 );
+            var nooptNote = '';
+            if ( noopt ) {
+                if ( allAlready ) {
+                    // Not a miss and not budget-starvation: the page produced rules and every one
+                    // of them was a duplicate. Naming that beats any rescan prompt.
+                    nooptNote = ' <span class="cu-noopt-note">Already in Code Unloader —<br>nothing new to unload on this page.</span>';
+                } else if ( p.et_candidate && ! p.et_charged ) {
+                    // FU-NOOPT-NOTE-CONFLATION — the ⏳ prefix plus the amber badge
+                    // styling on .cu-noopt-et (admin CSS) make this note unmistakable next to
+                    // the four PLAIN noopt notes below, which are muted-gray informational
+                    // text. A customer read a plain "Please scan again" as a second ET candidate
+                    // and reported a phantom "lost rescan candidate" — the two notes were
+                    // near-identical at a glance. Static text only: this region is an
+                    // innerHTML sink (ruling R19) and nothing here comes from the payload.
+                    if ( ! p.et_requested ) {
+                        nooptNote = ' <span class="cu-noopt-note cu-noopt-et">⏳ Needs Extra Time —<br>rescan with “Rescan ET Candidates”</span>';
+                    }
+                    // Extra Time was requested for this page in this scan (et_requested, a server
+                    // boolean stamped from the submit-time ET URL set) — don't recommend another
+                    // ET pass; no note in its place. Operator 2026-09-14.
+                } else if ( p.et_candidate ) {
+                    nooptNote = ' <span class="cu-noopt-note">Please scan again</span>';
+                } else if ( st.cuRulesActive ) {
+                    // ?nowpcu suffix OFF: CU's rules were live during the scan, so assets it
+                    // already unloads never became candidates. Zero is the CORRECT and EXPECTED
+                    // outcome — it means Code Unloader is doing its job. Never prompt a rescan
+                    // here: it would spend credits to re-confirm a non-problem.
+                    nooptNote = ' <span class="cu-noopt-note">No new unloads found since the last time.</span>';
+                } else {
+                    // et_candidate is the worker's own "this zero may be budget-starved" flag.
+                    // Its ABSENCE only means "not budget-starved" — it does NOT establish
+                    // "genuinely nothing to unload" (1.7.78b fix: scan e1271ec1fd71 showed
+                    // S:0 A:0 N:63 on a page with proven prior A:8 — a demote-all zero, not
+                    // an empty page). So the copy claims only what THIS SCAN found and always
+                    // prompts a rescan. A residual ET candidate that already got Extra Time
+                    // (et_charged) keeps the plain rescan prompt.
+                    nooptNote = ' <span class="cu-noopt-note">No unloads found. A rescan may find more.</span>';
+                }
+            }
+            // Operator request 2026-08-10 — bold S: / A: only when that count is > 0, so rows
+            // that actually produced rules are findable at a glance in a long result table.
+            // N: is never bolded: it is the untouched-assets residue, not an outcome. effSafe /
+            // effAgg are Number()-coerced above, so these are numeric interpolations and need no
+            // escaping. A NaN count (field absent) compares false and renders unbolded — the
+            // same output this line produced before.
+            // FU-SAN-HOVER-BREAKDOWN (1.8.2b) — tag S: / A: for the post-render title pass, but
+            // ONLY when the DISPLAYED count is > 0 (operator: no hover on a zero token). Gated on
+            // effSafe/effAgg, never on p.safe/p.aggressive: an `all_already` row displays S:0 A:0
+            // while the raw fields stay positive, so keying off the raw value would hang a tooltip
+            // naming assets on a token reading 0. N: is never tagged — it is the untouched-asset
+            // residue, not a recommendation. sliceIdx is the map() loop counter — digits by
+            // construction, so this interpolation needs no escaping (same basis as the kept chip).
+            var sanSAttr = effSafe > 0 ? ' data-cu-row="' + sliceIdx + '" data-cu-san="safe"' : '';
+            var sanAAttr = effAgg  > 0 ? ' data-cu-row="' + sliceIdx + '" data-cu-san="aggressive"' : '';
+            var sanS = '<span class="cu-san-token cu-san-safe' + ( effSafe > 0 ? ' is-positive' : '' ) + '"' + sanSAttr + '>'
+                + ( effSafe > 0 ? '<strong>S:' + effSafe + '</strong>' : 'S:' + effSafe ) + '</span>';
+            var sanA = '<span class="cu-san-token cu-san-aggressive' + ( effAgg > 0 ? ' is-positive' : '' ) + '"' + sanAAttr + '>'
+                + ( effAgg > 0 ? '<strong>A:' + effAgg + '</strong>' : 'A:' + effAgg ) + '</span>';
+            var sanN = '<span class="cu-san-token cu-san-needed">N:' + cuEscHtml( p.needed ) + '</span>';
+            var san = ( p.status_class === 'error' ) ? '—'
+                : ( sanS + ' ' + sanA + ' ' + sanN
+                    + ( p.ratchet_recovered > 0 ? ' <span class="cu-ratchet" title="restored from the first scan by the ET ratchet">↩ +' + p.ratchet_recovered + '</span>' : '' )
+                    + nooptNote );
+            var origUrl = submittedByResolved[ p.url ];
+            // FU-ABSENT-SAFE B2 — visible note when this row's scan URL received an
+            // optimizer-bypass suffix (p.bypass_suffixes threaded server-side by
+            // AIAS_Scan_Status::build_pages()). Gated on non-empty so a miss renders
+            // no note at all (fail-closed, never a false positive).
+            var bypassNote = ( p.bypass_suffixes && p.bypass_suffixes.length )
+                ? ' <span class="cu-bypass-note">optimizer detected — scanned with ?' + cuEscHtml( p.bypass_suffixes.join( '&' ) ) + '</span>'
+                : '';
+            // FU-VFM-MASKING — legacy-row guard: rows restored from pre-release storage
+            // (aias_last_result / localStorage cu_scanner_result, both surfaces per AC-M7b)
+            // lack this key entirely; an unguarded .length would throw and break the
+            // restored Step-4 render. List joined ONCE and shared with the tooltip so the
+            // note and tooltip can never drift (spec §3.2.2, r3-n3).
+            var choffList = ( p.visual_channel_off && p.visual_channel_off.length ) ? p.visual_channel_off.join( ' & ' ) : '';
+            var choffNote = choffList
+                ? ' <span class="cu-choff-note">👁 visual comparison off — ' + cuEscHtml( choffList ) + cuChoffHelp( choffList ) + '</span>'
+                : '';
+            // A2c — per-row "kept protection" chip: which pages the A2 summary's "N protection
+            // scripts kept" actually landed on. p.kept_protection is threaded server-side by
+            // AIAS_Scan_Status::build_pages() (D5-validated there); Array.isArray also covers
+            // rows restored from pre-A2c storage, which lack the key entirely.
+            //
+            // Ruling R19 — this region is already an escaped-string -> host.innerHTML pipeline,
+            // so the chip is CONCATENATED into it rather than appended as a DOM node (an append
+            // would need a post-render pass coupled to pagination, and would make this a mixed
+            // sink). The safety therefore comes from the PAYLOAD: the content is STATIC TEXT,
+            // the array is read ONLY for its non-empty length, and nothing inside it —
+            // display_name, handles, anything — is ever interpolated into this markup.
+            // R20 — the chip now carries THAT ROW'S OWN count and covers non-protection keeps.
+            // kept_count is computed server-side in AIAS_Scan_Status::build_pages() so the client
+            // keeps one plain `> 0` test instead of a second copy of the note's predicate.
+            //
+            // This IS an HTML sink, so the number is Number()-coerced before interpolation
+            // (ruling R19 permits exactly that here): after coercion it can only stringify as
+            // digits, and a non-numeric payload becomes NaN and fails the > 0 test rather than
+            // reaching the markup. Nothing else from the payload is interpolated — the rest of
+            // the chip is still static text.
+            // FU-KEPT-BADGE-HOVER-INFO — data-cu-row carries THIS chip's slice index so the
+            // post-render tooltip pass below can find its row without re-deriving the chip
+            // predicate (two predicates that must agree is the defect class kept_count
+            // exists to close). sliceIdx is the map() loop counter — digits by construction,
+            // so interpolating it keeps the R19 payload-is-static line intact.
+            var keptCount = Number( p.kept_count );
+            var keptChip  = '';
+            if ( Number.isFinite( keptCount ) && keptCount > 0 ) {
+                keptChip = ' <span class="cu-kept-chip" data-cu-row="' + sliceIdx + '">🛡 ' + keptCount + ' kept</span>';
+            } else if ( ! ( 'kept_count' in p ) && Array.isArray( p.kept_protection ) && p.kept_protection.length > 0 ) {
+                // A row restored from pre-R20 storage has no kept_count. Degrade to the old
+                // countless chip rather than dropping the annotation off a stored result.
+                keptChip = ' <span class="cu-kept-chip" data-cu-row="' + sliceIdx + '">🛡 kept</span>';
+            }
+            // FU-AAS-URL-SUFFIX-DIM — every scanned URL carries the optimizer-bypass suffixes the
+            // scanner appended (?nowprocket&nowpcu&perfmattersoff). In a word-break:break-all cell
+            // they are as visually loud as the page path itself, so the query string is dimmed and
+            // the path reads first. Split on the FIRST '?' only: later '?' characters are legal
+            // inside a query value. Both halves pass through the SAME cuEscHtml() that escaped the
+            // whole string before this split, so the change is presentational only and opens no
+            // new unescaped surface. A URL with no query string renders byte-identically to before.
+            var rawUrl  = ( p.url == null ? '' : String( p.url ) );
+            var qIdx    = rawUrl.indexOf( '?' );
+            var urlHtml = qIdx === -1
+                ? cuEscHtml( rawUrl )
+                : cuEscHtml( rawUrl.slice( 0, qIdx ) )
+                  + '<span class="cu-url-suffix">' + cuEscHtml( rawUrl.slice( qIdx ) ) + '</span>';
+            // keptChip sits BEFORE choffNote deliberately: .cu-choff-note is display:block, so a
+            // chip concatenated after it would be orphaned onto its own line instead of trailing
+            // the URL text. Last of the INLINE annotations keeps it beside the URL on every row,
+            // with or without a choff note, and leaves the URL + "← resolved from" pair intact.
+            var urlMeta = ( origUrl ? '<span class="cu-resolved-note">← resolved from ' + cuEscHtml( origUrl ) + '</span>' : '' )
+                + bypassNote + keptChip + choffNote;
+            var urlCell = '<span class="cu-url-primary">' + urlHtml + '</span>'
+                + ( urlMeta ? '<span class="cu-url-meta">' + urlMeta + '</span>' : '' );
+            return '<tr class="cu-row-' + cuEscHtml( p.status_class ) + ( noopt ? ' cu-row-noopt' : '' ) + '">'
+                + '<td>' + cuEscHtml( p.n ) + '</td>'
+                + '<td class="cu-url-cell">' + urlCell + '</td>'
+                + '<td><span class="cu-row-status cu-row-status--' + esc( p.status_class ) + '">' + cuEscHtml( p.status_label ) + '</span></td>'
+                // 0 when every rule on this page was already in CU — the page was credited back,
+                // so the gross page_credit() charge is not what the customer actually paid.
+                // page_credit() itself is deliberately untouched (spec AC-7, golden-tested).
+                + '<td>' + cuEscHtml( allAlready ? 0 : p.credits ) + '</td>'
+                + '<td class="cu-san">' + san + '</td>'
+                + '<td>' + cuEscHtml( p.et_candidate ? 'yes' : '—' ) + '</td>'
+                + '<td>' + ( p.et_candidate
+                    ? '<input type="checkbox" class="cu-et-result-cb" data-url="' + esc( p.url ) + '"' + ( st.etChecked.has( p.url ) ? ' checked' : '' ) + '>'
+                    : '—' ) + '</td></tr>';
+        } ).join( '' );
+        var pager = ( pageCount > 1 )
+            ? '<div class="cu-url-pager"><button type="button" class="button" id="cu-url-prev"' + ( st.page === 0 ? ' disabled' : '' ) + '>« Prev</button>'
+              + '<span>Page ' + ( st.page + 1 ) + ' of ' + pageCount + '</span>'
+              + '<button type="button" class="button" id="cu-url-next"' + ( st.page >= pageCount - 1 ? ' disabled' : '' ) + '>Next »</button></div>'
+            : '';
+        host.innerHTML =
+            '<p class="cu-url-summary">' + c.ok + ' OK · ' + c.partial + ' partial · ' + c.blocked + ' blocked · ' + c.error + ' error · ' + c.cancelled + ' cancelled (' + total + ' URLs)</p>'
+          + '<table class="cu-url-table widefat"><thead><tr><th><span class="cu-th-inner">#</span></th><th><span class="cu-th-inner">URL</span></th><th><span class="cu-th-inner">Status</span></th><th><span class="cu-th-inner">Credits</span></th><th><span class="cu-th-inner">Recommendations S / A / N<span class="cu-help" tabindex="0" aria-label="Safe: high-confidence unload recommendation, tested and confirmed safe to remove. Aggressive: loaded but tested safe to remove, with lower confidence than Safe. Needed: required or not proven safe to remove, so it remains loaded."><span class="cu-help-box"><strong>Safe:</strong> High-confidence unload recommendation. Tested and confirmed safe to remove.<br><strong>Aggressive:</strong> Loaded but tested safe to remove. Lower confidence than Safe.<br><strong>Needed:</strong> Required or not proven safe to remove. Remains loaded.</span></span></span></th><th><span class="cu-th-inner">ET candidate<span class="cu-help" tabindex="0" aria-label="ET candidate: URLs that would benefit from the worker spending extra time on them — likely more unloads."><span class="cu-help-box">ET candidates are URLs that would benefit from the worker spending extra time on them — likely yielding more unloads.</span></span></span></th><th><span class="cu-th-inner">Extra Time<span class="cu-help" tabindex="0" aria-label="Re-run this URL with Extra Time — more probe budget, plus one credit only if Extra Time actually runs."><span class="cu-help-box">Re-run this URL with Extra Time (more probe budget, +1 credit only if Extra Time actually runs).</span></span></span></th></tr></thead><tbody>' + rows + '</tbody></table>'
+          + '<p class="cu-et-result-all-row"><label><input type="checkbox" id="cu-et-result-all"> Extra Time: all ET candidates</label></p>'
+          + pager;
+        var prev = document.getElementById('cu-url-prev'); if ( prev ) { prev.onclick = function () { if ( st.page > 0 ) { st.page--; renderResultUrlListPage(); } }; }
+        var next = document.getElementById('cu-url-next'); if ( next ) { next.onclick = function () { if ( st.page < pageCount - 1 ) { st.page++; renderResultUrlListPage(); } }; }
+        // Per-row ET checkbox → mutate the persistent Set (by data-url) so the choice
+        // survives pagination re-renders.
+        host.querySelectorAll('.cu-et-result-cb').forEach( function ( cb ) {
+            cb.addEventListener('change', function () {
+                var url = cb.getAttribute('data-url');
+                if ( cb.checked ) { st.etChecked.add( url ); } else { st.etChecked.delete( url ); }
+                syncEtResultAll();
+            } );
+        } );
+        // FU-KEPT-BADGE-HOVER-INFO — native tooltip naming THIS ROW's kept assets, from the
+        // producer-derived kept_breakdown (AIAS_Scan_Status::build_pages(), same composite
+        // unit as the chip's own number). The labels are worker strings — untrusted — so
+        // they reach the DOM ONLY via the title PROPERTY, which never parses as HTML; they
+        // are never concatenated into the innerHTML pipeline above (ruling R19 — and note
+        // cuEscHtml() does NOT escape double quotes, so a title="" attribute concat would
+        // be an attribute-breakout, not a safe alternative). Runs inside this render
+        // function like the checkbox pass above, so pagination re-renders re-title for free.
+        host.querySelectorAll('.cu-kept-chip[data-cu-row]').forEach( function ( chip ) {
+            var rp  = slice[ Number( chip.getAttribute( 'data-cu-row' ) ) ];
+            var tip = buildKeptChipTitle( rp && rp.kept_breakdown );
+            if ( tip ) { chip.title = tip; }
+        } );
+        // FU-SAN-HOVER-BREAKDOWN (1.8.2b) — same treatment for the S: / A: tokens, from the
+        // producer-derived safe_breakdown / aggressive_breakdown (CuJsonBuilder::build() and
+        // ScannerAjax::recompute_by_page(), whose counts these lists sum to by construction).
+        // Only tokens the renderer tagged are selected here, and it tags only counts > 0 — so the
+        // "no hover on a zero" rule is enforced at the single place the number is decided, not
+        // re-derived here as a second predicate. Handles are worker strings — untrusted — so they
+        // reach the DOM ONLY via the title PROPERTY, never the innerHTML pipeline (ruling R19).
+        // One marker, one semantic: data-cu-san alone identifies a tagged token (the renderer
+        // never writes one attribute without the other), so this needs no second attribute
+        // selector to be exact.
+        host.querySelectorAll('.cu-san-token[data-cu-san]').forEach( function ( tok ) {
+            var rp    = slice[ Number( tok.getAttribute( 'data-cu-row' ) ) ];
+            var which = tok.getAttribute( 'data-cu-san' );
+            if ( ! rp || ! CU_SAN_TITLE_PREFIX[ which ] ) { return; }
+            var rows = ( 'safe' === which ) ? rp.safe_breakdown : rp.aggressive_breakdown;
+            var tip  = buildAssetListTitle( rows, CU_SAN_TITLE_PREFIX[ which ] );
+            if ( tip ) { tok.title = tip; }
+        } );
+        // Per-row "Scan again" link removed — noopt rows now show plain "Please scan again" text;
+        // the bottom "Rescan 0-Results URLs" button rescans every noopt URL in one batch.
+        // All-on/off → toggle every ET-candidate URL across ALL pages (iterate st.pages,
+        // not just the visible slice), then re-sync the visible checkboxes.
+        var allCb = document.getElementById('cu-et-result-all');
+        if ( allCb ) {
+            allCb.addEventListener('change', function () {
+                st.pages.forEach( function ( p ) {
+                    if ( ! p.et_candidate ) { return; }
+                    if ( allCb.checked ) { st.etChecked.add( p.url ); } else { st.etChecked.delete( p.url ); }
+                } );
+                host.querySelectorAll('.cu-et-result-cb').forEach( function ( cb ) { cb.checked = allCb.checked; } );
+            } );
+            syncEtResultAll();
+        }
+        // Reflect the master checkbox state: checked only when every ET candidate is in the Set.
+        function syncEtResultAll() {
+            if ( ! allCb ) { return; }
+            var etTotal = st.pages.filter( function ( p ) { return p.et_candidate; } ).length;
+            allCb.checked = ( etTotal > 0 && st.etChecked.size >= etTotal );
+        }
+    }
+
+    /**
+     * Renders a dismissable warning banner in #cu-banner-area when any pages
+     * were blocked during the scan. Noop when bannerData is absent/zeroed.
+     *
+     * @param {{ scan_id?: string, pages_blocked?: {desktop:number,mobile:number},
+     *            blocked_reasons?: Object<string,number>, total_pages?: number }} bd
+     */
+    function renderBrokenBanner( bd ) {
+        const area = document.getElementById('cu-banner-area');
+        if ( !area ) return;
+        area.innerHTML = '';
+
+        const blockedD = (bd.pages_blocked && bd.pages_blocked.desktop) || 0;
+        const blockedM = (bd.pages_blocked && bd.pages_blocked.mobile)  || 0;
+        if ( blockedD + blockedM === 0 ) return;
+
+        const scanId     = bd.scan_id    || '';
+        const total      = bd.total_pages || 0;
+        const reasons    = bd.blocked_reasons || {};
+
+        // Build copy.
+        const bits = [];
+        if ( blockedD > 0 ) bits.push( 'Desktop scanner blocked on ' + blockedD + ' of ' + total + ' pages.' );
+        if ( blockedM > 0 ) bits.push( 'Mobile scanner blocked on '  + blockedM + ' of ' + total + ' pages.' );
+
+        // FU-ANTIBLOCK-1 — copy comes from PHP single source (class-broken-banner.php
+        // export_copy_map via cuReasonCopy). Defensive defaults keep the banner
+        // functional (raw keys) if localization is absent (AC-4).
+        const REASON_COPY = (typeof cuReasonCopy === 'object' && cuReasonCopy) || {};
+        const PHRASES     = REASON_COPY.phrases || {};
+        const CATEGORIES  = REASON_COPY.categories || {};
+        // PHP-side fallback key kept from the old literal:
+        if (!PHRASES.scan_errored) PHRASES.scan_errored = 'scan errored';
+        // scan_errored is PHP-side synthetic (class-scanner-ajax.php), not in the
+        // localized 12-key map - category was 'error' in the pre-dedup reasonCategory().
+        if (!CATEGORIES.scan_errored) CATEGORIES.scan_errored = 'error';
+        function reasonPhrase(k) { return PHRASES[k] || k; }
+        function reasonCategory(k) { return CATEGORIES[k] || 'bot'; }
+
+        const phrases = [...new Set( Object.keys(reasons).map( k => reasonPhrase(k) ) )];
+        const reasonClause = phrases.length ? ' (' + phrases.map(esc).join(', ') + ')' : '';
+
+        // Per-reason action copy — must match class-broken-banner.php
+        // (reason_category + action_clause, now sourced from cuReasonCopy.categories
+        // instead of a duplicated local map/function). Mixed-category reasons fall
+        // back to the generic 'bot' clause, matching the PHP-side fallback.
+        const categories = [...new Set( Object.keys(reasons).map(reasonCategory) )];
+
+        // T0-C — name the party that actually rate-limited the scan. The worker's
+        // `attribution` is UNTRUSTED third-party input: allowlist it and use it ONLY
+        // to select one of three hardcoded strings. It is never interpolated into
+        // markup and never reaches innerHTML (wp-compliance Rules 1/27). Mirrors
+        // class-broken-banner.php normalize_attribution() + action_clause().
+        const ATTR_ALLOWED = ['cloudflare', 'akamai', 'imperva', 'waf', 'host', 'unknown'];
+        const rawAttr = bd.rate_limit_attribution;
+        const attr = ATTR_ALLOWED.indexOf(rawAttr) !== -1 ? rawAttr : 'unknown';
+
+        const TAIL = ' The rules from the unblocked device (if any) are complete and safe to apply.';
+
+        // `action` is escaped below, so it must stay markup-free; any anchor goes in
+        // cdnLink, which is concatenated raw. That forces the JS clause order to be
+        // fact -> tail -> link where action_clause() reads fact -> link -> tail: same
+        // wording and same three variants (AC-7), only the clause order differs.
+        // Every href below is a static, hardcoded, user-input-free admin-relative
+        // URL — safe to inline without esc().
+        let action;
+        let cdnLink = '';
+        if ( categories.length === 1 && categories[0] === 'rate' ) {
+            if ( attr === 'cloudflare' ) {
+                // Deliberately does NOT say "not your server": the PHP-side aggregator
+                // ranks cloudflare above host, so a mixed scan resolves here — denying
+                // the origin would be positively false for the origin-limited pages.
+                action  = 'Cloudflare rate-limited the scan. Whoever manages your Cloudflare — you, your host, or your agency — needs to allowlist the scanner.' + TAIL;
+                cdnLink = ' If you manage the Cloudflare account yourself, set up the one-time scanner exemption — <a href="admin.php?page=cu-scanner-settings#cu-cloudflare-waf-bypass">open AI Assets Scanner settings</a>.';
+            } else if ( attr === 'host' ) {
+                // No settings link by design. The "will not help here" sentence is
+                // LOAD-BEARING: without it a user who already has a working CDN
+                // exemption concludes it is broken and re-does it. Do not trim it.
+                action = 'Your host\'s server rate-limited the scan. A CDN or WAF exemption will not help here. Wait a few minutes between scans, or ask your host to raise the rate limit during scans.' + TAIL;
+            } else {
+                action  = 'The scan was rate-limited. Wait a few minutes between scans.' + TAIL;
+                cdnLink = ' If a CDN or WAF sits in front of your site, ask whoever manages it to allowlist the scanner; otherwise check your own server\'s rate limits — <a href="admin.php?page=cu-scanner-settings#cu-cloudflare-waf-bypass">open AI Assets Scanner settings</a>.';
+            }
+        } else if ( categories.length === 1 && categories[0] === 'error' ) {
+            action = 'Your server returned an error or didn\'t respond. The rules from the unblocked device (if any) are complete and safe to apply. Try again later, or check site health.';
+        } else {
+            action = 'Your bot protection denied the scanner. The rules from the unblocked device are complete and safe to apply. For full coverage, temporarily disable bot protection during scans.';
+            // Mixed rate+bot scan: keep the exemption pointer, but ownership-neutral —
+            // on client sites the CDN is frequently host- or agency-managed.
+            if ( categories.includes('rate') ) {
+                cdnLink = ' Behind Cloudflare or another CDN? Ask whoever manages it to allowlist the scanner — <a href="admin.php?page=cu-scanner-settings#cu-cloudflare-waf-bypass">open AI Assets Scanner settings</a>.';
+            }
+        }
+
+        const copy = bits.map(esc).join(' ') + reasonClause + ' ' + esc(action);
+
+        area.innerHTML =
+            '<div class="notice notice-warning inline aias-broken-banner" data-scan-id="' + esc(scanId) + '">' +
+            '<p><strong>\u26a0 Some pages couldn\'t be fully scanned</strong></p>' +
+            '<p>' + copy + cdnLink + '</p>' +
+            '<p><button type="button" class="button aias-dismiss-banner">Got it \u2014 don\'t show again for this scan</button></p>' +
+            '</div>';
+    }
+
+    // Dismiss banner via AJAX (event delegation \u2014 banner is injected dynamically).
+    document.getElementById('cu-scanner-app').addEventListener('click', function(e) {
+        if ( !e.target.classList.contains('aias-dismiss-banner') ) return;
+        const banner = e.target.closest('.aias-broken-banner');
+        if ( !banner ) return;
+        const scanId = banner.dataset.scanId || '';
+        const nonceBanner = (typeof aiasBannerL10n !== 'undefined') ? aiasBannerL10n.nonce : '';
+        jQuery.post( ajax, {
+            action:       'aias_dismiss_banner',
+            scan_id:      scanId,
+            _ajax_nonce:  nonceBanner,
+        }, function() {
+            banner.style.display = 'none';
+        } );
+    });
+
+    // R3 Stage C — Stop & keep results now (paused banner). A NEW handler: it
+    // does NOT re-fire the cancel button's generic confirm. It clears the live
+    // countdown, then reuses the cancel BODY (cu_scanner_cancel_job →
+    // user_cancel partial). Billing-safe vs a later zombie resume (C5/SaaS 409).
+    function stopAndKeep() {
+        if (stopAndKeep._inFlight) return;
+        var completedNow = (function () {
+            var t = document.getElementById('cu-progress-text');
+            var m = t && /(\d+)\s*\//.exec(t.textContent || '');
+            return m ? Number(m[1]) : 0;
+        }());
+        if (!confirm('Keep your ' + completedNow + ' completed page' +
+                     (completedNow === 1 ? '' : 's') + ' and stop the scan now?')) return;
+        stopAndKeep._inFlight = true;
+        stopPolling();
+        if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+        post('cu_scanner_cancel_job').then(function (res) {
+            stopAndKeep._inFlight = false;
+            if (res && res.success) {
+                sessionStorage.removeItem('cu_scanner_active_job');
+                var completedPages = (res.data && res.data.pages_completed) || completedNow;
+                buildResult({ status: 'user_cancel', completed: completedPages, total: totalPages,
+                              pages: [], selectedUrls: selectedUrls.slice() }).then(function (built) {
+                    if (!built) showStep(1);
+                });
+            } else {
+                var m = (res && res.data && res.data.message) ? res.data.message
+                    : 'Could not stop — please try again.';
+                alert(m);
+                startPolling();
+            }
+        });
+    }
+
+    // --- Cancel ---
+
+    document.getElementById('cu-btn-cancel').addEventListener('click', async function () {
+        let msg;
+        // Task 5 — widen progress.pages beyond the try block so the user_cancel
+        // terminal-incomplete routing can source the page rows the confirm fetch
+        // already retrieved (avoids a second /status round-trip).
+        let progressPages = [];
+        try {
+            const res = await fetch(
+                railwayUrl + '/jobs/' + encodeURIComponent(scanJobId) + '/status',
+                { headers: { Authorization: 'Bearer ' + scanJobToken } }
+            );
+            if (!res.ok) throw new Error('status ' + res.status);
+            const progress = await res.json();
+            // Railway's /jobs/:id/status returns { status, completed, total, pages: [...] }.
+            // The field is 'completed' (not 'pages_completed') — earlier code read the wrong key,
+            // so the confirm dialog always said "0 pages already scanned" regardless of progress.
+            const pages = Number(progress.completed) || 0;
+            progressPages = Array.isArray(progress.pages) ? progress.pages : [];
+            msg = 'Cancelling now will charge you for ' + pages + ' page' + (pages === 1 ? '' : 's') + ' already scanned.\n\nContinue?';
+        } catch (_e) {
+            msg = 'Unable to fetch current progress. Cancel anyway? (You may still be charged for pages already scanned.)';
+        }
+        if (!confirm(msg)) return;
+        stopPolling();
+        // FU-AAS-CANCEL-RELEASE-RESILIENCE: only tear down local state on a confirmed cancel.
+        // If the backend was unreachable (retryable), the scan is still running server-side —
+        // keep the active-job state, resume tracking, and let the user retry the cancel.
+        post('cu_scanner_cancel_job').then((res) => {
+            if (res && res.success) {
+                sessionStorage.removeItem('cu_scanner_active_job');
+                // Task 5 — user_cancel charged partial: deliver the X-page rules +
+                // Step-4, then route through the unified handler for the partial banner.
+                // pages source: progressPages (from the confirm-fetch status above) —
+                // already in hand, no extra round-trip. Task 3 made cancel_job return
+                // res.data.pages_completed.
+                const completedPages = (res.data && res.data.pages_completed) || 0;
+                buildResult({
+                    status:       'user_cancel',
+                    completed:    completedPages,
+                    total:        totalPages,
+                    pages:        progressPages,
+                    selectedUrls: selectedUrls.slice(),
+                }).then((built) => {
+                    // build_result errored (no coverage delivered) → fall back to the
+                    // pre-Task-5 behaviour: return the operator to Step 1.
+                    if (!built) showStep(1);
+                });
+            } else {
+                const m = (res && res.data && res.data.message)
+                    ? res.data.message
+                    : 'Could not cancel — please try again.';
+                alert(m);
+                startPolling(); // scan still active; sessionStorage preserved for re-attach
+            }
+        });
+    });
+
+    // Notify any open Code Unloader admin Rules tab (channel 'code-unloader',
+    // message 'cu.rule.changed', source 'scanner') so it refreshes without reload.
+    function cuNotifyRulesChanged() {
+        try {
+            const msg = { type: 'cu.rule.changed', source: 'scanner', action: 'bulk-create' };
+            if (typeof BroadcastChannel !== 'undefined') {
+                const bc = new BroadcastChannel('code-unloader');
+                bc.postMessage(msg);
+                bc.close();
+            } else {
+                const key = 'cu-bus:code-unloader';
+                localStorage.setItem(key, JSON.stringify({ t: Date.now(), msg: msg }));
+                localStorage.removeItem(key);
+            }
+        } catch (_e) { /* BroadcastChannel/localStorage unavailable — skip silently */ }
+    }
+
+    // --- Push to CU ---
+
+    // 1.8.7 — Sync / Push busy state. A large rule set keeps either request running for a long time
+    // and the server reports no progress, so the status line under the buttons (#cu-sync-push-busy,
+    // an always-present role="status" region in scanner-page.php) says what is happening: an
+    // indeterminate spinner, never a percentage. BOTH action buttons lock while a request is in
+    // flight (the other one used to stay clickable). release() empties the line and puts the OTHER
+    // button back exactly as it was; the CLICKED button stays with the handlers, whose rules are
+    // unchanged (success keeps it disabled, error / Cancel re-enable it). Callers run it as
+    // post(...).finally(release), so every exit clears the line by construction — Push's
+    // needs_confirm answer included: it releases BEFORE the confirm dialog (nothing is in flight while
+    // the dialog is up) and the confirmed request locks again. No Cancel control: aborting the fetch
+    // cannot stop the server-side write. A missing line fails open — the lock and the request happen.
+    // A release() from before the latest restoreStep4 render does nothing: that render owns the
+    // buttons and the line now (step4RenderEpoch).
+    function lockSyncPush( clickedBtn, message ) {
+        const epoch = step4RenderEpoch;
+        const other = document.getElementById( clickedBtn.id === 'cu-btn-push' ? 'cu-btn-sync' : 'cu-btn-push' );
+        const otherWasDisabled = other ? other.disabled : false;
+        clickedBtn.disabled = true;
+        if ( other ) { other.disabled = true; }
+        const line = document.getElementById( 'cu-sync-push-busy' );
+        if ( line ) {
+            const spin = document.createElement( 'span' );
+            spin.className = 'cu-sync-push-busy-spinner';
+            spin.setAttribute( 'aria-hidden', 'true' );
+            const text = document.createElement( 'span' );
+            text.textContent = message;
+            line.appendChild( spin );
+            line.appendChild( text );
+        }
+        return function release() {
+            if ( epoch !== step4RenderEpoch ) { return; }
+            if ( line ) { line.textContent = ''; }
+            if ( other ) { other.disabled = otherWasDisabled; }
+        };
+    }
+
+    document.getElementById('cu-btn-push').addEventListener('click', function () {
+        cuDoPush( this, false );
+    });
+
+    // Two-phase push: the first call (confirmed=false) lets the server decide whether a
+    // confirm is needed. It returns { needs_confirm: true } WITHOUT pushing only when CU
+    // has active rules to overwrite; an empty CU pushes immediately (no dialog).
+    function cuDoPush( btn, confirmed ) {
+        const release = lockSyncPush( btn, 'Pushing to Code Unloader… This can take a while for large rule sets.' );
+        post('cu_scanner_push_to_cu', { job_id: scanJobId, confirmed: confirmed ? 1 : 0 }).finally( release ).then(res => {
+            const el = document.getElementById('cu-push-result');
+            if (res.success && res.data && res.data.needs_confirm) {
+                if (window.confirm('This will save and overwrite your existing Code Unloader rules. Continue?')) {
+                    cuDoPush( btn, true );
+                } else {
+                    btn.disabled = false;
+                }
+                return;
+            }
+            if (res.success) {
+                const errNote = res.data.error_count
+                    ? ` (${esc(res.data.error_count)} errors — first: ${esc(res.data.error_message)})`
+                    : '';
+                el.innerHTML = `<div class="notice notice-success"><p>Rules added to Code Unloader: ${esc(res.data.safe_count)} safe, ${esc(res.data.aggressive_count)} aggressive.${errNote}</p></div>`;
+                activateUndoFromResponse(res.data);
+                cuNotifyRulesChanged();
+            } else {
+                el.innerHTML = `<div class="notice notice-error"><p>Error: ${esc(res.data)}</p></div>`;
+                btn.disabled = false;
+            }
+        }).catch(() => {
+            const el = document.getElementById('cu-push-result');
+            el.innerHTML = `<div class="notice notice-error"><p>Push failed — check server error logs.</p></div>`;
+            btn.disabled = false;
+        });
+    }
+
+    document.getElementById('cu-btn-sync').addEventListener('click', function () {
+        const btn = this;
+        const release = lockSyncPush( btn, 'Syncing with Code Unloader… This can take a while for large rule sets.' );
+        post('cu_scanner_sync_to_cu', { job_id: scanJobId }).finally( release ).then(res => {
+            const el = document.getElementById('cu-push-result');
+            if (res.success) {
+                const d = res.data;
+                const errNote = d.error_count
+                    ? ` (${esc(d.error_count)} errors — first: ${esc(d.error_message)})`
+                    : '';
+                // FU-AAS-SYNC-LINE-ALL-PRESENT (spec §3.4): "all N rules are already present" ONLY when
+                // nothing was appended, something was present AND there were no errors — sync()'s
+                // rollback branch zeroes appended_* on error while keeping already_present, so
+                // without the error_count condition a failed Sync would read as fully present.
+                const nothingAppended = ( Number( d.appended_safe ) || 0 ) + ( Number( d.appended_aggressive ) || 0 ) === 0;
+                const allPresent      = nothingAppended && ( Number( d.already_present ) || 0 ) > 0 && ! d.error_count;
+                const line = allPresent
+                    ? `Synced to Code Unloader — all ${esc(d.already_present)} rules are already present.`
+                    : `Synced to Code Unloader — appended ${esc(d.appended_safe)} safe + ${esc(d.appended_aggressive)} aggressive rules (${esc(d.already_present)} already present).${errNote}`;
+                el.innerHTML = `<div class="notice notice-success"><p>${line}</p></div>`;
+                activateUndoFromResponse(d);
+                cuNotifyRulesChanged();
+            } else {
+                el.innerHTML = `<div class="notice notice-error"><p>Error: ${esc(res.data)}</p></div>`;
+                btn.disabled = false;
+            }
+        }).catch(() => {
+            const el = document.getElementById('cu-push-result');
+            el.innerHTML = `<div class="notice notice-error"><p>Sync failed — check server error logs.</p></div>`;
+            btn.disabled = false;
+        });
+    });
+
+    const undoLastPushSyncBtn = document.getElementById('cu-btn-undo-last-push-sync');
+    if (undoLastPushSyncBtn) {
+        undoLastPushSyncBtn.addEventListener('click', function () {
+            if (!undoLastPushSyncState || !undoLastPushSyncState.available) {
+                return;
+            }
+
+            if (!window.confirm('Undo the last AAS Push/Sync? This removes only the rules AAS created in the last operation. Newly created Code Unloader groups will be disabled, not deleted.')) {
+                return;
+            }
+
+            const btn = this;
+            const previousState = undoLastPushSyncState;
+            const el = document.getElementById('cu-push-result');
+
+            btn.disabled = true;
+            btn.classList.remove('is-active');
+            btn.setAttribute('aria-disabled', 'true');
+
+            if (el) {
+                el.innerHTML = '<div class="notice notice-info"><p>Undoing the last Push/Sync...</p></div>';
+            }
+
+            post('cu_scanner_undo_last_push_sync').then(function (res) {
+                if (res.success) {
+                    const d = res.data || {};
+                    if (el) {
+                        el.innerHTML = `<div class="notice notice-success"><p>Undo complete: removed ${esc(d.deleted_rule_count || 0)} rules, skipped ${esc(d.skipped_rule_count || 0)} already-missing rules, disabled ${esc(d.disabled_group_count || 0)} newly created groups.</p></div>`;
+                    }
+                    setUndoLastPushSyncState(d.undo_state || { available: false });
+                    cuNotifyRulesChanged();
+                } else {
+                    if (el) {
+                        el.innerHTML = `<div class="notice notice-error"><p>Error: ${esc(res.data)}</p></div>`;
+                    }
+                    setUndoLastPushSyncState(previousState);
+                }
+            }).catch(function () {
+                if (el) {
+                    el.innerHTML = '<div class="notice notice-error"><p>Undo failed - check server error logs.</p></div>';
+                }
+                setUndoLastPushSyncState(previousState);
+            });
+        });
+    }
+
+    setUndoLastPushSyncState(undoLastPushSyncState);
+
+    // --- "Run Another Scan" buttons (above + below the results table) clear the
+    // stored result and reload to a fresh Step 1 (buttons don't navigate natively). ---
+    document.querySelectorAll('#step-4 .cu-btn-run-another').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            localStorage.removeItem('cu_scanner_result');
+            localStorage.removeItem('cu_scanner_et_carry_over'); // FU-AAS-ET-VIEW-PERSIST — reset to a fresh Step 1
+            // 1.7.44b — "Run Another Scan" = discard ALL partial state and start over.
+            // Without this, cu_scanner_partial survives the reload and restorePartialBanner
+            // re-renders the (now un-dismissable) banner on every load. Also drop any stale
+            // re-queue markers so they can't mis-flag a brand-new scan as a re-queue.
+            localStorage.removeItem('cu_scanner_partial');
+            Object.keys(localStorage).forEach(function (k) {
+                if (k.indexOf('cu_scanner_requeue_') === 0) { localStorage.removeItem(k); }
+            });
+            window.location.href = '?page=cu-scanner';
+        });
+    });
+
+    // --- "Rescan ET Candidates" — stash the checked ET URLs in sessionStorage and
+    // reload to a fresh Step 1, where primeRescanEt() picks them up (Extra Time
+    // pre-checked). No-op when nothing is checked. ---
+    document.querySelectorAll('#step-4 .cu-btn-rescan-et').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var urls = Array.from(cuUrlListState.etChecked);
+            if (!urls.length) { return; }
+            sessionStorage.setItem('cu_scanner_rescan_et', JSON.stringify(urls));
+            window.location.href = '?page=cu-scanner';
+        });
+    });
+
+    // --- "Rescan 0-Results URLs" — collect every S:0 A:0 (noopt) URL, stash them, and reload to a
+    // fresh Step 1, where primeRescanSingle() picks them up (NO Extra Time; charged as a normal
+    // 1-credit-per-URL scan, same as the per-row rescan it replaces). No-op when there are none. ---
+    document.querySelectorAll('#step-4 .cu-btn-rescan-noopt-all').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            // ⚠️ RAW safe/aggressive on purpose — NOT the netted values the table renders. An
+            // all_already page displays as a zero row (S:0 A:0, yellow) but produced real rules
+            // that Code Unloader already has; rescanning it spends credits to rediscover
+            // duplicates. all_already implies raw safe+aggressive >= 1, so this predicate
+            // already excludes those rows — do not "fix" it to match the rendered zeros.
+            var urls = cuUrlListState.pages.filter(function (p) {
+                return p && p.status_class === 'ok' && Number(p.safe) === 0 && Number(p.aggressive) === 0;
+            }).map(function (p) { return p.url; });
+            if (!urls.length) { return; }
+            sessionStorage.setItem('cu_scanner_rescan_single', JSON.stringify(urls));
+            window.location.href = '?page=cu-scanner';
+        });
+    });
+
+    // --- Init: restore Step 4 if a completed result is stored ---
+    (function () {
+        const stored = localStorage.getItem('cu_scanner_result');
+        if (!stored) return;
+        try {
+            const d = JSON.parse(stored);
+            scanJobId = d.job_id;
+            restoreStep4({
+                jobId: d.job_id, safeCount: d.safe_count, aggCount: d.agg_count,
+                canPush: d.can_push, externalOnly: !!d.external_only, bannerData: undefined,
+                urlsScanned: d.total_pages, pages: d.pages, scanId: d.scan_id,
+                hasActiveCuRules: d.has_active_cu_rules,
+                hasInternalRules: d.has_internal_rules,
+                applySafeCount: d.apply_safe_count, applyAggCount: d.apply_aggressive_count,
+                alreadyPresent: ( 'already_present' in d ) ? d.already_present : null,
+                creditsRefunded: d.credits_refunded,
+                cuRulesActive: d.cu_rules_active,
+                keptProtectionSummary: d.kept_protection_summary
+            });
+        } catch (_e) {
+            localStorage.removeItem('cu_scanner_result');
+        }
+    }());
+
+    // --- Init: restore partial-failure banner on page reload ---
+    // Runs AFTER the cu_scanner_result restore above (Step-4 wins when both exist).
+    // If a partial was stored by handleTerminalIncomplete, re-render the banner so
+    // the re-queue/retry button survives a page reload. Task 7 clears this key on
+    // successful re-queue submit.
+    (function restorePartialBanner() {
+        if (localStorage.getItem('cu_scanner_result')) return; // Step-4 result wins
+        var raw = localStorage.getItem('cu_scanner_partial');
+        if (!raw) return;
+        var p;
+        try { p = JSON.parse(raw); } catch (_e) { localStorage.removeItem('cu_scanner_partial'); return; }
+        if (!p || !p.status) { localStorage.removeItem('cu_scanner_partial'); return; }
+        currentPartialInfo = p;
+        renderPartialBanner(p);
+        showStep(4);
+    }());
+
+    // --- "Rescan ET Candidates" prime — runs AFTER the Step-4 restore above so its
+    // showStep(1) wins when both a stored result and a pending rescan exist. Loads the
+    // checked ET URLs into Step 1 in Discover/merge mode (discoveryRan=true), each
+    // selected, each with Extra Time PRE-CHECKED, badge = count×2, ready for Start Scan.
+    (function primeRescanEt() {
+        var raw = sessionStorage.getItem('cu_scanner_rescan_et');
+        if (!raw) return;
+        sessionStorage.removeItem('cu_scanner_rescan_et');
+        var etUrls = []; try { etUrls = JSON.parse(raw) || []; } catch (e) { return; }
+        if (!etUrls.length) return;
+        // Stale Step-4 result would bounce the user back to Step 4 on a later reload; clear it.
+        localStorage.removeItem('cu_scanner_result');
+        discoveredUrls = etUrls;
+        groupedUrls    = { page: [], post: [], other: [], included: etUrls };
+        selectedUrls   = etUrls.slice();
+        extraTimeUrls  = etUrls.slice();   // Extra Time PRE-CHECKED (the payoff)
+        etCarriedUrls  = etUrls.slice();   // FU-AAS-SUFFIX-DROP-ON-RESOLVE — scan these byte-identically
+        totalPages     = etUrls.length;
+        activeFilter   = 'all';
+        discoveryRan   = true;             // mixed/merge mode — NOT include-only
+        etCarryOver    = true;             // FU-AAS-ET-VIEW-PERSIST — this IS the carry-over view
+        renderUrlList();
+        updateCreditBadge();               // persists the view via saveEtCarryOver()
+        document.getElementById('cu-url-list-area').style.display = 'block';
+        updateStartScanVisibility();
+        showStep(1);
+    }());
+
+    // --- Rescan-noopt prime (FU-AAS-YELLOW-S0A0-ROWS item 2) — consumes cu_scanner_rescan_single,
+    // now fed by the "Rescan 0-Results URLs" bulk button (one or many S:0 A:0 URLs). Mirrors
+    // primeRescanEt but with NO Extra Time, and sets the requeue-origin flag so the completed rescan
+    // reuses the existing Push-dormant button state (Sync-only when CU rules already exist). Runs
+    // before restoreEtCarryOver so its etCarryOver=true wins. ---
+    (function primeRescanSingle() {
+        var raw = sessionStorage.getItem('cu_scanner_rescan_single');
+        if (!raw) return;
+        sessionStorage.removeItem('cu_scanner_rescan_single');
+        var urls = []; try { urls = JSON.parse(raw) || []; } catch (e) { return; }
+        if (!urls.length) return;
+        localStorage.removeItem('cu_scanner_result');         // clear stale Step-4 bounce
+        discoveredUrls = urls;
+        groupedUrls    = { page: [], post: [], other: [], included: urls };
+        selectedUrls   = urls.slice();
+        extraTimeUrls  = [];                                  // PLAIN rescan — NO Extra Time
+        etCarriedUrls  = urls.slice();                        // scan byte-identically (no re-resolve)
+        totalPages     = urls.length;
+        activeFilter   = 'all';
+        discoveryRan   = true;
+        etCarryOver    = true;
+        // Dormant-origin flag: survives a pre-Start reload; consumed at the Start-Scan seam (:1282).
+        sessionStorage.setItem('cu_scanner_rescan_requeue', '1');
+        renderUrlList();
+        updateCreditBadge();
+        document.getElementById('cu-url-list-area').style.display = 'block';
+        updateStartScanVisibility();
+        showStep(1);
+    }());
+
+    // --- FU-AAS-ET-VIEW-PERSIST: restore the ET carry-over view on a later page return ---
+    // Mirrors the Step-4 restore IIFE above. Runs AFTER primeRescanEt so a just-primed rescan
+    // (etCarryOver already true) wins; a stored Step-4 result also takes precedence.
+    (function restoreEtCarryOver() {
+        if (etCarryOver) return;                                // primeRescanEt already built it
+        if (localStorage.getItem('cu_scanner_result')) return;  // Step-4 result wins
+        var raw = localStorage.getItem('cu_scanner_et_carry_over');
+        if (!raw) return;
+        var d; try { d = JSON.parse(raw); } catch (e) { localStorage.removeItem('cu_scanner_et_carry_over'); return; }
+        if (!d || !Array.isArray(d.discoveredUrls) || !d.discoveredUrls.length) return;
+        discoveredUrls = d.discoveredUrls;
+        groupedUrls    = (d.groupedUrls && typeof d.groupedUrls === 'object') ? d.groupedUrls : { page: [], post: [], other: [], included: d.discoveredUrls };
+        selectedUrls   = Array.isArray(d.selectedUrls) ? d.selectedUrls : d.discoveredUrls.slice();
+        extraTimeUrls  = Array.isArray(d.extraTimeUrls) ? d.extraTimeUrls : [];
+        // FU-AAS-SUFFIX-DROP-ON-RESOLVE — old (pre-1.7.30b) blobs lack etCarriedUrls; treat all
+        // restored URLs as carried (conservative: no re-resolve for any of them).
+        etCarriedUrls  = Array.isArray(d.etCarriedUrls) ? d.etCarriedUrls : d.discoveredUrls.slice();
+        totalPages     = discoveredUrls.length;
+        activeFilter   = 'all';
+        discoveryRan   = true;
+        etCarryOver    = true;
+        renderUrlList();
+        updateCreditBadge();
+        var area = document.getElementById('cu-url-list-area');
+        if (area) area.style.display = 'block';
+        updateStartScanVisibility();
+        showStep(1);
+    }());
+
+    // --- Resume in-progress scan on page return ---
+    // FU-MAINPAGE-SCAN-RUNNING: a completed result for THIS job is already shown
+    // (Path A restored Step 4 from localStorage) → the still-present server transient
+    // is a race-window straggler; do NOT reattach over the result. Re-reads
+    // localStorage directly (module scanJobId may be unset when this evaluates).
+    function resultAlreadyShownFor(jobId) {
+      try {
+        var raw = localStorage.getItem('cu_scanner_result');
+        if (!raw || !jobId) return false;
+        var d = JSON.parse(raw);
+        return !!(d && d.job_id && String(d.job_id) === String(jobId));
+      } catch (_) { return false; }
+    }
+
+    // Brief notice shown when reattaching a running scan in a fresh tab; removed by
+    // the first real status update (handleStatusUpdate).
+    function showResumingNotice() {
+      if (document.getElementById('cu-resume-notice')) return;
+      var n = document.createElement('div');
+      n.id = 'cu-resume-notice';
+      n.className = 'notice notice-info inline';
+      n.innerHTML = '<p>Resuming your running scan — results will appear here as pages finish.</p>';
+      var wrap = document.getElementById('cu-progress-bar-wrap');
+      if (wrap && wrap.parentNode) { wrap.parentNode.insertBefore(n, wrap); return; }
+      var s3 = document.getElementById('step-3');
+      if (s3) s3.insertBefore(n, s3.firstChild);
+    }
+
+    (function checkForActiveJob() {
+      // FU-MAINPAGE-SCAN-RUNNING: the SERVER transient (cu_scanner_job_<user>) is the
+      // source of truth. A fresh-tab / closed-tab reopen mid-scan has no tab-local
+      // sessionStorage but the scan is still active — so consult check_job
+      // unconditionally (scanner.js is enqueued only on toplevel_page_cu-scanner).
+      const stored = sessionStorage.getItem('cu_scanner_active_job');
+      if (stored) { try { JSON.parse(stored); } catch (_) { sessionStorage.removeItem('cu_scanner_active_job'); } }
+      post('cu_scanner_check_job').then(res => {
+        if (!res || !res.success) { sessionStorage.removeItem('cu_scanner_active_job'); return; }
+        // Precedence (§4): a completed result for the SAME job is already shown → stale transient, don't override.
+        if (resultAlreadyShownFor(res.data.job_id)) { sessionStorage.removeItem('cu_scanner_active_job'); return; }
+        scanJobId     = res.data.job_id;
+        scanJobToken  = res.data.job_token;
+        railwayUrl    = res.data.railway_url;
+        lastPageIndex = 0;
+        sessionStorage.setItem('cu_scanner_active_job', JSON.stringify({
+          job_id: scanJobId, job_token: scanJobToken, railway_url: railwayUrl,
+        }));
+        showResumingNotice();
+        showStep(3);
+        startPolling();
+      });
+    }());
+
+    // --- Phase O: Re-attach outbox on page load ---
+    // If the server reports a queued or dispatched outbox entry (populated by PHP
+    // via the cuScanner.outbox localized value), restore the matching UI state so
+    // a page reload during an outage doesn't show an idle Step 1.
+    (function restoreOutboxState() {
+        var ob = (typeof cuScanner !== 'undefined' && cuScanner.outbox) ? cuScanner.outbox : null;
+        if (!ob || !ob.state) return;
+
+        if (ob.state === 'queued') {
+            showOutboxBanner();
+            startOutboxTick();
+        } else if (ob.state === 'dispatched') {
+            scanJobId     = ob.job_id    || null;
+            scanJobToken  = ob.job_token  || null;
+            railwayUrl    = ob.railway_url || null;
+            lastPageIndex = 0;
+            sessionStorage.setItem('cu_scanner_active_job', JSON.stringify({
+                job_id:      scanJobId,
+                job_token:   scanJobToken,
+                railway_url: railwayUrl,
+            }));
+            showStep(3);
+            startPolling();
+        }
+        // 'failed' and 'none' need no special UI — Step 1 is already shown.
+    }());
+
+    detectPlugins();
+
+    var activeHelpTrigger = null;
+    var helpPopover = null;
+
+    function getHelpPopover() {
+        if ( helpPopover ) { return helpPopover; }
+        helpPopover = document.createElement( 'div' );
+        helpPopover.className = 'cu-help-popover';
+        helpPopover.setAttribute( 'role', 'tooltip' );
+        helpPopover.hidden = true;
+        document.body.appendChild( helpPopover );
+        return helpPopover;
+    }
+
+    /**
+     * Render help text in one viewport-level popover. Keeping the visible box outside the
+     * results table guarantees that it cannot enlarge either scroll axis or be clipped by
+     * the sticky guidance card.
+     */
+    function positionHelpBox( trigger ) {
+        var box = trigger.querySelector( '.cu-help-box' );
+        if ( ! box ) { return; }
+        var popover = getHelpPopover();
+        popover.innerHTML = box.innerHTML;
+        popover.hidden = false;
+        popover.style.visibility = 'hidden';
+
+        var r   = trigger.getBoundingClientRect();
+        var GAP = 6, EDGE = 8;
+        var w    = popover.offsetWidth || 240;
+        var h    = popover.offsetHeight || 80;
+        var left = r.right - w;
+        var max  = document.documentElement.clientWidth - w - EDGE;
+        if ( left > max ) { left = max; }
+        if ( left < EDGE ) { left = EDGE; }
+        var top = r.bottom + GAP;
+        if ( top + h > window.innerHeight - EDGE && r.top - h - GAP >= EDGE ) {
+            top = r.top - h - GAP;
+        }
+        popover.style.left = Math.round( left ) + 'px';
+        popover.style.top = Math.round( top ) + 'px';
+        popover.style.visibility = 'visible';
+        activeHelpTrigger = trigger;
+    }
+
+    function hideHelpBox( trigger ) {
+        if ( trigger && activeHelpTrigger !== trigger ) { return; }
+        if ( helpPopover ) { helpPopover.hidden = true; }
+        activeHelpTrigger = null;
+    }
+
+    // Delegated, so it keeps working across the re-renders that pagination and every restoreStep4
+    // perform — per-element listeners would have to be re-attached on each one, and the ones added
+    // to discarded nodes would leak.
+    [ 'mouseover', 'focusin' ].forEach( function ( ev ) {
+        document.addEventListener( ev, function ( e ) {
+            var t = e.target && e.target.closest ? e.target.closest( '.cu-help' ) : null;
+            if ( t ) { positionHelpBox( t ); }
+        }, true );
+    } );
+    document.addEventListener( 'mouseout', function ( e ) {
+        var t = e.target && e.target.closest ? e.target.closest( '.cu-help' ) : null;
+        if ( t && ! t.contains( e.relatedTarget ) ) { hideHelpBox( t ); }
+    }, true );
+    document.addEventListener( 'focusout', function ( e ) {
+        var t = e.target && e.target.closest ? e.target.closest( '.cu-help' ) : null;
+        if ( t && ! t.contains( e.relatedTarget ) ) { hideHelpBox( t ); }
+    }, true );
+    if ( window.addEventListener ) {
+        window.addEventListener( 'resize', function () {
+            if ( activeHelpTrigger ) { positionHelpBox( activeHelpTrigger ); }
+        } );
+        window.addEventListener( 'scroll', function () {
+            if ( activeHelpTrigger ) { positionHelpBox( activeHelpTrigger ); }
+        }, true );
+    }
+
+    // Test-only seam (Node harness). Harmless in the browser; never read by UI code.
+    window.__cuTest = { formatCountdown: formatCountdown, handleStatusUpdate: handleStatusUpdate,
+                        beginScanPolling: beginScanPolling,
+                        positionHelpBox: positionHelpBox,
+                        renderPartialBanner: renderPartialBanner, restoreStep4: restoreStep4,
+                        showProbeOutcomeDialog: showProbeOutcomeDialog,
+                        buildSummaryLine: buildSummaryLine, buildSummaryParts: buildSummaryParts,
+                        buildSyncCopy: buildSyncCopy,
+                        buildRefundLine: buildRefundLine, buildNextStepCopy: buildNextStepCopy,
+                        // Seed the IIFE-scoped submitted-URL state so handleStatusUpdate's
+                        // URL-fallback can be exercised without driving the full submit flow.
+                        setScanUrlsForTest: function (sel, resolved) { selectedUrls = sel || []; resolvedByUrl = resolved || {}; } };
+}());

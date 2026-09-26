@@ -1,0 +1,3109 @@
+<?php
+namespace CUScanner\Admin;
+
+if ( ! defined( 'ABSPATH' ) ) exit;
+
+use CUScanner\Settings;
+use CUScanner\ScanHistory;
+use CUScanner\Api\WpserviceClient;
+use CUScanner\Api\RailwayClient;
+use CUScanner\Scanner\PageDiscovery;
+use CUScanner\Scanner\PluginDetector;
+use CUScanner\Scanner\BypassManager;
+use CUScanner\Scanner\CuJsonBuilder;
+use CUScanner\Scanner\EventEmitter;
+use CUScanner\Scanner\LastPushSyncUndo;
+use CUScanner\Scanner\RulePusher;
+
+class ScannerAjax {
+    public function register(): void {
+        $actions = [
+            'cu_scanner_detect_plugins',
+            'cu_scanner_discover_pages',
+            'cu_scanner_reserve_job',
+            'cu_scanner_submit_job',
+            'cu_scanner_poll_status',
+            'cu_scanner_cancel_job',
+            'cu_scanner_handle_failure',
+            'cu_scanner_handle_killed',
+            'cu_scanner_build_result',
+            'cu_scanner_download_json',
+            'cu_scanner_push_to_cu',
+            'cu_scanner_sync_to_cu',
+            'cu_scanner_undo_last_push_sync',
+            'cu_scanner_check_job',
+            'cu_scanner_export_history',
+            'cu_scanner_delete_history',
+            'cu_scanner_probe_target_stack',
+            'cu_scanner_get_badge_state',
+            'cu_scanner_outbox_enqueue',
+            'cu_scanner_outbox_tick',
+        ];
+        foreach ( $actions as $action ) {
+            add_action( 'wp_ajax_' . $action, [ $this, str_replace( 'cu_scanner_', '', $action ) ] );
+        }
+    }
+
+    private function check(): void {
+        check_ajax_referer( 'cu_scanner_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Forbidden', 403 );
+        }
+    }
+
+    private function settings(): Settings { return new Settings(); }
+
+    private function ratchet_enabled(): bool {
+        // Default-ON (beta). Opt-out kill switch: set the option to a falsy value (0 / false).
+        return (bool) get_option( 'cu_scanner_ratchet_enabled', true );
+    }
+
+    private function ratchet_debug_enabled(): bool {
+        return aias_debug_enabled();
+    }
+
+    private function log_ratchet_diag( string $phase, array $data ): void {
+        if ( ! $this->ratchet_debug_enabled() ) {
+            return;
+        }
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional CU_SCANNER_DEBUG-gated server-side diagnostic; no secrets (asset handles/URLs only), withheld from browser.
+        error_log( '[AI Assets Scanner][ratchet][' . $phase . '] ' . wp_json_encode( $data ) );
+    }
+
+    /**
+     * Diagnostic skip-reason for the ET ratchet. Returns the reason string when
+     * the merge will NOT run for an ET rescan; null when it WILL run, or when
+     * not an ET rescan (N/A). Pure — unit-tested via __test_ratchet_skip_reason.
+     */
+    private function ratchet_skip_reason( bool $enabled, bool $is_et, $r_orig, bool $matches ): ?string {
+        if ( ! $is_et ) {
+            return null;
+        }
+        if ( ! $enabled ) {
+            return 'ratchet_disabled';
+        }
+        if ( $matches ) {
+            return null;
+        }
+        return ( ! is_array( $r_orig ) || empty( $r_orig['rules'] ) )
+            ? 'r_orig_absent_or_empty'
+            : 'url_set_mismatch';
+    }
+
+    public function ensure_railway_url( Settings $settings, string $api_key ): string {
+        $railway_url = $settings->get_railway_url();
+        if ( Settings::is_safe_railway_url( $railway_url ) ) {
+            return $railway_url;
+        }
+
+        if ( '' === $api_key || $settings->is_pending_free_key( $api_key ) ) {
+            return '';
+        }
+
+        $auth        = ( new WpserviceClient( AIAS_WPSERVICE_URL, $api_key ) )->authenticate();
+        $railway_url = (string) ( $auth['railway_url'] ?? '' );
+        if ( '' === $railway_url ) {
+            throw new \RuntimeException( 'SaaS auth response did not include Railway URL.' );
+        }
+
+        $settings->set_railway_url( $railway_url );
+        return $railway_url;
+    }
+
+    private function release_reserved_job( string $api_key, string $job_token ): void {
+        if ( '' === $api_key || '' === $job_token ) {
+            return;
+        }
+
+        try {
+            ( new WpserviceClient( AIAS_WPSERVICE_URL, $api_key ) )->release_credits( $job_token );
+        } catch ( \RuntimeException ) {}
+    }
+
+    /**
+     * Build the wp_send_json_error payload for a failed reserve/submit.
+     *
+     * Group C (AAS 409 UX): a 409 from the gate or the SaaS reserve means a scan is
+     * already queued/running for this account (`scan_already_active`) — surface a friendly
+     * message + a machine-readable `error` code instead of a raw "HTTP 409" string. (Note:
+     * the 409 body carries only the existing job_id, not its Bearer job_token, so AAS cannot
+     * resume tracking that job — the message just asks the user to wait.)
+     *
+     * Otherwise: the detail string + the Phase O `retryable` flag, merged INTO $data (NOT
+     * wp_send_json_error's 2nd arg, which WP treats as an HTTP status code) so JS can route
+     * retryable failures to the outbox.
+     *
+     * @param \Throwable $e        The caught exception.
+     * @param string     $fallback The user-visible detail string for the non-409 case.
+     * @return array{message:string,retryable:bool,error?:string}
+     */
+    private static function friendly_error( \Throwable $e, string $fallback ): array {
+        $code = $e instanceof \CUScanner\Api\HttpException ? $e->get_status_code() : -1;
+        if ( 409 === $code ) {
+            return [
+                'message'   => 'A scan is already queued or running for this account. Please wait for it to finish before starting another.',
+                'retryable' => false,
+                'error'     => 'scan_already_active',
+            ];
+        }
+        return [
+            'message'   => $fallback,
+            'retryable' => \CUScanner\Scanner\Outbox::is_retryable( $e ),
+        ];
+    }
+
+    public function detect_plugins(): void {
+        $this->check();
+        $plugins = ( new PluginDetector() )->detect();
+
+        $api_key = $this->settings()->get_api_key();
+        try {
+            // No key means the user has not connected to wpservice.pro yet: make no request.
+            $credits = '' === $api_key ? [] : ( new WpserviceClient( AIAS_WPSERVICE_URL, $api_key ) )->get_credits();
+            $balance = isset( $credits['balance'] ) ? (int) $credits['balance'] : null;
+        } catch ( \RuntimeException $e ) {
+            error_log( '[AI Assets Scanner] detect_plugins balance: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional production logging: exception detail is withheld from the browser and written to server error log only.
+            $balance = null;
+        }
+
+        $extra    = [];
+        $detected = null;
+        try {
+            $detected = ( new \CUScanner\Cdn\Detector() )->detect();
+            $ack      = $this->settings()->get_acknowledged_cdn();
+            if ( \CUScanner\Admin\AdminPages::cdn_notice_should_show( $detected, $ack ) ) {
+                $extra['cdn_notice'] = [
+                    'name'         => $detected,
+                    'settings_url' => admin_url( 'admin.php?page=cu-scanner-settings#cu-cloudflare-waf-bypass' ),
+                ];
+            }
+        } catch ( \Throwable $e ) {
+            // Fail-quiet: CDN detection is non-critical; omit the notice on error.
+            error_log( '[AI Assets Scanner] detect_plugins cdn_notice: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional production logging: exception detail is withheld from the browser and written to server error log only.
+        }
+
+        // A1: pre-scan throttle notice — if the last scan was rate-limited, name the source + branch the advice.
+        try {
+            $records = ( new ScanHistory() )->get_all();
+            $last    = $records[0] ?? null;
+            $name    = is_array( $last ) ? (string) ( $last['rate_limit_attribution'] ?? '' ) : '';
+            if ( '' !== $name ) {
+                $kind    = self::throttle_notice_kind( $name );
+                $payload = [ 'name' => $name, 'kind' => $kind ];
+                if ( 'cdn' === $kind ) {
+                    $payload['settings_url'] = admin_url( 'admin.php?page=cu-scanner-settings#cu-cloudflare-waf-bypass' );
+                }
+                $extra['last_scan_throttle'] = $payload;
+                // Supersede the proactive cdn_notice when it's the same detected CDN (avoid a double notice).
+                if ( isset( $extra['cdn_notice'] ) && self::throttle_supersedes_cdn_notice( $kind, $name, $detected ) ) {
+                    unset( $extra['cdn_notice'] );
+                }
+            }
+        } catch ( \Throwable $e ) {
+            // Fail-quiet: the throttle notice is non-critical; omit it on error.
+            error_log( '[AI Assets Scanner] detect_plugins last_scan_throttle: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional production logging; detail withheld from the browser.
+        }
+
+        wp_send_json_success( array_merge( $plugins, [ 'balance' => $balance ], $extra ) );
+    }
+
+    public function discover_pages(): void {
+        $this->check();
+        $discovery = new PageDiscovery();
+        $home_url  = trailingslashit( get_home_url() );
+        $sitemap   = $home_url . 'sitemap.xml';
+        $urls      = $discovery->discover_from_sitemap( $sitemap );
+        if ( empty( $urls ) ) {
+            $urls = $discovery->discover_from_wpquery();
+        }
+        $excluded = array_map( 'sanitize_url', wp_unslash( (array) ( $_POST['excluded_urls'] ?? [] ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
+        $discovery->set_manual_urls( $urls );
+        $discovery->set_excluded_urls( $excluded );
+        $final = $discovery->get_urls();
+
+        // FU-AAS-DISCOVER-HOMEPAGE-FIRST (1.8.5, rulings B1–B3): the homepage leads the flat list and,
+        // because the groups below are built by walking $final in order, leads its own group too.
+        // Fresh Discover only — restore replays this response; manual include / ET carry-over are untouched.
+        $final = PageDiscovery::home_first( $final, $home_url );
+
+        // Build post-type groups via WP_Query.
+        // Normalise both map keys and lookup values so sitemap URLs
+        // (which may differ in scheme or trailing slash) match get_permalink() output.
+        // ONE normaliser for grouping AND home matching (PageDiscovery::normalise_url) — a scheme or
+        // trailing-slash divergence between the two would group the homepage in one place and promote another.
+        $normalise = static fn( string $u ): string => PageDiscovery::normalise_url( $u );
+
+        $q = new \WP_Query( [
+            'post_type'      => get_post_types( [ 'public' => true ] ),
+            'post_status'    => 'publish',
+            'posts_per_page' => -1,
+            'fields'         => 'ids',
+        ] );
+        $id_to_type = [];
+        foreach ( $q->posts as $id ) {
+            $permalink = get_permalink( $id );
+            if ( $permalink ) {
+                $id_to_type[ $normalise( $permalink ) ] = get_post_type( $id );
+            }
+        }
+
+        $groups = [ 'page' => [], 'post' => [], 'other' => [] ];
+        foreach ( $final as $url ) {
+            $type = $id_to_type[ $normalise( $url ) ] ?? 'other';
+            if ( $type === 'page' )       $groups['page'][]  = $url;
+            elseif ( $type === 'post' )   $groups['post'][]  = $url;
+            else                          $groups['other'][] = $url;
+        }
+
+        wp_send_json_success( [
+            'urls'   => $final,
+            'groups' => $groups,
+            'count'  => count( $final ),
+        ] );
+    }
+
+    public function reserve_job(): void {
+        $this->check();
+        $settings   = $this->settings();
+        $page_count = absint( $_POST['page_count'] ?? 0 ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
+        $extra_time_count = absint( $_POST['extra_time_count'] ?? 0 ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
+        if ( $page_count < 1 ) { wp_send_json_error( 'Invalid page count' ); return; }
+        if ( $settings->has_pending_free_key() ) {
+            wp_send_json_error( 'Free API key activation is pending. Please try again later.' );
+            return;
+        }
+        try {
+            $api_key = $settings->get_api_key();
+            $this->ensure_railway_url( $settings, $api_key );
+            $client = new WpserviceClient( AIAS_WPSERVICE_URL, $api_key );
+            $result = $client->reserve_job( $page_count, $extra_time_count );
+            set_transient( 'cu_scanner_pending_token_' . get_current_user_id(), $result['job_token'], 3600 );
+            wp_send_json_success( [ 'reserved' => true, 'job_token' => $result['job_token'] ] );
+        } catch ( \RuntimeException $e ) {
+            error_log( '[AI Assets Scanner] reserve_job: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional production logging: full exception detail to server log; truncated user-visible detail via format_reserve_error_detail().
+            wp_send_json_error( self::friendly_error( $e, self::format_reserve_error_detail( $e->getMessage() ) ) );
+        }
+    }
+
+    /**
+     * Phase O (AC-O-8) — extract the detection + worker-payload-building middle of
+     * submit_job() so BOTH the interactive handler and the outbox replay path
+     * (Outbox::dispatch) build a BYTE-IDENTICAL payload. Parity by construction.
+     *
+     * Reads every scan input from $intent (NOT $_POST) so a replay — which has no
+     * live request — can drive it. The bypass token may be INJECTED so a replay
+     * reproduces the exact same token (BypassManager::create_token() is fresh per
+     * call); when null, a fresh token is minted as the interactive path does today.
+     *
+     * The returned $payload intentionally OMITS job_token — the caller late-binds
+     * it (interactive: from $_POST; replay: from the persisted envelope).
+     *
+     * @param array $intent {
+     *     @type array       $urls                  Resolved (post-redirect) scan URLs.
+     *     @type array       $submitted_urls        Original operator-entered URLs (index-aligned).
+     *     @type array       $extra_time_urls       URLs flagged for Extra Time.
+     *     @type array       $target_bypass_per_url URL → suffix-array map from the probe step.
+     *     @type array|null  $target_stack_summary  Per-host probe summary (or null).
+     * }
+     * @param string|null $bypass_token Injected fixed token, or null to mint a fresh one.
+     * @return array{0:array,1:array,2:string} [ $payload (no job_token), $detector_typed, $token ]
+     */
+    public function build_submit_payload( array $intent, ?string $bypass_token = null ): array {
+        $settings = $this->settings();
+        $api_key  = $settings->get_api_key();
+
+        $urls_raw = $intent['urls'];
+        $et_set   = array_flip( $intent['extra_time_urls'] ?? [] );
+
+        // Detect plugins, build bypass params.
+        $detector       = new PluginDetector();
+        $detected       = $detector->detect();
+        $detector_typed = $detector->detect_typed();
+        // Injected token lets a replay reproduce the same token; create_token() is
+        // fresh per call so the interactive path mints a new one.
+        $token          = $bypass_token ?? ( new BypassManager() )->create_token();
+
+        $bypass_params = [];
+        foreach ( $detected['auto_bypass'] as $params ) {
+            foreach ( $params as $param ) {
+                $bypass_params[ $param ] = '';
+            }
+        }
+
+        $host_bypass = PluginDetector::build_bypass_suffixes( $detector_typed );
+
+        // Per-URL bypass map (already validated upstream and carried in $intent).
+        $target_bypass_per_url = $intent['target_bypass_per_url'] ?? [];
+
+        // AC-RC-8a — resolved-URL → submitted-URL map, zipped by index.
+        $submitted_urls_raw    = $intent['submitted_urls'] ?? [];
+        $submitted_url_per_url = [];
+        foreach ( $urls_raw as $i => $resolved_url ) {
+            $orig = $submitted_urls_raw[ $i ] ?? '';
+            if ( $resolved_url !== '' && $orig !== '' ) {
+                $submitted_url_per_url[ $resolved_url ] = $orig;
+            }
+        }
+
+        $home_url   = home_url();
+        $home_host  = wp_parse_url( $home_url, PHP_URL_HOST );
+        $page_specs = self::build_pages_array( $urls_raw, $host_bypass, $target_bypass_per_url, $home_url, $et_set, $submitted_url_per_url );
+
+        // Force URL scheme to match the current admin request's protocol. Sitemaps
+        // and WP_Query can emit http URLs even on https-served sites (option drift,
+        // CDN/proxy setups, or sitemap generators that hardcode the scheme). On a
+        // 1000-page scan, an http→https redirect on each page costs ~50-100ms × N =
+        // 50-100 seconds of wasted Playwright time. is_ssl() reflects the protocol
+        // the operator is actually using to manage the site; assume reachable.
+        $site_scheme = is_ssl() ? 'https' : 'http';
+
+        // Bake every detected bypass key (old auto_bypass + new typed-detector A/A_star)
+        // into the URL itself so:
+        //   1. The user can see exactly which keys are being applied (UX/verifiability).
+        //   2. Every consumer of this URL has the suffix baked in regardless of whether it
+        //      independently re-applies bypass_suffixes. Railway's baseline runPass DOES also
+        //      receive + re-append bypass_suffixes (page-analyzer.js buildScanUrl() ->
+        //      appendQueryParams()); that function dedupes against this URL's existing query
+        //      so the re-append is a safe no-op, not a duplicate (see FU-AAS-SWIS-DISABLE-
+        //      DOUBLE-BAKE). Railway's verifier (Pass 3/4) deliberately OMITS bypass_suffixes
+        //      instead — see the "INTENTIONALLY OMIT" comment in verifier.js — because
+        //      re-including it there previously broke production (optimizers running
+        //      un-optimized blew the per-page time budget).
+        // bypass_suffixes are bare flags (or `key=value` for Autoptimize/LiteSpeed) and
+        // come from PluginDetector::OPTIMIZERS — static strings, not user input — so
+        // direct concatenation is safe.
+        //
+        // FU-NEW-2 Phase 5: each URL gets its own per-URL suffix list (passed in via
+        // $page_specs from build_pages_array). External URLs may have an empty list.
+        $build_scan_url = static function ( string $u, array $bypass_suffixes ) use ( $bypass_params, $site_scheme, $home_host ): string {
+            $sanitized = set_url_scheme( sanitize_url( $u ), $site_scheme );
+
+            // FU-NEW-9 (1.3.5) — only apply operator-site $bypass_params
+            // (auto_bypass keys from the LOCAL detector — nowprocket /
+            // nowpcu / perfmattersoff / etc. for plugins installed on the
+            // operator's OWN WP host) to same-host URLs. External URLs
+            // receive ONLY the target-detected $bypass_suffixes from the
+            // FU-NEW-2 probe. F-DEG: mixing operator-site keys onto
+            // external scan URLs pollutes the target's request with
+            // unexpected query params from a different site's plugin
+            // config (e.g. customer-b.example was receiving wpservice.pro's
+            // nowprocket+nowpcu alongside its own LSCWP_CTRL=before_optm).
+            $url_host     = wp_parse_url( $sanitized, PHP_URL_HOST );
+            $is_same_host = ( $url_host && $home_host
+                              && strcasecmp( $url_host, $home_host ) === 0 );
+            $with_old     = $is_same_host
+                ? add_query_arg( $bypass_params, $sanitized )
+                : $sanitized;
+
+            if ( empty( $bypass_suffixes ) ) {
+                return $with_old;
+            }
+            // Dedupe suffixes against keys already in $with_old's query string so we
+            // don't emit duplicates when both detectors agreed (e.g. nowprocket).
+            $existing_keys = [];
+            $existing_qs   = wp_parse_url( $with_old, PHP_URL_QUERY );
+            if ( is_string( $existing_qs ) && $existing_qs !== '' ) {
+                foreach ( explode( '&', $existing_qs ) as $pair ) {
+                    if ( $pair === '' ) continue;
+                    $eq  = strpos( $pair, '=' );
+                    $key = $eq === false ? $pair : substr( $pair, 0, $eq );
+                    $existing_keys[ $key ] = true;
+                }
+            }
+            $append = [];
+            foreach ( $bypass_suffixes as $s ) {
+                $eq  = strpos( $s, '=' );
+                $key = $eq === false ? $s : substr( $s, 0, $eq );
+                if ( isset( $existing_keys[ $key ] ) ) continue;
+                $existing_keys[ $key ] = true;
+                $append[] = $s;
+            }
+            if ( empty( $append ) ) return $with_old;
+            $sep = ( strpos( $with_old, '?' ) === false ) ? '?' : '&';
+            return $with_old . $sep . implode( '&', $append );
+        };
+
+        $pages = self::reshape_page_specs( $page_specs, $build_scan_url, $token );
+
+        // NOTE: job_token is deliberately OMITTED — the caller late-binds it.
+        $payload = [
+            'pages'          => $pages,
+            'api_key'        => $api_key,
+            'wpservice_url'  => AIAS_WPSERVICE_BASE,
+            'scanner_secret' => $settings->get_scanner_secret(),
+        ];
+        $http_auth = $settings->get_http_auth();
+        if ( $http_auth ) {
+            $payload['http_auth'] = $http_auth;
+        }
+
+        // FU-NEW-2 Phase 5 (T5.4) — forward target_stack_summary blob to SaaS (AC-N2-10).
+        // Captured into $intent upstream; omitted from the payload when null.
+        $target_stack_summary = $intent['target_stack_summary'] ?? null;
+        if ( $target_stack_summary !== null ) {
+            $payload['target_stack_summary'] = $target_stack_summary;
+        }
+
+        return [ $payload, $detector_typed, $token ];
+    }
+
+    /**
+     * Phase O (AC-O-8) — Class C consent CHECK only (no begin(), no wp_send_json).
+     *
+     * Returns the class_c_active[] descriptor array ({slug,name,warning}) when a
+     * Class C optimizer is active AND consent has NOT been given ($consent_given
+     * !== '1'); otherwise null (consent not required / already given). Lifted from
+     * the inline gate in submit_job() so the interactive handler and the replay
+     * path share one consent contract.
+     *
+     * @param array  $detector_typed PluginDetector::detect_typed() output.
+     * @param string $consent_given  The class_c_consent_given value ('1' = consented).
+     * @return array|null class_c_active descriptors, or null when consent not required.
+     */
+    public function class_c_consent_payload( array $detector_typed, string $consent_given ): ?array {
+        $class_c_entries = array_filter(
+            $detector_typed,
+            static fn( $e ) => ( $e['class'] ?? '' ) === 'C'
+        );
+        if ( empty( $class_c_entries ) || $consent_given === '1' ) {
+            return null;
+        }
+        return array_values( array_map(
+            static fn( $e ) => [
+                'slug'    => (string) ( $e['disable_method'] ?? '' ),
+                'name'    => (string) ( $e['name'] ?? '' ),
+                'warning' => (string) ( $e['warning'] ?? '' ),
+            ],
+            $class_c_entries
+        ) );
+    }
+
+    /**
+     * Phase O (AC-O-8) — PURE side-effect runner shared by the interactive submit
+     * and the outbox replay. NO consent check, NO wp_send_json. Consent is already
+     * guaranteed by the caller (it ran class_c_consent_payload() first). Runs the
+     * exact same effects, in the exact same order, as today's submit_job() success
+     * path:
+     *   1. emit scan_request_received + optimizer_detected operational events,
+     *   2. for Class C entries, build strategies + OptimizerBypassOrchestrator->begin()
+     *      (RuntimeException propagates to the caller's catch),
+     *   3. ScanHistory->create_record(...,'queued'),
+     *   4. set_transient( 'cu_scanner_job_<user_id>', ... , 7200 ).
+     *
+     * CRITICAL: the transient is keyed on the $user_id PARAMETER, NOT
+     * get_current_user_id() — under WP-cron (outbox replay) the current user is 0,
+     * which would key the job to an invisible scan. Substituting the originating
+     * user_id is the whole point of the extraction.
+     *
+     * @param array  $result         RailwayClient::submit_job() response (job_id).
+     * @param array  $intent         The scan intent (urls used for record + scan_id).
+     * @param array  $detector_typed Typed detection result (events + Class C).
+     * @param string $bypass_token   The bypass token bound to this scan.
+     * @param string $railway_url    Resolved Railway base URL.
+     * @param string $job_token      The reserved job token (late-bound by the caller).
+     * @param int    $user_id        Originating user id (NOT get_current_user_id()).
+     * @return array{job_id:mixed,job_token:string,railway_url:string}
+     */
+    public function perform_submit_side_effects( array $result, array $intent, array $detector_typed, string $bypass_token, string $railway_url, string $job_token, int $user_id, array $pages_sent = [] ): array {
+        $job_id  = $result['job_id'];
+        $urls    = $intent['urls'];
+
+        // Derive a stable scan_id from the Railway job_id (16 hex chars).
+        $scan_id     = substr( hash( 'sha256', (string) $job_id ), 0, 16 );
+        $primary_url = (string) ( $urls[0] ?? '' );
+
+        EventEmitter::emit(
+            'scan_request_received',
+            'operational',
+            [
+                'scan_id'           => $scan_id,
+                'path_hash'         => substr( hash( 'sha256', $primary_url ), 0, 16 ),
+                'optimizers_active' => count( $detector_typed ),
+            ],
+            $scan_id
+        );
+
+        foreach ( $detector_typed as $file => $entry ) {
+            EventEmitter::emit(
+                'optimizer_detected',
+                'operational',
+                [
+                    'plugin'       => PluginDetector::plugin_file_to_enum( $file ),
+                    'class'        => $entry['class'] ?? '',
+                    'bypass_query' => substr( hash( 'sha256', (string) ( $entry['bypass_query'] ?? '' ) ), 0, 16 ),
+                    'scan_id'      => $scan_id,
+                ],
+                $scan_id
+            );
+        }
+
+        // Class C orchestrator begin (spec §3.5 + §6.1). Consent is guaranteed by
+        // the caller, so this runs the disable strategies directly. A
+        // RuntimeException from begin() propagates to the caller's catch.
+        $class_c_entries = array_filter(
+            $detector_typed,
+            static fn( $e ) => ( $e['class'] ?? '' ) === 'C'
+        );
+        if ( ! empty( $class_c_entries ) ) {
+            $strategies = [];
+            foreach ( $class_c_entries as $entry ) {
+                $method = $entry['disable_method'] ?? '';
+                if ( $method === '' ) continue;
+                try {
+                    $strategies[] = \CUScanner\Scanner\StrategyFactory::for_method( $method );
+                } catch ( \InvalidArgumentException $_ ) {
+                    // Unknown method: silently skip (factory may lag detector additions).
+                }
+            }
+            if ( ! empty( $strategies ) ) {
+                ( new \CUScanner\Scanner\OptimizerBypassOrchestrator( $strategies ) )
+                    ->begin( $scan_id, 1800 );
+            }
+        }
+
+        $domain = wp_parse_url( get_home_url(), PHP_URL_HOST );
+        ( new ScanHistory() )->create_record( $job_id, $domain, count( $urls ), 'queued' );
+
+        // Keyed on the $user_id PARAMETER — under WP-cron get_current_user_id() is 0.
+        set_transient( 'cu_scanner_job_' . $user_id, [
+            'job_id'       => $job_id,
+            'job_token'    => $job_token,
+            'bypass_token' => $bypass_token,
+            'railway_url'  => $railway_url,
+        ], 7200 );
+
+        // FU-ABSENT-SAFE B2 (review fix) — persist the per-URL bypass-suffix map so
+        // do_build_result() can stamp EACH result row (internal AND external) with the
+        // suffix actually applied at submit, for the Step-4 "optimizer detected" note.
+        // Keyed by JOB_ID (not user_id) because do_build_result() receives $job_id as a
+        // parameter and runs on both the interactive build_result path and the
+        // background MenuBadge heartbeat path (where the user-keyed transient may be
+        // gone), and because cancel_job() deletes cu_scanner_job_ BEFORE build_result
+        // runs — whereas a cancelled scan's completed pages still deserve the note.
+        // Built from the reshaped pages actually sent to Railway ($payload['pages']) so
+        // the key is byte-identical to the pages[].url the worker echoes back verbatim.
+        // TTL matches the job transient. Fail-closed: only pages with a non-empty suffix
+        // list are stored, so a URL absent from the map yields no note (never false).
+        $bypass_map = self::build_bypass_map( $pages_sent );
+        if ( ! empty( $bypass_map ) ) {
+            set_transient( 'cu_scanner_bypass_map_' . $job_id, $bypass_map, 7200 );
+        }
+
+        // Persist the set of final scan URLs sent WITH Extra Time (operator 2026-09-14), so
+        // do_build_result() can stamp each result row with et_requested and the Step-4
+        // "Needs Extra Time" note stays off on a page that just had Extra Time. The worker's
+        // extra_time_charged stamp cannot carry this: a zero-yield ET continuation legitimately
+        // omits it. Same job-keying + verbatim-URL rationale as bypass_map above. Fail-closed:
+        // nothing stored when no page requested Extra Time.
+        $et_urls = self::build_et_url_set( $pages_sent );
+        if ( ! empty( $et_urls ) ) {
+            set_transient( 'cu_scanner_et_urls_' . $job_id, $et_urls, 7200 );
+        }
+
+        // FU-ET-STAMP-SEVERS-RATCHET — persist a job-keyed ET-rescan marker so
+        // do_build_result()'s ratchet gate detects an ET rescan independently of the
+        // worker billing stamp (extra_time_charged), which a zero-yield continuation
+        // legitimately omits (worker 7a4a161, W1). Same job-keying rationale as the
+        // bypass_map above (do_build_result receives $job_id; survives the cancel +
+        // heartbeat paths where the user-keyed transient is gone). Only set when the
+        // operator requested Extra Time for >=1 URL — a normal scan leaves no marker.
+        if ( self::intent_requests_extra_time( $intent ) ) {
+            set_transient( self::et_rescan_marker_key( $job_id ), 1, 7200 );
+        }
+
+        return [
+            'job_id'      => $job_id,
+            'job_token'   => $job_token,
+            'railway_url' => $railway_url,
+        ];
+    }
+
+    public function submit_job(): void {
+        $this->check();
+        // Wipe all prior banner dismissals — each new scan gets a fresh slate.
+        // After $this->check() so the state-change is gated by nonce + capability per WP Compliance Rules 4/11.
+        // Leading backslash: AIAS_Broken_Banner is in the global namespace; this file is in CUScanner\Admin.
+        \AIAS_Broken_Banner::on_submit_job();
+
+        $settings    = $this->settings();
+        $api_key     = $settings->get_api_key();
+        $job_token   = sanitize_text_field( wp_unslash( $_POST['job_token'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
+        $urls_raw    = array_map( 'sanitize_url', wp_unslash( (array) ( $_POST['urls'] ?? [] ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Nonce verified in $this->check(); URLs sanitized via array_map sanitize_url.
+
+        // FU-AAS-EXTRA-TIME (UI Task 4) — per-URL Extra Time flag. JS sends the
+        // subset of selected URLs the operator marked for Extra Time. Sanitize as
+        // URLs (same recognized sanitizer as $urls_raw); build_submit_payload()
+        // array_flips this into the membership set build_pages_array() consumes.
+        $et_urls_raw = array_map( 'sanitize_url', wp_unslash( (array) ( $_POST['extra_time_urls'] ?? [] ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Nonce verified in $this->check(); URLs sanitized via array_map sanitize_url.
+
+        try {
+            $railway_url = $this->ensure_railway_url( $settings, $api_key );
+        } catch ( \RuntimeException $e ) {
+            $this->release_reserved_job( $api_key, $job_token );
+            error_log( '[AI Assets Scanner] submit_job railway_url: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional production logging: no secrets, only auth/allowlist failure detail for diagnosis.
+            wp_send_json_error( self::format_submit_error_detail( $e->getMessage() ) );
+            return;
+        }
+
+        $missing = [];
+        if ( ! $railway_url ) {
+            $missing[] = 'railway_url';
+        }
+        if ( ! $job_token ) {
+            $missing[] = 'job_token';
+        }
+        if ( empty( $urls_raw ) ) {
+            $missing[] = 'urls';
+        }
+        if ( $missing ) {
+            $this->release_reserved_job( $api_key, $job_token );
+            error_log( '[AI Assets Scanner] submit_job missing required fields: ' . implode( ',', $missing ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional production logging: field names only, no credentials or URLs.
+            wp_send_json_error( 'Missing required fields: ' . implode( ', ', $missing ) );
+            return;
+        }
+
+        // FU-NEW-2 Phase 5 (T5.2) — capture per-URL bypass map from JS probe step.
+        // External URLs use target-detected suffixes; internal URLs use $host_bypass.
+        // Missing external URLs default to [] and fire cu_scanner_target_bypass_missing.
+        //
+        // wp-compliance Rule 25 / proposed-Rule-27 — $_POST may carry a structured
+        // multi-level map (URL key → suffix-array). PHP's $_POST parser hands us
+        // nested arrays without per-value unslash beyond the outer level. Walk the
+        // structure: validate each URL key, validate each suffix value's character
+        // class (must match the legal bypass-suffix shape produced by OPTIMIZERS).
+        // Anything outside that allowlist is dropped silently.
+        $target_bypass_per_url_raw = [];
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() before any submit payload is processed.
+        if ( isset( $_POST['target_bypass_per_url'] ) ) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Nonce verified in $this->check(); sanitize_target_bypass_per_url() validates every nested URL key and suffix value.
+            $target_bypass_per_url_raw = wp_unslash( $_POST['target_bypass_per_url'] );
+        }
+        $target_bypass_per_url = self::sanitize_target_bypass_per_url( $target_bypass_per_url_raw );
+
+        // AC-RC-8a — per-URL submitted_url map. JS sends a parallel submitted_urls[]
+        // array, index-aligned with urls[]: urls[i] is the RESOLVED (post-redirect)
+        // scan URL, submitted_urls[i] is the ORIGINAL URL the operator entered. Flat
+        // scalar array → esc_url_raw per element is a recognized outermost sanitizer
+        // (wp-compliance Rule 24). build_submit_payload() zips them by index.
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Nonce verified in $this->check(); URLs sanitized via array_map esc_url_raw.
+        $submitted_urls_raw = array_map( 'esc_url_raw', wp_unslash( (array) ( $_POST['submitted_urls'] ?? [] ) ) );
+
+        // FU-NEW-2 Phase 5 (T5.4) — capture target_stack_summary blob (forwarded by
+        // JS after the cu_scanner_probe_target_stack step). Null when absent/empty.
+        $target_stack_summary = null;
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() before any submit payload is processed.
+	if ( isset( $_POST['target_stack_summary'] ) ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Nonce verified in $this->check(); structured POST array is unslashed, sanitized per leaf below, then schema-filtered by sanitize_target_stack_summary().
+		$target_stack_summary_raw = wp_unslash( $_POST['target_stack_summary'] );
+		$target_stack_summary     = self::sanitize_target_stack_summary( map_deep( $target_stack_summary_raw, 'sanitize_text_field' ) );
+	}
+
+        // Class C consent: '1' when the operator confirmed in the modal.
+        $class_c_consent_given = '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() before any submit payload is processed.
+        if ( isset( $_POST['class_c_consent_given'] ) ) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified at top of submit_job via $this->check() / check_ajax_referer().
+            $class_c_consent_given = sanitize_text_field( wp_unslash( $_POST['class_c_consent_given'] ) );
+        }
+
+        // Assemble the scan intent (the parity contract shared with Outbox::dispatch).
+        $intent = [
+            'urls'                  => $urls_raw,
+            'submitted_urls'        => $submitted_urls_raw,
+            'extra_time_urls'       => $et_urls_raw,
+            'target_bypass_per_url' => $target_bypass_per_url,
+            'target_stack_summary'  => $target_stack_summary,
+            'class_c_consent_given' => $class_c_consent_given,
+            'user_id'               => get_current_user_id(),
+        ];
+
+        // Parity-by-construction: the SAME builder the outbox replay will call.
+        [ $payload, $detector_typed, $token ] = $this->build_submit_payload( $intent );
+        $payload['job_token'] = $job_token; // late-bind (builder omits it).
+
+        try {
+            $client = new RailwayClient( $railway_url, $api_key );
+            $result = $client->submit_job( $payload );
+            $cc = $this->class_c_consent_payload( $detector_typed, $intent['class_c_consent_given'] );
+            if ( $cc !== null ) {
+                wp_send_json( [ 'ok' => false, 'error' => 'class_c_consent_required', 'class_c_active' => $cc ] );
+                return; // worker job already submitted — unchanged from today's submit-before-consent-gate ordering
+            }
+            $out = $this->perform_submit_side_effects( $result, $intent, $detector_typed, $token, $railway_url, $job_token, (int) get_current_user_id(), $payload['pages'] ?? [] );
+            wp_send_json_success( $out );
+        } catch ( \RuntimeException $e ) {
+            ( new BypassManager() )->delete_all_tokens(); // own handle — $bypass is no longer in this scope after extraction
+            $this->release_reserved_job( $api_key, $job_token );
+            error_log( '[AI Assets Scanner] submit_job: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional production logging: full exception detail to server log; truncated user-visible detail via format_submit_error_detail().
+            wp_send_json_error( self::friendly_error( $e, self::format_submit_error_detail( $e->getMessage() ) ) );
+        }
+    }
+
+    /**
+     * Formats an exception message from submit_job() failures for user-visible display.
+     *
+     * The underlying RailwayClient::parse() throws "Railway HTTP {code}: {body.message}".
+     * We surface that to the browser (was previously swallowed into a generic message)
+     * but truncate to 80 chars to bound what a malformed response could echo.
+     *
+     * Sub-spec B rollout surfaced that "Could not submit scan job. Check server error
+     * logs." is operationally useless — admins need the HTTP status and body extract
+     * to diagnose without SSH + tail.
+     *
+     * @param string $message Exception message (from $e->getMessage()).
+     * @return string Formatted user-visible detail, prefixed with "Scan submission failed: ".
+     */
+    public static function format_submit_error_detail( string $message ): string {
+        return 'Scan submission failed: ' . self::truncate_error_detail( $message );
+    }
+
+    /**
+     * Formats an exception message from reserve_job() failures for user-visible display.
+     *
+     * Same truncation contract as format_submit_error_detail() — kept as a separate
+     * method so callers explicitly pick the user-facing prefix appropriate for each
+     * AJAX handler. Underlying WpserviceClient throws "HTTP {code}: {body.message}"
+     * for rate-limited (429), insufficient-credits (402), scan-in-progress (409), etc.
+     * Surfacing the message lets admins distinguish these conditions.
+     *
+     * @param string $message Exception message (from $e->getMessage()).
+     * @return string Formatted user-visible detail, prefixed with "Could not reserve credits: ".
+     */
+    public static function format_reserve_error_detail( string $message ): string {
+        return 'Could not reserve credits: ' . self::truncate_error_detail( $message );
+    }
+
+    /**
+     * Total credits billed for a scan, summed from the per-page rule.
+     *
+     * Delegates to AIAS_Scan_Status::classify() — the SAME rule that drives the per-URL
+     * Step-4 "Credits" column — so the scan-history total always equals the sum of that
+     * column and the amount the SaaS actually charged. Each page contributes:
+     *   origin_unavailable → 0; error → 0 (+1 if it ran a billed Extra-Time continuation);
+     *   ok/partial/blocked → 1 (+1 if Extra-Time was billed via `extra_time_charged`).
+     * Replaces the old page-COUNT (FU-AAS-ET-CREDIT-DISPLAY 2026-06-13): the count was
+     * ET-blind and under-reported ET continuations (showed 1 where 2 was billed).
+     *
+     * @param array<int, array<string, mixed>> $pages_raw Per-page status rows from Railway.
+     * @param array                            $by_page   Per-page {safe,aggressive,needed} tallies from CuJsonBuilder; absent → legacy 1-per-ok credit.
+     * @return int Total billed credits across all pages.
+     */
+    public static function billable_credit_total( array $pages_raw, array $by_page = [] ): int {
+        $total = 0;
+        foreach ( $pages_raw as $i => $page ) {
+            // $by_page absent (legacy callers) → null tally → page_credit keeps legacy 1-per-ok.
+            $total += \AIAS_Scan_Status::page_credit( (array) $page, $by_page[ $i ] ?? null );
+        }
+        return (int) $total;
+    }
+
+    /**
+     * Keep only the pages that actually produced a result. For an INCOMPLETE scan
+     * (failed / user_cancel / killed), get_status() returns the unreached slots as
+     * synthetic placeholders { index, status:'pending', assets:[] }
+     * (JobStore.getAllPageResults) with NO 'url'. The build path
+     * (CuJsonBuilder::build, billable_credit_total, build_pages) is written for real
+     * done/error pages that each carry a url — feeding the placeholders in throws
+     * "Undefined array key 'url'" in CuJsonBuilder AND miscounts credits (a 3-of-13
+     * partial billed 13, not 3). Real pages always carry a url; placeholders never do,
+     * so presence of a non-empty 'url' is the discriminator. Dropping placeholders makes
+     * a partial build from exactly the pages that ran — the same shape a complete scan
+     * yields. completed/total for the banner come from $status (server-authoritative),
+     * not count($pages_raw), so this does not affect them.
+     *
+     * @param array<int,mixed> $pages_raw Raw get_status()['pages'].
+     * @return array<int,array<string,mixed>>
+     */
+    public static function filter_real_pages( array $pages_raw ): array {
+        return array_values( array_filter(
+            $pages_raw,
+            static fn( $p ) => is_array( $p ) && isset( $p['url'] ) && '' !== (string) $p['url']
+        ) );
+    }
+
+    /**
+     * A1: reduce the rate-limited pages' attribution to a single source name.
+     * PRESENCE-KEYED (R1): only entries that actually carry the `attribution` key count, so a
+     * pre-worker-deploy result (no key) yields null → no notice (backward-safe / inert, AC-A5).
+     * Selection: most-frequent; tie → CDN-edge > host > unknown (fixed enum rank).
+     *
+     * @param array $pages_raw Decoded worker page array.
+     * @return string|null One of {cloudflare,akamai,imperva,waf,host,unknown} or null when none.
+     */
+    public static function aggregate_rate_limit_attribution( array $pages_raw ): ?string {
+        $counts = [];
+        foreach ( $pages_raw as $page ) {
+            $broken_devices = is_array( $page['broken_devices'] ?? null ) ? $page['broken_devices'] : [];
+            foreach ( $broken_devices as $bd ) {
+                if ( ! is_array( $bd ) || ( $bd['reason'] ?? '' ) !== 'tier1_http_rate_limit' ) {
+                    continue;
+                }
+                if ( ! array_key_exists( 'attribution', $bd ) ) { // R1: presence, never `?? 'unknown'`
+                    continue;
+                }
+                $name = (string) $bd['attribution'];
+                if ( '' === $name ) {
+                    continue;
+                }
+                $counts[ $name ] = ( $counts[ $name ] ?? 0 ) + 1;
+            }
+        }
+        if ( empty( $counts ) ) {
+            return null;
+        }
+        $rank      = [ 'cloudflare' => 0, 'akamai' => 1, 'imperva' => 2, 'waf' => 3, 'host' => 4, 'unknown' => 5 ];
+        $best      = null;
+        $best_cnt  = -1;
+        $best_rank = PHP_INT_MAX;
+        foreach ( $counts as $name => $cnt ) {
+            $r = $rank[ $name ] ?? 5;
+            if ( $cnt > $best_cnt || ( $cnt === $best_cnt && $r < $best_rank ) ) {
+                $best      = $name;
+                $best_cnt  = $cnt;
+                $best_rank = $r;
+            }
+        }
+        return $best;
+    }
+
+    /**
+     * A1: map an attribution enum value to the notice branch.
+     * @return string 'cdn' | 'origin' | 'unknown'
+     */
+    public static function throttle_notice_kind( string $name ): string {
+        if ( in_array( $name, [ 'cloudflare', 'akamai', 'imperva', 'waf' ], true ) ) {
+            return 'cdn';
+        }
+        if ( 'host' === $name ) {
+            return 'origin';
+        }
+        return 'unknown';
+    }
+
+    /**
+     * A1: the confirmed-throttle CDN notice supersedes the proactive cdn_notice for the SAME detected CDN
+     * (stronger same-CTA signal → avoid a double notice). All other cases: both may show.
+     */
+    public static function throttle_supersedes_cdn_notice( string $kind, string $name, ?string $detected ): bool {
+        return 'cdn' === $kind && null !== $detected && $detected === $name;
+    }
+
+    /**
+     * Scan-history Safe/Aggressive totals, summed from the per-page tally.
+     *
+     * MUST be sourced from by_page (the exact array the per-URL Step-4 table renders),
+     * NOT from count(cu_json['rules']). On an ET ratchet merge, cu_json['rules'] can
+     * contain rules whose url_pattern is absent from the rescan's pages — recompute_by_page()
+     * attributes them to no page, so count(rules) over-reports vs the table the operator sees.
+     * Summing by_page makes the documented invariant (recompute_by_page jsdoc) the live contract:
+     * history Safe/Aggressive always equals the sum of the per-URL column.
+     * FU-AAS-HISTORY-RULE-COUNT (2026-06-13).
+     *
+     * @param array<int, array{safe?:int,aggressive?:int,needed?:int}> $by_page CuJsonBuilder/recompute_by_page tally.
+     * @return array{safe:int,aggressive:int}
+     */
+    public static function rule_counts_by_group( array $by_page ): array {
+        return [
+            'safe'       => (int) array_sum( array_column( $by_page, 'safe' ) ),
+            'aggressive' => (int) array_sum( array_column( $by_page, 'aggressive' ) ),
+        ];
+    }
+
+    /**
+     * FU-AAS-SYNC-SCOPE-LAST-SCAN (spec §3.1) — the scan's page set as CU url_patterns.
+     * Deduped, page order preserved. Every worker row, error pages included: the two by_page
+     * producers differ (CuJsonBuilder::build skips error pages; recompute_by_page walks every
+     * row), and the scope set must be a superset of what EITHER counts. Same transform as the
+     * rule side (UrlPattern::from_url), so membership is exact string equality.
+     * Rule 1: Railway rows are untrusted — string-checked (no cast; a non-string url_pattern
+     * is skipped, never coerced), skip empties, never fatal.
+     *
+     * @param array<int,mixed> $pages_raw Railway per-page result rows.
+     * @return string[]
+     */
+    public static function scanned_patterns( array $pages_raw ): array {
+        $set = [];
+        foreach ( $pages_raw as $page ) {
+            if ( ! is_array( $page ) || ! is_string( $page['url'] ?? null ) || '' === $page['url'] ) {
+                continue;
+            }
+            $set[ \CUScanner\Scanner\UrlPattern::from_url( $page['url'] ) ] = true;
+        }
+        return array_keys( $set );
+    }
+
+    /**
+     * FU-AAS-SYNC-SCOPE-LAST-SCAN (spec §3.3 wire site 3) — safe/aggressive counts over a rule
+     * LIST. TOTAL by construction: two branches, no skip, no "known groups" filter, so
+     * count($rules) === safe + aggressive. The JS flag is derived from these two numbers, so a
+     * third branch here would silently dormant Push/Sync on a scan that has rules (AC-10(v)).
+     * group_id === 1 => safe, else aggressive — the identical strict test RulePusher::sync and
+     * do_push use, so card = Sync line = Push line.
+     *
+     * @param array<int,array<string,mixed>> $rules
+     * @return array{safe:int,aggressive:int}
+     */
+    public static function rule_counts_from_rules( array $rules ): array {
+        $safe = 0;
+        $agg  = 0;
+        foreach ( $rules as $rule ) {
+            if ( 1 === ( $rule['group_id'] ?? null ) ) {
+                $safe++;
+            } else {
+                $agg++;
+            }
+        }
+        return [ 'safe' => $safe, 'aggressive' => $agg ];
+    }
+
+    /**
+     * Claim the duplicate-page credit-back. Best-effort by design.
+     *
+     * Single attempt, no sleep, no inline retry: this runs inside the result-build AJAX
+     * handler, which menu-badge.js also fires in the background. A later rebuild IS the
+     * retry — do_build_result is re-invocable and the endpoint is idempotent per token.
+     *
+     * ── Why every failure is treated alike (deliberate; spec §5.4) ────────────────────
+     * The SaaS splits seven error codes into transient (`refund_failed` 500) and terminal
+     * (`invalid_refund_pages`/`invalid_token` 400; `not_refundable`/`not_finalized`/
+     * `credits_account_missing`/`free_key_missing` 409). Keying retry off that split was
+     * considered and rejected here for three reasons:
+     *
+     *   1. The machine-readable code never reaches us. WpserviceClient::parse() throws
+     *      HttpException carrying the STATUS and a human message; `$body['code']` is
+     *      discarded. Surfacing it means changing shared transport used by auth, credits,
+     *      free-key and events — real blast radius for one best-effort call.
+     *   2. Status alone cannot substitute, because 409 is ambiguous: `not_finalized` wants
+     *      a LATER retry while the other three are permanent. Splitting on 4xx/5xx would
+     *      therefore give up on exactly the case that most deserves another attempt.
+     *   3. The only behaviour the split would unlock is suppressing future attempts on a
+     *      terminal code, which needs new persisted per-job state — a new failure surface
+     *      on a path whose whole contract is "never breaks the build". Re-attempting is
+     *      already harmless: the endpoint is write-once and clamped, and we never call it
+     *      with refund_pages < 1, so a repeat terminal answer is a cheap no-op.
+     *
+     * What the split DOES buy today is diagnosability, and that is taken: the status code
+     * is logged structurally, so transient (5xx/0) vs terminal (4xx) is visible in the log
+     * without guessing. A terminal code recurring across rebuilds is the signal that would
+     * justify building suppression later.
+     *
+     * @return int|null Credits actually returned (SaaS-authoritative), or NULL when no
+     *                  claim was made or the call failed. Display never depends on this.
+     */
+    public static function claim_duplicate_refund( WpserviceClient $client, string $job_token, int $refund_pages ): ?int {
+        if ( $refund_pages < 1 || '' === $job_token ) {
+            return null;
+        }
+        try {
+            $res = $client->refund_duplicates( $job_token, $refund_pages );
+        } catch ( \Throwable $e ) {
+            // 404 = SaaS older than this plugin (deploy order, spec §6.4). Any other
+            // failure is equally non-fatal: the screen is still correct without it.
+            $status = ( $e instanceof \CUScanner\Api\HttpException ) ? $e->get_status_code() : -1;
+            $class  = ( $status >= 400 && $status < 500 ) ? 'terminal' : 'transient';
+            error_log( sprintf( // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional production logging; best-effort billing call with no user-visible surface, and the status/class is the only diagnosable record that a claim was refused.
+                '[AI Assets Scanner] refund_duplicates failed (status=%d, %s): %s',
+                $status,
+                $class,
+                $e->getMessage()
+            ) );
+            return null;
+        }
+        return isset( $res['refunded'] ) ? (int) $res['refunded'] : null;
+    }
+
+    /**
+     * Attribute Code Unloader's already-present rules onto the scanned pages, and
+     * decide which pages are wholly-duplicate (and therefore refundable).
+     *
+     * Aggregation is per PATTERN GROUP, not per page. Two selected URLs can normalize
+     * to one url_pattern (UrlPattern strips the query string), and CU's rules are keyed
+     * by pattern — so a page's own already-count is not knowable when a pattern covers
+     * several pages. Clamping per page instead yields a predicate equivalent to
+     * "A_pattern >= B_page", which never checks whose rules are whose: a page with
+     * entirely NEW rules would be reported as "0 new" and refunded.
+     *
+     * Non-negativity: pattern groups partition the page index set, so
+     * Σ_P min(A_P, B_P) <= Σ_P B_P = totals. "X new" can therefore never render negative.
+     *
+     * @param array<string,array{safe:int,aggressive:int}>|null $by_pattern Already-in-CU counts, or NULL ("cannot know").
+     * @param array<int,array{safe?:int,aggressive?:int}>       $by_page    Per-page tallies (either construction).
+     * @param array<int,mixed>                                  $pages_raw  Railway page rows (untrusted).
+     * @return array{totals:array{safe:int,aggressive:int}|null,per_page:array<int,int|null>,all_already:array<int,bool>,refund_pages:int}
+     */
+    public static function attribute_already_present( ?array $by_pattern, array $by_page, array $pages_raw ): array {
+        if ( null === $by_pattern ) {
+            // "Cannot know" — render no claim in either direction, and claim no refund.
+            return [
+                'totals'       => null,
+                'per_page'     => array_map( static fn() => null, $pages_raw ),
+                'all_already'  => array_map( static fn() => false, $pages_raw ),
+                'refund_pages' => 0,
+            ];
+        }
+
+        // Group page indices by pattern.
+        $groups = [];
+        foreach ( $pages_raw as $i => $page ) {
+            $url = is_array( $page ) ? (string) ( $page['url'] ?? '' ) : '';
+            $groups[ \CUScanner\Scanner\UrlPattern::from_url( $url ) ][] = $i;
+        }
+
+        $totals      = [ 'safe' => 0, 'aggressive' => 0 ];
+        $per_page    = array_map( static fn() => null, $pages_raw );
+        $all_already = array_map( static fn() => false, $pages_raw );
+        $refund      = 0;
+
+        foreach ( $groups as $pattern => $indices ) {
+            $b = [ 'safe' => 0, 'aggressive' => 0 ];
+            foreach ( $indices as $i ) {
+                $b['safe']       += (int) ( $by_page[ $i ]['safe']       ?? 0 );
+                $b['aggressive'] += (int) ( $by_page[ $i ]['aggressive'] ?? 0 );
+            }
+
+            $a = [
+                'safe'       => (int) ( $by_pattern[ $pattern ]['safe']       ?? 0 ),
+                'aggressive' => (int) ( $by_pattern[ $pattern ]['aggressive'] ?? 0 ),
+            ];
+
+            $already = [
+                'safe'       => min( $a['safe'],       $b['safe'] ),
+                'aggressive' => min( $a['aggressive'], $b['aggressive'] ),
+            ];
+            $totals['safe']       += $already['safe'];
+            $totals['aggressive'] += $already['aggressive'];
+
+            // Per-page detail is only honest for a single-page group.
+            if ( 1 === count( $indices ) ) {
+                $per_page[ $indices[0] ] = $already['safe'] + $already['aggressive'];
+            }
+
+            // Refund: the WHOLE group must be duplicate-only. Fail-closed.
+            $group_qualifies = ( $b['safe'] + $b['aggressive'] ) >= 1
+                && $already['safe']       === $b['safe']
+                && $already['aggressive'] === $b['aggressive'];
+            if ( ! $group_qualifies ) {
+                continue;
+            }
+
+            foreach ( $indices as $i ) {
+                $page  = is_array( $pages_raw[ $i ] ) ? $pages_raw[ $i ] : [];
+                $class = \AIAS_Scan_Status::classify( $page )['class'] ?? '';
+                // Delivered-class filter — NOT a tally check. recompute_by_page writes a
+                // tally for every pages_raw entry, so on the ratchet path an errored page
+                // HAS one. This set is the same one page_credit() uses.
+                if ( ! in_array( $class, [ 'ok', 'blocked', 'partial' ], true ) ) {
+                    continue;
+                }
+                $found = (int) ( $by_page[ $i ]['safe'] ?? 0 ) + (int) ( $by_page[ $i ]['aggressive'] ?? 0 );
+                if ( $found >= 1 ) {
+                    $refund++;
+                    // Display/money invariant (operator ruling 2026-08-05): a page renders as
+                    // zero-yield EXACTLY when it was credited back. Same predicate, same page
+                    // set, one loop — the screen and the refund cannot drift apart. Every rule
+                    // this page produced was already in Code Unloader, so it delivered nothing
+                    // new: S/A render 0 and the credit cell renders 0, matching the net charge.
+                    $all_already[ $i ] = true;
+                }
+            }
+        }
+
+        return [
+            'totals'       => $totals,
+            'per_page'     => $per_page,
+            'all_already'  => $all_already,
+            'refund_pages' => $refund,
+        ];
+    }
+
+    /**
+     * Divergence diagnostic: returns a payload when the by_page tally disagrees with the rule-list
+     * group counts, else null. A divergence is only reachable when the ET ratchet merge restored
+     * rules whose url_pattern is absent from the rescanned pages (recompute_by_page attributes them
+     * to no page). The payload's per-pattern breakdown vs the rescanned URLs lets us decide whether
+     * the restored rules are real OTHER pages (by-design) or stale variants of the rescanned URL
+     * (a ratchet bug). Pure + diagnostic-only; the caller logs it CU_SCANNER_DEBUG-gated.
+     * FU-AAS-RATCHET-ABSENT-PAGE-RESTORE (2026-06-13).
+     *
+     * @param array $by_page   Per-page S/A tally (the per-URL table source).
+     * @param array $rules      Final cu_json rule array (post-merge).
+     * @param array $pages_raw  Rescan pages (untrusted Railway input — url read defensively).
+     * @return array|null Diagnostic payload, or null when by_page and rule counts agree.
+     */
+    public static function count_divergence_diag( array $by_page, array $rules, array $pages_raw ): ?array {
+        $bp        = self::rule_counts_by_group( $by_page );
+        $rule_safe = 0;
+        $rule_agg  = 0;
+        $by_pat    = [];
+        foreach ( $rules as $r ) {
+            $pat = (string) ( $r['url_pattern'] ?? '' );
+            $g   = (int) ( $r['group_id'] ?? 0 );
+            if ( ! isset( $by_pat[ $pat ] ) ) {
+                $by_pat[ $pat ] = [ 'safe' => 0, 'aggressive' => 0 ];
+            }
+            if ( 1 === $g ) {
+                $rule_safe++;
+                $by_pat[ $pat ]['safe']++;
+            } elseif ( 2 === $g ) {
+                $rule_agg++;
+                $by_pat[ $pat ]['aggressive']++;
+            }
+        }
+        if ( $bp['safe'] === $rule_safe && $bp['aggressive'] === $rule_agg ) {
+            return null; // Invariant holds — no ratchet absent-page restore in play.
+        }
+        return [
+            'by_page'       => $bp,
+            'rule_total'    => [ 'safe' => $rule_safe, 'aggressive' => $rule_agg ],
+            'rule_patterns' => $by_pat,
+            'rescan_urls'   => array_values( array_unique( array_filter(
+                array_map( fn( $p ) => (string) ( $p['url'] ?? '' ), $pages_raw )
+            ) ) ),
+        ];
+    }
+
+    /**
+     * Core truncation: 80-char cap, ellipsis on overflow. Shared by submit + reserve formatters.
+     *
+     * @param string $message Raw exception message.
+     * @return string Truncated message, ellipsis appended if > 80 chars.
+     */
+    private static function truncate_error_detail( string $message ): string {
+        $detail = mb_substr( $message, 0, 80 );
+        if ( mb_strlen( $message ) > 80 ) {
+            $detail .= '…';
+        }
+        return $detail;
+    }
+
+    public function check_job(): void {
+        $this->check();
+        $state = get_transient( 'cu_scanner_job_' . get_current_user_id() );
+        if ( ! $state ) {
+            wp_send_json_error( 'No active job' ); return;
+        }
+        wp_send_json_success( [
+            'job_id'      => $state['job_id'],
+            'job_token'   => $state['job_token'],
+            'railway_url' => $state['railway_url'],
+        ] );
+    }
+
+    public function poll_status(): void {
+        $this->check();
+        $job_id    = sanitize_text_field( wp_unslash( $_POST['job_id'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
+        $job_token = sanitize_text_field( wp_unslash( $_POST['job_token'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
+        $from      = absint( $_POST['from'] ?? 0 ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
+        $settings  = $this->settings();
+        try {
+            $client = new RailwayClient( $settings->get_railway_url(), $settings->get_api_key() );
+            $status = $client->get_status( $job_id, $job_token, $from );
+            wp_send_json_success( $status );
+        } catch ( \RuntimeException $e ) {
+            error_log( '[AI Assets Scanner] poll_status: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional production logging: exception detail is withheld from the browser and written to server error log only.
+            wp_send_json_error( 'Could not retrieve scan status. Check server error logs.' );
+        }
+    }
+
+    public function cancel_job(): void {
+        $this->check();
+        $user_id = get_current_user_id();
+        $state   = get_transient( 'cu_scanner_job_' . $user_id );
+        if ( ! $state ) { wp_send_json_error( 'No active scan' ); return; }
+
+        $settings = $this->settings();
+        // Railway's cancel route now owns credit release — no need to call release_credits here.
+        // Capture the response so we can record the actual credits charged in our local
+        // scan history. Railway returns pages_completed = the count at cancel-click time,
+        // which equals the credits charged by the SaaS (user_cancel is a charging source).
+        $pages_completed = 0;
+        try {
+            $client = new RailwayClient( $state['railway_url'], $settings->get_api_key() );
+            $resp   = $client->cancel_job( $state['job_id'], $state['job_token'] );
+            $pages_completed = (int) ( $resp['pages_completed'] ?? 0 );
+        } catch ( \RuntimeException $e ) {
+            // FU-AAS-CANCEL-RELEASE-RESILIENCE: only a NON-retryable failure (4xx/410 — the
+            // job is already gone/invalid worker-side) is safe to swallow as a local cancel.
+            // A RETRYABLE failure (backend unreachable: timeout/5xx/network) means the cancel
+            // never reached the worker — the scan + its credit reservation are STILL ACTIVE.
+            // Marking it cancelled + deleting the local transient here would strand the
+            // reservation until admin-kill/expiry (the intermittent post-cancel 409). Keep
+            // local state intact and surface a retryable error so the user can retry.
+            if ( \CUScanner\Scanner\Outbox::is_retryable( $e ) ) {
+                error_log( '[AI Assets Scanner] cancel_job: backend unreachable, cancel not applied: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- intentional production logging; the browser receives a generic message, not $e->getMessage().
+                wp_send_json_error( [ 'message' => 'Could not reach the scanner backend to cancel. Your scan is still running — please try again in a moment.', 'retryable' => true ] );
+                return;
+            }
+            /* Non-retryable — job gone/invalid worker-side; fall through to a local cancel (pages_completed = 0 fallback). */
+        }
+
+        ( new BypassManager() )->delete_all_tokens();
+        // do_build_result (cu_scanner_build_result) is the single write-owner for the
+        // user_cancel ScanHistory record — the JS calls build_result after a successful
+        // cancel, so AAS must NOT write a competing 'cancelled' record here.
+        // Return pages_completed so the JS can pass it to build_result for the banner.
+        delete_transient( 'cu_scanner_job_' . $user_id );
+        wp_send_json_success( [ 'pages_completed' => $pages_completed ] );
+    }
+
+    public function build_result(): void {
+        $this->check();
+        $job_id    = sanitize_text_field( wp_unslash( $_POST['job_id'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
+        $job_token = sanitize_text_field( wp_unslash( $_POST['job_token'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
+
+        // R2 1.7.43b: on a PARTIAL (cancelled/failed) the JS passes the SaaS-charged page
+        // count (= the banner's data.completed, worker/SaaS-authoritative) so History's
+        // credits_used mirrors what was actually charged, rather than counting the build-time
+        // delivered pages (which a fast-cancel race can inflate). DISPLAY-MIRROR ONLY — the
+        // real charge is owned by the SaaS; this client value is clamped to [0,total] in
+        // do_build_result and cannot dictate billing. Absent (complete scans) => null.
+        $charged_count = null;
+        if ( isset( $_POST['charged_count'] ) && '' !== $_POST['charged_count'] ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check().
+            $charged_count = absint( wp_unslash( $_POST['charged_count'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check().
+        }
+
+        // FU-BILLING-BLOCKED-NOOPT (E3): terminal source plumbed from the JS terminalInfo.
+        // DISPLAY-ONLY trust class (like charged_count): it steers the Credits-column
+        // rendering, never billing — the SaaS charge is worker-owned. Untrusted client
+        // input → sanitize + STRICT whitelist against the known terminal statuses;
+        // missing/empty/unknown → null (normal noopt display-zeroing applies).
+        $terminal_source = null;
+        if ( isset( $_POST['terminal_source'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
+            $raw_source = sanitize_text_field( wp_unslash( $_POST['terminal_source'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check().
+            if ( in_array( $raw_source, array( 'user_cancel', 'failed', 'paused_exhausted', 'killed' ), true ) ) {
+                $terminal_source = $raw_source;
+            }
+        }
+
+        if ( ! $job_id || ! $job_token ) {
+            wp_send_json_error( 'Missing job_id or job_token' ); return;
+        }
+
+        try {
+            $result = $this->do_build_result( $job_id, $job_token, $charged_count, $terminal_source );
+        } catch ( \RuntimeException $e ) {
+            error_log( '[AI Assets Scanner] build_result: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional production logging: exception detail is withheld from the browser and written to server error log only.
+            wp_send_json_error( 'Could not retrieve scan data. Check server error logs.' ); return;
+        }
+        // 1.4.6 — AAS-page-side completion marks-as-seen immediately. This AJAX
+        // handler is called by scanner.js's polling loop on the AAS scanner page,
+        // so the operator is actively viewing the result. Marking seen here avoids
+        // the badge-flash-on-next-nav timing race where mark_seen_on_main_page
+        // (admin_head hook) ran BEFORE this AJAX completed — at admin_head time
+        // ScanHistory still had status='queued', so mark_seen early-returned
+        // without updating aias_last_seen_scan_id, leaving the badge to fire on
+        // the next non-AAS navigation. The server-side Heartbeat path
+        // (MenuBadge::check_active_job_completion) intentionally does NOT call
+        // update_option here because the operator IS away from AAS in that case
+        // and the badge SHOULD fire.
+        update_option( 'aias_last_seen_scan_id', $job_id );
+        wp_send_json_success( $result );
+    }
+
+    /**
+     * Build the scan result server-side from Railway coverage data.
+     *
+     * Refactored in 1.4.5 — extracted from the build_result() AJAX handler so
+     * that MenuBadge::check_active_job_completion() (server-side Heartbeat-driven
+     * background polling) can complete a scan without an active AAS-page JS
+     * client. Throws RuntimeException on Railway fetch errors or empty coverage;
+     * returns the same response payload the AJAX handler emits (used both as
+     * wp_send_json_success arg and consumed directly by the Heartbeat path).
+     *
+     * @param string|null $terminal_source Whitelist-validated terminal source (E3) or null;
+     *                                     threads to AIAS_Scan_Status::build_pages() for
+     *                                     cancel-aware Credits rendering. Display-only.
+     *
+     * @throws \RuntimeException Railway fetch error or empty coverage data.
+     */
+    public function do_build_result( string $job_id, string $job_token, ?int $charged_count = null, ?string $terminal_source = null ): array {
+        // Fetch full coverage dataset from Railway server-side.
+        $settings = $this->settings();
+        $client   = new RailwayClient( $settings->get_railway_url(), $settings->get_api_key() );
+        $status   = $client->get_status( $job_id, $job_token, 0 );
+
+        // R2 partial-scan fix: drop the unreached-slot placeholders get_status() returns
+        // for an incomplete scan (no 'url'/assets) — they throw "Undefined array key 'url'"
+        // in CuJsonBuilder::build and miscount credits. A partial builds from the pages
+        // that actually ran (the same shape a complete scan yields). See filter_real_pages().
+        $pages_raw = self::filter_real_pages( $status['pages'] ?? [] );
+        if ( empty( $pages_raw ) ) {
+            // No real (done/error) pages — e.g. cancelled before any page completed.
+            // build_result returns a clean error; the JS routes the operator back to Step 1.
+            throw new \RuntimeException( 'No coverage data in Railway response' );
+        }
+
+        // Per Rule 1, $status is the Railway HTTP response — untrusted. Guard
+        // with is_array; (bool)(... ?? false) casts inside build() handle the rest.
+        $flags   = isset( $status['flags'] ) && is_array( $status['flags'] ) ? $status['flags'] : [];
+        $cu_json = ( new CuJsonBuilder() )->build( $pages_raw, $flags );
+
+        $is_et   = $this->resolve_is_et_rescan( $pages_raw, $job_id );
+        $enabled = $this->ratchet_enabled();
+
+        // B2 — persist R_orig on non-ET scans so a subsequent ET rescan can ratchet against it.
+        if ( $enabled && ! $is_et ) {
+            $this->persist_r_orig( $cu_json, $pages_raw );
+            $this->log_ratchet_diag( 'persist', [
+                'rules' => count( $cu_json['rules'] ),
+                'urls'  => count( array_unique( array_column( $pages_raw, 'url' ) ) ),
+            ] );
+        }
+
+        // B3 — ET-ratchet merge: replace cu_json['rules'] + recompute by_page BEFORE store_json.
+        // Diagnostic trail (WP_DEBUG_LOG-gated) records the gate decision + merge outcome.
+        // $merger is kept in scope so recovered_by_pattern is available for the pages_payload below (B4).
+        $merger  = null;
+        if ( $enabled && $is_et ) {
+            $r_orig  = get_transient( 'cu_scanner_r_orig_' . get_current_user_id() );
+            $matches = $this->r_orig_matches( $r_orig, $pages_raw );
+            $this->log_ratchet_diag( 'gate', [
+                'ratchet_enabled' => $enabled,
+                'is_et_rescan'    => $is_et,
+                'r_orig'          => is_array( $r_orig ) && ! empty( $r_orig['rules'] )
+                                       ? count( $r_orig['rules'] ) : 'absent',
+                'r_orig_matches'  => $matches,
+            ] );
+            if ( $matches ) {
+                $orig_by_page       = $cu_json['by_page'];
+                $merger             = new \CUScanner\Scanner\RatchetMerger();
+                $cu_json['rules']   = $merger->merge( $r_orig['rules'], $pages_raw, $flags );
+                $cu_json['by_page'] = $this->recompute_by_page( $cu_json['rules'], $pages_raw, $orig_by_page );
+                $this->log_ratchet_diag( 'merged', $merger->last_merge_diag );
+            } else {
+                $this->log_ratchet_diag( 'skipped', [
+                    'reason' => $this->ratchet_skip_reason( $enabled, $is_et, $r_orig, $matches ),
+                ] );
+            }
+        } elseif ( $is_et ) { // $enabled === false
+            $this->log_ratchet_diag( 'skipped', [
+                'reason' => $this->ratchet_skip_reason( $enabled, $is_et, null, false ),
+            ] );
+        }
+
+        // FU-AAS-SYNC-SCOPE-LAST-SCAN (spec §3.1) — persist the scan's page set so Sync/Push and
+        // the Ready-to-apply card can scope to THIS scan's pages. Written after the ratchet block
+        // (rules final) and before json_encode/store_json. Additive key; older readers ignore it.
+        $cu_json['scanned_patterns'] = self::scanned_patterns( $pages_raw );
+
+        // ── Operator ruling 2026-08-05: result-truth is scoped to CU-rules-live scans ──────────
+        // The whole apparatus (dedupe → split summary → netting → credit-back) applies ONLY when
+        // the scan ran with Code Unloader's rules ACTIVE, i.e. the `?nowpcu` suffix was omitted.
+        //
+        // When the suffix IS applied — the DEFAULT — Code Unloader is switched off for the scan, so
+        // the scan is a FRESH measurement of the page's whole unloadable surface, not an incremental
+        // "what is new since CU started working". What CU happens to hold is then irrelevant to what
+        // THIS scan measured: every rule it produces is a real finding of this scan and is billed as
+        // one. Operator: "each new scan is treated as a new scan (current CU unloads should not be
+        // checked, and every A>0 scan should be billed), and appropriate messages outputted —
+        // exactly as it was before the setting change was implemented."
+        //
+        // Passing NULL reuses attribute_already_present()'s existing "cannot know" contract, which
+        // already produces precisely the wanted shape: totals NULL (the summary line makes no claim
+        // in either direction), all_already all false (no netting, gross credits), refund_pages 0
+        // (no claim is made). Pre-1.7.88b behaviour, reached without a second code path — and the
+        // one place that decides it is this line.
+        //
+        // ⚠️ Sync is NOT affected and must not be: RulePusher::sync()'s own find_duplicate still
+        // dedupes at push time, so syncing a rule CU already has still appends 0. That is correct
+        // and is a different question from what the SCAN reports.
+        //
+        // Side benefit: skips a full CU rules-table read on the default path
+        // (FU-AAS-DEDUPE-READS-ALL-CU-RULES, F-THRU-TIME).
+        $cu_rules_active = $this->settings()->get_omit_cu_bypass();
+
+        // Result-truth: ask "does CU already have this rule?" HERE, on the post-ratchet
+        // cu_json, instead of at Sync time. NULL means CU could not be consulted.
+        $already_by_pattern = $cu_rules_active
+            ? ( new RulePusher() )->already_present_by_pattern( $cu_json )
+            : null;
+        $attribution        = self::attribute_already_present(
+            $already_by_pattern,
+            $cu_json['by_page'] ?? [],
+            $pages_raw
+        );
+
+        $json_str = json_encode( $cu_json, JSON_PRETTY_PRINT );
+
+        // Safe/Aggressive history totals are sourced from by_page (the per-URL table tally), NOT
+        // count(cu_json['rules']) — on an ET ratchet merge the rule list can carry rules whose
+        // url_pattern is absent from the rescan's pages, over-reporting vs the table the operator
+        // sees. FU-AAS-HISTORY-RULE-COUNT (2026-06-13).
+        $rule_counts = self::rule_counts_by_group( $cu_json['by_page'] ?? [] );
+        $safe_count  = $rule_counts['safe'];
+        $agg_count   = $rule_counts['aggressive'];
+
+        // FU-AAS-RATCHET-ABSENT-PAGE-RESTORE diagnostic (CU_SCANNER_DEBUG-gated): when the by_page
+        // tally disagrees with the rule-list group counts, the ET ratchet restored rules for pages
+        // absent from this rescan. Log the per-pattern breakdown vs the rescanned URLs so we can tell
+        // real other-page rules (by-design) from stale same-page patterns (a ratchet bug).
+        $divergence = self::count_divergence_diag( $cu_json['by_page'] ?? [], $cu_json['rules'], $pages_raw );
+        if ( null !== $divergence ) {
+            $this->log_ratchet_diag( 'count_divergence', $divergence );
+        }
+
+        $completed   = (int) ( $status['completed'] ?? count( $pages_raw ) );
+        $total       = (int) ( $status['total'] ?? count( $pages_raw ) );
+        $is_partial  = ( $completed < $total );
+
+        // R2 1.7.43b: on a PARTIAL, credits_used mirrors the SaaS-charged count the JS passed
+        // (the banner's data.completed) clamped to [0,total] — so History == banner == SaaS
+        // charge. billable_credit_total counts the build-time delivered pages, which a
+        // fast-cancel race can inflate above the charge (in-flight pages finishing after the
+        // cancel snapshot). A COMPLETE scan (or no count passed) keeps billable_credit_total.
+        $credits_used = ( $is_partial && null !== $charged_count )
+            ? max( 0, min( $charged_count, $total ) )
+            : self::billable_credit_total( $pages_raw, $cu_json['by_page'] ?? [] );
+        $hist_status = $this->compute_hist_status( $completed, $total );
+
+        // A1: aggregate the rate-limited pages' attribution (presence-keyed; null when none / pre-worker-deploy).
+        $rate_limit_attribution = self::aggregate_rate_limit_attribution( $pages_raw );
+
+        $history     = new ScanHistory();
+        $hist_extra  = [
+            'credits_used'     => $credits_used,
+            'safe_count'       => $safe_count,
+            'aggressive_count' => $agg_count,
+        ];
+        if ( null !== $rate_limit_attribution ) {
+            $hist_extra['rate_limit_attribution'] = $rate_limit_attribution;
+        }
+        $history->store_json( $job_id, $json_str );
+        $history->update_status( $job_id, $hist_status, $hist_extra );
+
+        // Result-truth: claim the credit-back AFTER history is written. credits_used is
+        // computed locally and is NOT net of this — the two numbers are shown side by
+        // side ("N credits (M returned)") rather than silently netted.
+        $credits_refunded = null;
+        if ( $attribution['refund_pages'] > 0 ) {
+            $credits_refunded = self::claim_duplicate_refund(
+                new WpserviceClient( AIAS_WPSERVICE_URL, $this->settings()->get_api_key() ),
+                (string) $job_token,
+                (int) $attribution['refund_pages']
+            );
+            if ( null !== $credits_refunded ) {
+                // ⚠️ update_status ASSIGNS status — re-pass $hist_status or the row's
+                // status is silently rewritten (class-scan-history.php:36). AC-16.
+                $history->update_status( $job_id, $hist_status, [ 'credits_refunded' => (int) $credits_refunded ] );
+            }
+        }
+
+        // Signal scan completion so the Class C orchestrator can restore plugins (spec §3.5).
+        $scan_id_complete = substr( hash( 'sha256', (string) $job_id ), 0, 16 );
+        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- 'cu_scanner_*' is the long-standing internal prefix shared with the wpservice-saas backend and the Railway worker; renaming would break inter-component contracts.
+        do_action( 'cu_scanner_scan_complete', $scan_id_complete );
+
+        ( new BypassManager() )->delete_all_tokens();
+        delete_transient( 'cu_scanner_job_' . get_current_user_id() );
+
+        // Compute pages_blocked + blocked_reasons from Railway status for Subsystem D-4 banner.
+        // Railway per-page shape (Task 8 / Subsystem D-1):
+        //   { url, status, assets, broken_devices?: [{device, is_broken, reason, http_status, body_bytes}] }
+        // broken_devices is an ARRAY inside the page object — NOT top-level 'device'/'blocked_reason' fields.
+        // Each entry represents one device (desktop or mobile) that was blocked.
+        $pages_blocked  = [ 'desktop' => 0, 'mobile' => 0 ];
+        $blocked_reasons = [];
+        $seen_blocked   = [ 'desktop' => [], 'mobile' => [] ]; // track per-device to count each page once
+        foreach ( $pages_raw as $page ) {
+            $broken_devices = is_array( $page['broken_devices'] ?? null ) ? $page['broken_devices'] : [];
+            foreach ( $broken_devices as $bd ) {
+                $device = (string) ( $bd['device'] ?? '' );
+                $reason = (string) ( $bd['reason'] ?? '' );
+                if ( $reason === '' ) {
+                    continue;
+                }
+                // Count each device blocked once per page (broken_devices can have at most one desktop + one mobile entry).
+                $page_url = (string) ( $page['url'] ?? '' );
+                if ( $device === 'mobile' ) {
+                    if ( ! isset( $seen_blocked['mobile'][ $page_url ] ) ) {
+                        $pages_blocked['mobile']++;
+                        $seen_blocked['mobile'][ $page_url ] = true;
+                    }
+                } elseif ( $device === 'desktop' ) {
+                    if ( ! isset( $seen_blocked['desktop'][ $page_url ] ) ) {
+                        $pages_blocked['desktop']++;
+                        $seen_blocked['desktop'][ $page_url ] = true;
+                    }
+                }
+                $blocked_reasons[ $reason ] = ( $blocked_reasons[ $reason ] ?? 0 ) + 1;
+            }
+        }
+
+        // FU-NEW-X-A (2026-05-17 PM late): defensive fallback for the Subsystem D-4 banner.
+        // Some scan-error paths populate `status: 'error'` on a page but DON'T populate
+        // `broken_devices` (e.g., analyzePage's outer catch at page-analyzer.js:893
+        // returns `{url, status:'error', assets:[]}` without broken_devices; certain
+        // pre-runPass failure modes also bypass the broken_devices construction).
+        // Without this fallback the banner silently disappears for external scans that
+        // errored — operator reported regression 2026-05-17 PM. When the broken_devices
+        // walk above yielded zero pages_blocked BUT some pages have `status === 'error'`,
+        // count those errored pages as blocked-on-both-devices with reason `scan_errored`
+        // (a synthetic reason for this fallback path; mapped to the 'error' action_clause
+        // category in scanner.js phraseMap + reasonCategory()).
+        if ( $pages_blocked['desktop'] === 0 && $pages_blocked['mobile'] === 0 ) {
+            foreach ( $pages_raw as $page ) {
+                if ( ( $page['status'] ?? '' ) === 'error' ) {
+                    $pages_blocked['desktop']++;
+                    $pages_blocked['mobile']++;
+                    $blocked_reasons['scan_errored'] = ( $blocked_reasons['scan_errored'] ?? 0 ) + 1;
+                }
+            }
+        }
+
+        // 12-char scan_id for display: matches the SaaS/Railway canonical id (they
+        // truncate the 16-char submit-time scan_id to 12). Bug-fix (1.5.4).
+        $scan_id_display = substr( $scan_id_complete, 0, 12 );
+
+        // FU-ABSENT-SAFE B2 (review fix) — stamp each row's optimizer-bypass suffix for
+        // the Step-4 "optimizer detected" note by READING BACK the per-URL map persisted
+        // at submit time (perform_submit_side_effects), keyed by JOB_ID. This replaces
+        // the old live re-detect that (a) only ever matched SAME-HOST rows — so the note
+        // NEVER fired for EXTERNAL scans, which was its whole purpose — and (b) re-ran
+        // the detector against the operator's CURRENTLY-active plugins at result time,
+        // which can differ from what was actually applied at submit (staleness window).
+        //
+        // Key correctness (the load-bearing point): the map is keyed by the SAME final
+        // scan URL string submit built into pages[].url (resolved URL + forced scheme +
+        // appended bypass suffix). The Railway worker echoes pages[].url back VERBATIM —
+        // no strip, no normalization, suffixes never re-appended to the returned value
+        // (confirmed against page-analyzer.js analyzePage() return + job-store round-trip)
+        // — so $pages_raw[$i]['url'] here is byte-identical to the submit-time key. Both
+        // internal and external rows are stamped. Fail-closed: a URL absent from the map
+        // (external target with no probe suffix, expired transient, background rebuild)
+        // leaves bypass_suffixes unset → the note stays off, never a false positive.
+        $bypass_map = get_transient( 'cu_scanner_bypass_map_' . $job_id );
+        if ( is_array( $bypass_map ) && ! empty( $bypass_map ) ) {
+            $pages_raw = self::stamp_bypass_suffixes( $pages_raw, $bypass_map );
+        }
+
+        // Per-URL Step-4 results table. by_page is keyed by the same $pages_raw
+        // index, so build_pages() joins status/credits with S/A/N tallies cleanly.
+        // Leading backslash: AIAS_Scan_Status is in the global namespace; this file is in CUScanner\Admin.
+        $pages_payload = \AIAS_Scan_Status::build_pages( $pages_raw, $cu_json['by_page'] ?? [], $is_partial, $terminal_source );
+
+        // Stamp every row with et_requested (operator 2026-09-14): TRUE when this row's URL was
+        // sent to Railway WITH Extra Time in THIS scan, read back from the submit-time set
+        // perform_submit_side_effects() persisted under the job_id — the same verbatim
+        // pages[].url key argument as the bypass map above. The Step-4 row map drops the
+        // "Needs Extra Time" note on such a row. Index alignment: filter_real_pages()
+        // array_values() $pages_raw and build_pages() appends exactly one row per raw page in
+        // order, so $pages_payload[$idx] is $pages_raw[$idx] (ratchet_recovered below relies on
+        // the same). Absent / expired / non-array transient → every row false → note as before.
+        // Rows flow unchanged into BOTH writers below (aias_last_result + the live return).
+        $et_urls = get_transient( 'cu_scanner_et_urls_' . $job_id );
+        if ( ! is_array( $et_urls ) ) {
+            $et_urls = [];
+        }
+        foreach ( $pages_payload as $idx => &$row ) {
+            $row['et_requested'] = isset( $et_urls[ (string) ( $pages_raw[ $idx ]['url'] ?? '' ) ] );
+        }
+        unset( $row );
+
+        // Challenge-script keeplist (Train 2, A1) — fold the worker's per-page
+        // kept_protection[] into one { count, vendors } summary for the Step-4 note.
+        // Read off $pages_raw (the worker rows) rather than $pages_payload: build_pages()
+        // reshapes into the display contract and does not carry kept_protection through.
+        // Computed here, where $pages_raw is final (stamp_bypass_suffixes above was the
+        // last writer).
+        $kept_summary = self::aggregate_kept_protection( $pages_raw );
+
+        // ONE fragment, merged into BOTH payload writers below — the persisted
+        // aias_last_result option and the live return. Deliberately not two copies of a
+        // `count > 0` test: duplicating the condition is exactly how a field ends up on
+        // one writer only, which is the mistake the comment on the option writer records
+        // (FU-AAS-PERSISTED-PAYLOAD-DROPS-HAS_ACTIVE_CU_RULES). Empty array when nothing
+        // was kept, so the field is present on both or absent from both — never on one —
+        // and the client can gate the note on mere presence of the key.
+        $kept_field = $kept_summary['count'] > 0 ? [ 'kept_protection_summary' => $kept_summary ] : [];
+
+        // B4 — stamp each page row with ratchet_recovered (int ≥ 0).
+        // When the ratchet ran, $merger->recovered_by_pattern is keyed by url_pattern;
+        // derive the same pattern for each page and look up the count.
+        // When the ratchet did not run ($merger === null), all rows get 0.
+        if ( null !== $merger ) {
+            foreach ( $pages_payload as $idx => &$row ) {
+                // Repointed off RatchetMerger's __test_ seam onto the shared normalizer,
+                // alongside recompute_by_page's (FU-AAS-PRODUCTION-USES-TEST-SEAM).
+                $pat = \CUScanner\Scanner\UrlPattern::from_url( (string) ( $pages_raw[ $idx ]['url'] ?? '' ) );
+                $row['ratchet_recovered'] = (int) ( $merger->recovered_by_pattern[ $pat ] ?? 0 );
+            }
+            unset( $row );
+        }
+
+        // Result-truth per-URL flag. TRUE only when every rule this page produced was already
+        // in Code Unloader — i.e. exactly the pages that were credited back. The client renders
+        // those as zero-yield (S:0 / A:0 / 0 credits / noopt styling), because after dedupe they
+        // delivered nothing new.
+        //
+        // AC-3's display half is NARROWED by operator ruling 2026-08-05: the per-URL "Already in
+        // CU" COLUMN is removed (it rendered 0 on zero-finding pages while the summary line
+        // deliberately made no claim, and in ?nowpcu-off mode it read backwards). The server-side
+        // attribution it was built on is untouched — `totals` still drives the split summary line
+        // and `refund_pages` still drives the credit-back. Only the cell is gone, and the honest
+        // half of what it conveyed is now expressed by netting the row itself.
+        //
+        // `$attribution['per_page']` is deliberately no longer emitted: the column was its only
+        // consumer. It stays on the function's return as the per-page attribution detail (pinned
+        // by its own tests); see the follow-up on whether partial dedupe should net too.
+        foreach ( $pages_payload as $idx => &$row ) {
+            $row['all_already'] = ! empty( $attribution['all_already'][ $idx ] );
+        }
+        unset( $row );
+
+        $can_push          = ( new RulePusher() )->can_push();
+        // FU-AAS-SYNC-SCOPE-LAST-SCAN (spec §3.3 wire site 3) — ONE list feeds the button-state flag
+        // AND the Ready-to-apply card counts, so flag ≡ card ≡ the Sync/Push line by construction.
+        // host filter -> scope filter, the same composition sync_to_cu()/push_to_cu() apply.
+        $apply_rules        = $this->filter_scanned_rules( $this->filter_internal_rules( $cu_json ) )['rules'];
+        $apply_counts       = self::rule_counts_from_rules( $apply_rules );
+        $has_internal_rules = ! empty( $apply_rules );
+
+        // $cu_rules_active is read ABOVE, at the dedupe gate — it decides both whether the
+        // apparatus runs at all and, on the payload, which zero-finding copy the client shows.
+        // Threaded onto BOTH payload writers below, alongside already_present/credits_refunded,
+        // so the restore paths keep it (the mistake FU-AAS-PERSISTED-PAYLOAD-DROPS-
+        // HAS_ACTIVE_CU_RULES records is a field living on only one of them).
+
+        // Persist the full Step-4 restore payload (incl. the per-URL table + 12-char
+        // scan_id) so a BACKGROUND-completed scan can rebuild the complete result screen
+        // on operator return — get_badge_state() returns this verbatim. Field names match
+        // the JS restore contract (scanner.js init). autoload=false (per-scan blob). Bug-fix (1.5.4).
+        update_option( 'aias_last_result', array_merge( [
+            'job_id'        => $job_id,
+            'safe_count'    => $safe_count,
+            'agg_count'     => $agg_count,
+            'can_push'      => $can_push,
+            'has_internal_rules' => $has_internal_rules,
+            // FU-AAS-SYNC-SCOPE-LAST-SCAN — host-internal, scoped counts for the Ready-to-apply card.
+            // Same UNRENAMED names as the live payload and the JS writers (restore contract).
+            'apply_safe_count'       => $apply_counts['safe'],
+            'apply_aggressive_count' => $apply_counts['aggressive'],
+            'external_only' => false,
+            'total_pages'   => count( $pages_raw ),
+            'scan_id'       => $scan_id_display,
+            'pages'         => $pages_payload,
+            // Result-truth: SAME names as the live payload and both JS writers. NULL means
+            // "cannot know" (CU absent or too old), which the UI must render as no claim —
+            // different from 0 ("nothing is already present"). ⚠️ menu-badge.js writes this
+            // whole option verbatim into localStorage, so these names are also the restore
+            // contract read by scanner.js's localStorage branch.
+            'already_present'  => $attribution['totals'],
+            'credits_refunded' => $credits_refunded,
+            'cu_rules_active'  => $cu_rules_active,
+            // FU-BILLING-BLOCKED-NOOPT (E3): persisted for future consumers — the rows
+            // above already carry the cancel-aware credits baked in; RESTORE replays
+            // them verbatim (aias_last_result → get_badge_state → JS restore).
+            'terminal_source' => $terminal_source,
+        ], $kept_field ), false );
+
+        return array_merge( [
+            'safe_count'       => $safe_count,
+            'aggressive_count' => $agg_count,
+            // Result-truth: how many of the counts above CU already has. NULL means
+            // "cannot know" (CU absent or too old) — the UI must render NO claim on null,
+            // which is different from 0 ("nothing is already present").
+            'already_present'  => $attribution['totals'],
+            // Present only when the SaaS confirmed a credit-back. NULL => no claim landed.
+            'credits_refunded' => $credits_refunded,
+            // TRUE when this scan ran with Code Unloader's rules live (?nowpcu suffix omitted).
+            'cu_rules_active'  => $cu_rules_active,
+            'can_push'         => $can_push,
+            'has_internal_rules' => $has_internal_rules,
+            'apply_safe_count'       => $apply_counts['safe'],
+            'apply_aggressive_count' => $apply_counts['aggressive'],
+            'scan_id'          => $scan_id_display,
+            'pages_blocked'    => $pages_blocked,
+            'blocked_reasons'  => $blocked_reasons,
+            // T0-C (2026-08-02): already computed at :1186 for scan history. Carried to the
+            // banner so the post-scan copy can name WHO rate-limited the scan (Cloudflare vs
+            // the site's own host) instead of always blaming the origin. Null when nothing
+            // was rate-limited; the consumer allowlists it before use.
+            'rate_limit_attribution' => $rate_limit_attribution,
+            'total_pages'      => count( $pages_raw ),
+            'pages'            => $pages_payload,
+        ], $this->build_partial_response_fields( $completed, $total ), $kept_field );
+    }
+
+    /**
+     * FU-7 — handler for the SaaS-killed-by-admin terminal state arriving via
+     * Railway's /jobs/:id/status response (status='killed'). Mirror of
+     * cancel_job but without the Railway /cancel call (Railway already knows
+     * — that's how we got the 'killed' status in the first place).
+     *
+     * The plugin's local ScanHistory record was created at reserve time with
+     * status='in_progress'. Without this handler, scanner.js stops polling
+     * but the local record stays at in_progress forever, so the History tab
+     * shows the killed scan as still running. credits_used=0 (admin_kill is
+     * non-charging on the SaaS side; the wpservice worker finalized with
+     * source=admin_kill which charges 0).
+     */
+    public function handle_killed(): void {
+        $this->check();
+        $user_id = get_current_user_id();
+        $state   = get_transient( 'cu_scanner_job_' . $user_id );
+
+        // Even with no transient (e.g. session expired between Railway emitting
+        // 'killed' and this handler being invoked), still try to clean up any
+        // bypass tokens so the site doesn't sit in a half-bypassed state.
+        ( new BypassManager() )->delete_all_tokens();
+
+        if ( $state && ! empty( $state['job_id'] ) ) {
+            ( new ScanHistory() )->update_status( $state['job_id'], 'cancelled', [
+                'credits_used' => 0,  // admin_kill is non-charging
+            ] );
+            delete_transient( 'cu_scanner_job_' . $user_id );
+        }
+
+        wp_send_json_success();
+    }
+
+    public function handle_failure(): void {
+        $this->check();
+        $user_id  = get_current_user_id();
+        $state    = get_transient( 'cu_scanner_job_' . $user_id );
+
+        // submit_job never ran (e.g. PHP fatal) — release using the pending token from reserve_job.
+        if ( ! $state ) {
+            $pending = get_transient( 'cu_scanner_pending_token_' . $user_id );
+            if ( $pending ) {
+                try {
+                    $settings = $this->settings();
+                    ( new WpserviceClient( AIAS_WPSERVICE_URL, $settings->get_api_key() ) )
+                        ->release_credits( $pending );
+                } catch ( \RuntimeException ) {}
+                delete_transient( 'cu_scanner_pending_token_' . $user_id );
+            }
+            ( new BypassManager() )->delete_all_tokens();
+            wp_send_json_success();
+            return;
+        }
+
+        // FALLBACK: $state is present (submit_job ran) but the JS routed here instead of
+        // cu_scanner_build_result (e.g. an older JS bundle, or a race before Task 5 ships).
+        // R1 finalises the charge and owns the credit release for failed+$state jobs —
+        // AAS must NOT call release_credits here (race) and must NOT stamp a 'failed'
+        // ScanHistory record (do_build_result is the single write-owner for the partial
+        // record). Only clean up local state so the UI can recover.
+        ( new BypassManager() )->delete_all_tokens();
+        delete_transient( 'cu_scanner_job_' . $user_id );
+        wp_send_json_success();
+    }
+
+    public function download_json(): void {
+        check_ajax_referer( 'cu_scanner_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden' );
+        $raw    = sanitize_text_field( wp_unslash( $_GET['job_id'] ?? '' ) );
+        $job_id = (string) preg_replace( '/[^A-Za-z0-9._-]/', '', $raw );
+        if ( '' === $job_id ) { wp_die( 'Not found' ); }
+        $json   = ( new ScanHistory() )->get_json( $job_id );
+        if ( ! $json ) { wp_die( 'Not found' ); }
+        header( 'Content-Type: application/json' );
+        header( 'Content-Disposition: attachment; filename="cu-scanner-' . $job_id . '.json"' );
+        echo $json; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- JSON file download served with Content-Disposition: attachment; not rendered as HTML.
+        exit;
+    }
+
+    /**
+     * Keep only rules whose url_pattern host equals the site home host (www.-stripped).
+     * External rules are dropped. Shared by push_to_cu() and sync_to_cu().
+     */
+    private function filter_internal_rules( array $decoded ): array {
+        $site_host = strtolower( preg_replace( '/^www\./i', '', wp_parse_url( get_home_url(), PHP_URL_HOST ) ?? '' ) );
+        $decoded['rules'] = array_values( array_filter(
+            $decoded['rules'] ?? [],
+            function ( $rule ) use ( $site_host ) {
+                $rule_host = strtolower( preg_replace( '/^www\./i', '', wp_parse_url( $rule['url_pattern'] ?? '', PHP_URL_HOST ) ?? '' ) );
+                return $rule_host === $site_host;
+            }
+        ) );
+        return $decoded;
+    }
+
+    /**
+     * FU-AAS-SYNC-SCOPE-LAST-SCAN (spec §3.2) — keep only rules whose url_pattern is one of
+     * the scan's own pages (`scanned_patterns`, written by do_build_result). Composes after
+     * filter_internal_rules(); shared by sync_to_cu(), push_to_cu() and the build-time
+     * apply_* / has_internal_rules computation.
+     *
+     * Semantics, FIXED: key absent or not an array => unchanged (pre-1.8.3b stored JSON keeps
+     * today's unscoped behaviour); key is an array => filter, even down to zero rules. A present
+     * array with no strings yields an EMPTY set and therefore zero rules — deliberately
+     * fail-closed: falling back to unscoped on an empty set would re-create the bug this FU
+     * fixes whenever the key is corrupt. Zero rules is F-MISS-only because both handlers guard
+     * empty($decoded['rules']) BEFORE the pusher (an empty list into RulePusher::push would
+     * retire every scanner rule via snapshot -> bump -> empty groups -> commit).
+     * Rule 1: the stored option is our own DB and still untrusted — is_array/is_string guards.
+     * url_pattern is matched only when it IS a string (no (string) cast): an int or array
+     * value can never satisfy the guard, even if its cast form happens to collide with a
+     * member of the scanned_patterns set — no other type is accepted (spec §3.2 Rule 1).
+     */
+    private function filter_scanned_rules( array $decoded ): array {
+        if ( ! isset( $decoded['scanned_patterns'] ) || ! is_array( $decoded['scanned_patterns'] ) ) {
+            return $decoded;
+        }
+        $set = array_flip( array_values( array_filter( $decoded['scanned_patterns'], 'is_string' ) ) );
+        $decoded['rules'] = array_values( array_filter(
+            $decoded['rules'] ?? [],
+            static fn( $rule ) => is_array( $rule ) && is_string( $rule['url_pattern'] ?? null ) && isset( $set[ $rule['url_pattern'] ] )
+        ) );
+        return $decoded;
+    }
+
+    public function push_to_cu(): void {
+        $this->check();
+        $job_id = sanitize_text_field( wp_unslash( $_POST['job_id'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
+        $json   = ( new ScanHistory() )->get_json( $job_id );
+        if ( ! $json ) { wp_send_json_error( 'Scan data not found' ); return; }
+        $pusher = new RulePusher();
+        if ( ! $pusher->can_push() ) { wp_send_json_error( 'Code Unloader not active' ); return; }
+        // Skip the overwrite confirm when CU has no active rules to overwrite (server-authoritative).
+        $confirmed = ! empty( $_POST['confirmed'] ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
+        if ( ! $confirmed && $pusher->has_active_cu_rules() ) {
+            wp_send_json_success( [ 'needs_confirm' => true ] );
+            return;
+        }
+        try {
+            // FU-AAS-SYNC-SCOPE-LAST-SCAN (spec §3.3 wire site 2). The empty guard below is load-bearing:
+            // an empty list into RulePusher::push would snapshot -> bump (disable every scanner group) ->
+            // two empty fresh groups -> commit, retiring every scanner rule on the site (AC-4(c)).
+            $decoded = $this->filter_scanned_rules( $this->filter_internal_rules( json_decode( $json, true ) ) );
+            if ( empty( $decoded['rules'] ) ) { wp_send_json_error( 'No internal rules to push' ); return; }
+            $summary = $pusher->push( $decoded );
+            if ( empty( $summary['error_count'] ) ) {
+                ( new LastPushSyncUndo() )->store_from_summary( 'push', $job_id, $summary );
+            }
+            $summary['undo_state'] = ( new LastPushSyncUndo() )->state_for_ui();
+            wp_send_json_success( $summary );
+        } catch ( \Throwable $e ) {
+            error_log( '[AI Assets Scanner] push_to_cu: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional production logging: exception detail is withheld from the browser and written to server error log only.
+            wp_send_json_error( 'Push failed. Check server error logs.' );
+        }
+    }
+
+    public function sync_to_cu(): void {
+        $this->check();
+        $job_id = sanitize_text_field( wp_unslash( $_POST['job_id'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
+        $json   = ( new ScanHistory() )->get_json( $job_id );
+        if ( ! $json ) { wp_send_json_error( 'Scan data not found' ); return; }
+        $pusher = new RulePusher();
+        if ( ! $pusher->can_push() ) { wp_send_json_error( 'Code Unloader not active' ); return; }
+        try {
+            // FU-AAS-SYNC-SCOPE-LAST-SCAN (spec §3.3 wire site 1): host filter -> scope filter, then the
+            // pre-existing empty guard — which MUST stay ahead of the pusher (spec §3.2: fail-closed is
+            // F-MISS-only because nothing reaches RulePusher on an empty list).
+            $decoded = $this->filter_scanned_rules( $this->filter_internal_rules( json_decode( $json, true ) ) );
+            if ( empty( $decoded['rules'] ) ) { wp_send_json_error( 'No internal rules to sync' ); return; }
+            $summary = $pusher->sync( $decoded );
+            if ( empty( $summary['error_count'] ) ) {
+                ( new LastPushSyncUndo() )->store_from_summary( 'sync', $job_id, $summary );
+            }
+            $summary['undo_state'] = ( new LastPushSyncUndo() )->state_for_ui();
+            wp_send_json_success( $summary );
+        } catch ( \Throwable $e ) {
+            error_log( '[AI Assets Scanner] sync_to_cu: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional production logging: detail withheld from browser, written to server error log only.
+            wp_send_json_error( 'Sync failed. Check server error logs.' );
+        }
+    }
+
+    public function undo_last_push_sync(): void {
+        $this->check();
+        $pusher = new RulePusher();
+        if ( ! $pusher->can_push() ) {
+            wp_send_json_error( 'Code Unloader not active' );
+            return;
+        }
+
+        $undo   = new LastPushSyncUndo();
+        $result = $undo->undo( $pusher->repository_class() );
+        if ( \is_wp_error( $result ) ) {
+            wp_send_json_error( $result->get_error_message() );
+            return;
+        }
+
+        $result['undo_state'] = $undo->state_for_ui();
+        wp_send_json_success( $result );
+    }
+
+    public function delete_history(): void {
+        $this->check();
+        $history = new ScanHistory();
+        $count   = $history->delete_all();
+        set_transient( 'cu_scanner_history_deleted_notice', $count, 30 );
+        wp_send_json_success( [ 'deleted' => $count ] );
+    }
+
+    /**
+     * Defuses CSV formula injection. If the first byte is = + - @ TAB CR,
+     * prefix a single quote. Returns the value unchanged otherwise.
+     */
+    private function csv_cell( string $value ): string {
+        if ( $value === '' ) return '';
+        $first = $value[0];
+        if ( $first === '=' || $first === '+' || $first === '-' || $first === '@'
+            || $first === "\t" || $first === "\r" ) {
+            return "'" . $value;
+        }
+        return $value;
+    }
+
+    /**
+     * Writes BOM + header row + one data row per record to the given resource.
+     * Uses fputcsv for RFC 4180 quoting. Defuses every cell via csv_cell().
+     */
+    private function write_csv( $resource, array $records ): void {
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- $resource is a caller-supplied stream handle (php://memory or php://output), not a filesystem path; WP_Filesystem does not operate on stream wrappers.
+        fwrite( $resource, "\xEF\xBB\xBF" );
+        fputcsv( $resource, [ 'Date', 'Domain', 'Pages', 'Credits', 'Safe Rules', 'Aggressive Rules', 'Status', 'Job ID', 'Credits Returned' ] );
+        foreach ( $records as $r ) {
+            $row = [
+                (string) ( $r['created_at']       ?? '' ),
+                (string) ( $r['domain']           ?? '' ),
+                (string) ( $r['page_count']       ?? '' ),
+                (string) ( $r['credits_used']     ?? '' ),
+                (string) ( $r['safe_count']       ?? '' ),
+                (string) ( $r['aggressive_count'] ?? '' ),
+                (string) ( $r['status']           ?? '' ),
+                (string) ( $r['job_id']           ?? '' ),
+                // Appended LAST so no existing column position shifts. '' (not 0) on rows
+                // predating the field, matching how the other cells degrade.
+                (string) ( $r['credits_refunded'] ?? '' ),
+            ];
+            fputcsv( $resource, array_map( [ $this, 'csv_cell' ], $row ) );
+        }
+    }
+
+    protected function zip_available(): bool {
+        return class_exists( 'ZipArchive' );
+    }
+
+    protected function terminate(): void {
+        exit;
+    }
+
+    /**
+     * Emits Content-Type and Content-Disposition headers.
+     * Seam point for test override (to avoid header() errors after output has started).
+     */
+    protected function emit_csv_headers( string $filename ): void {
+        header( 'Content-Type: text/csv; charset=utf-8' );
+        header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+    }
+
+    private function stream_csv_response( array $records ): void {
+        $filename = 'ai-assets-scanner-history-' . gmdate( 'Y-m-d-His' ) . '.csv';
+        $this->emit_csv_headers( $filename );
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- php://output is the HTTP response body stream, not a filesystem file; WP_Filesystem cannot target it.
+        $fh = fopen( 'php://output', 'w' );
+        $this->write_csv( $fh, $records );
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- pairs with fopen on php://output above; stream wrapper, not a filesystem file.
+        fclose( $fh );
+        $this->terminate();
+    }
+
+    /**
+     * Builds the ZIP at $tmp_path. Returns true on success, false on any
+     * ZipArchive failure (at which point $tmp_path has been @unlink'd).
+     * Populates $missing_snapshots (by reference) with job_ids that had no
+     * stored snapshot.
+     */
+    private function build_zip( string $tmp_path, array $records, ScanHistory $history, array &$missing_snapshots ): bool {
+        $zip = new \ZipArchive();
+        $rc  = $zip->open( $tmp_path, \ZipArchive::CREATE | \ZipArchive::OVERWRITE );
+        if ( $rc !== true ) {
+            if ( aias_debug_enabled() ) {
+                error_log( '[AI Assets Scanner] ZipArchive::open failed: ' . $rc ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- debug logging only.
+            }
+            wp_delete_file( $tmp_path );
+            return false;
+        }
+
+        $zip->addFromString( 'history.json', (string) wp_json_encode( $records, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) );
+
+        // Generate CSV to a string via php://memory so we can addFromString.
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- php://memory is an in-memory stream used to buffer CSV for addFromString; WP_Filesystem does not operate on stream wrappers.
+        $mem = fopen( 'php://memory', 'w+' );
+        $this->write_csv( $mem, $records );
+        rewind( $mem );
+        $csv = stream_get_contents( $mem );
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- pairs with fopen on php://memory above.
+        fclose( $mem );
+        $zip->addFromString( 'history.csv', $csv );
+
+        $missing_snapshots = [];
+        foreach ( $records as $r ) {
+            $job_id = isset( $r['job_id'] ) ? (string) $r['job_id'] : '';
+            if ( $job_id === '' ) continue;
+            // Defensive: strip chars that could escape the archive path.
+            $safe = preg_replace( '/[^A-Za-z0-9._-]/', '', $job_id );
+            if ( $safe === '' ) continue;
+            $snapshot = $history->get_json( $safe );
+            if ( $snapshot === '' ) {
+                $missing_snapshots[] = $safe;
+                continue;
+            }
+            $zip->addFromString( 'scans/' . $safe . '.json', $snapshot );
+        }
+
+        $readme  = 'AI Assets Scanner v' . AIAS_VERSION . "\n";
+        $readme .= 'Export timestamp: ' . gmdate( 'c' ) . "\n";
+        $readme .= 'Records: ' . count( $records ) . "\n";
+        if ( ! empty( $missing_snapshots ) ) {
+            $readme .= 'Missing snapshots: ' . implode( ', ', $missing_snapshots ) . "\n";
+        }
+        $zip->addFromString( 'README.txt', $readme );
+
+        if ( $zip->close() !== true ) {
+            if ( aias_debug_enabled() ) {
+                error_log( '[AI Assets Scanner] ZipArchive::close failed' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- debug logging only.
+            }
+            wp_delete_file( $tmp_path );
+            return false;
+        }
+        return true;
+    }
+
+    protected function stream_zip( string $tmp_path ): void {
+        $filename = 'ai-assets-scanner-history-' . gmdate( 'Y-m-d-His' ) . '.zip';
+        header( 'Content-Type: application/zip' );
+        header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+        header( 'Content-Length: ' . filesize( $tmp_path ) );
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_readfile -- streams server-generated wp_tempnam ZIP directly to HTTP response body; WP has no equivalent for binary pass-through, and loading via file_get_contents would blow memory on large archives.
+        readfile( $tmp_path );
+        wp_delete_file( $tmp_path );
+        $this->terminate();
+    }
+
+    /**
+     * AJAX endpoint: probe external URLs for their actual optimizer stack.
+     * Spec §6.1 + §6.1.1. Runs server-side wp_remote_get from operator's WP install
+     * BEFORE cu_scanner_reserve_job — does NOT consume customer credit by construction.
+     *
+     * Request:  POST { action: cu_scanner_probe_target_stack, _wpnonce, urls: [string,...] }
+     * Response: { success: true, data: { per_host_results, suggested_bypass_per_url, warning_needed, summary } }
+     */
+    public function probe_target_stack(): void {
+        // AC-N2-Auth — nonce + capability. Uses '_wpnonce' (default WP form-nonce param)
+        // to match the spec'd request shape; existing handlers use 'nonce' instead.
+        if ( ! check_ajax_referer( 'cu_scanner_nonce', '_wpnonce', false ) ) {
+            wp_send_json( [ 'ok' => false, 'error' => 'nonce_invalid' ], 403 );
+            return;
+        }
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json( [ 'ok' => false, 'error' => 'permission_denied' ], 403 );
+            return;
+        }
+
+        $urls_raw = [];
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce checked above before processing probe input.
+        if ( isset( $_POST['urls'] ) ) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Nonce checked above; each URL is sanitized with esc_url_raw() before use.
+            $urls_raw = wp_unslash( $_POST['urls'] );
+        }
+        if ( ! is_array( $urls_raw ) ) {
+            wp_send_json( [ 'ok' => false, 'error' => 'urls_must_be_array' ], 400 );
+            return;
+        }
+        $urls = array_values( array_filter( array_map(
+            static fn( $u ) => esc_url_raw( (string) $u ),
+            $urls_raw
+        ) ) );
+
+        // Group URLs by external host (per spec §6.1 server-side flow).
+        $by_host = self::group_urls_by_host( $urls );
+
+        // Per-host probe. PluginDetector::probe_target_stack handles its own 24h cache + 2-attempt fallback.
+        // For each host, probe URL #1 with URL #2 as fallback (or root '/' if only one URL).
+        $per_host_results = [];
+        foreach ( $by_host as $host => $host_urls ) {
+            $url1 = $host_urls[0];
+            $url2 = $host_urls[1] ?? self::root_url_for( $host, $url1 );
+            $result = \CUScanner\Scanner\PluginDetector::probe_target_stack( $url1, $url2, 12 );
+            $result['host'] = $host;
+            $per_host_results[] = $result;
+        }
+
+        // Build per-URL bypass map (§4.2 rule — every URL of same host gets same suffix list).
+        $suggested_bypass_per_url = [];
+        foreach ( $by_host as $host => $host_urls ) {
+            $r = self::find_result_for_host( $per_host_results, $host );
+            $bypass = is_array( $r['bypass_suffixes'] ?? null ) ? $r['bypass_suffixes'] : [];
+            foreach ( $host_urls as $u ) {
+                $suggested_bypass_per_url[ $u ] = $bypass;
+            }
+        }
+
+        // AC-RC-8a — build per-URL resolved-URL map (mirrors $suggested_bypass_per_url).
+        // PluginDetector::probe_target_stack returns resolved_url/submitted_url for the
+        // exact URL it probed ($url1 per host). Resolution is URL-specific, so we honor
+        // the probe's resolved_url ONLY for the matching submitted URL; every other URL
+        // on that host (and any URL the probe didn't resolve) maps to itself (identity).
+        // Built BEFORE strip_to_whitelist() below, which would otherwise drop these
+        // non-whitelisted fields. JS threads this map back as submitted_urls[] on submit.
+        $resolved_per_url = [];
+        foreach ( $by_host as $host => $host_urls ) {
+            $r = self::find_result_for_host( $per_host_results, $host );
+            $probe_submitted = is_string( $r['submitted_url'] ?? null ) ? $r['submitted_url'] : '';
+            $probe_resolved  = is_string( $r['resolved_url']  ?? null ) ? $r['resolved_url']  : '';
+            foreach ( $host_urls as $u ) {
+                // Identity default; override only for the exact URL the probe resolved.
+                $resolved_per_url[ $u ] = ( $u === $probe_submitted && $probe_resolved !== '' )
+                    ? $probe_resolved
+                    : $u;
+
+                // Spec §6 / AC-10 — count the pairing at the moment it is created. One probe
+                // settled $probe_submitted; every other URL on this host inherits the host's
+                // suffix list without a resolution of its own, and appending a query suffix to
+                // an unresolved URL is exactly what a query-blind 301 at the origin answers
+                // with a hard 404. Reported from the map the response actually returns, so a
+                // listener sees the suffixes really suggested for THIS URL. Suggested, not
+                // applied: whether it is dispatched is a later, submit-side decision this
+                // request knows nothing about. One event per sibling is deliberate — the burst
+                // is the signal; throttling it here would hide the scans that hurt most.
+                $suffixes = $suggested_bypass_per_url[ $u ] ?? [];
+                if ( ! empty( $suffixes ) && $u !== $probe_submitted ) {
+                    // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- 'cu_scanner_*' is the long-standing internal prefix shared with the wpservice-saas backend and the Railway worker; renaming would break inter-component contracts.
+                    do_action( 'cu_scanner_suffix_suggested_unresolved', [
+                        'url'      => $u,
+                        'host'     => (string) $host,
+                        'suffixes' => $suffixes,
+                    ] );
+                }
+            }
+        }
+
+        // Determine warning_needed (any host non-clean outcome OR any detected security stack).
+        $warning_needed = self::compute_warning_needed( $per_host_results );
+
+        // Strip non-whitelist fields from each per_host_results entry per AC-N2-SSRF (iii).
+        $per_host_results = array_map( [ self::class, 'strip_to_whitelist' ], $per_host_results );
+
+        wp_send_json( [
+            'success' => true,
+            'data'    => [
+                'per_host_results'         => $per_host_results,
+                'suggested_bypass_per_url' => $suggested_bypass_per_url,
+                'resolved_per_url'         => $resolved_per_url,
+                'warning_needed'           => $warning_needed,
+                'summary'                  => [
+                    'uniform_outcome'   => self::is_uniform_outcome( $per_host_results ),
+                    'any_class_a_clean' => self::any_outcome_matches( $per_host_results, 'class_a_clean' ),
+                ],
+            ],
+        ] );
+    }
+
+    /** Group input URLs by host (parsed via wp_parse_url). Strips www. prefix for consistent grouping. */
+    private static function group_urls_by_host( array $urls ): array {
+        $out = [];
+        foreach ( $urls as $u ) {
+            $host = wp_parse_url( $u, PHP_URL_HOST );
+            if ( ! $host ) continue;
+            $host = strtolower( preg_replace( '/^www\./i', '', $host ) );
+            $out[ $host ][] = $u;
+        }
+        return $out;
+    }
+
+    /** Synthesize a root-URL fallback for hosts that only have 1 selected URL. */
+    private static function root_url_for( string $host, string $reference_url ): string {
+        $parts  = wp_parse_url( $reference_url );
+        $scheme = $parts['scheme'] ?? 'https';
+        return $scheme . '://' . $host . '/';
+    }
+
+    private static function find_result_for_host( array $results, string $host ): ?array {
+        foreach ( $results as $r ) {
+            if ( ( $r['host'] ?? null ) === $host ) return $r;
+        }
+        return null;
+    }
+
+    /**
+     * FU-ANTIBLOCK-2 — warning gate: any non-clean outcome (pre-existing rule)
+     * OR any detected security stack (spec §3.3). Tolerates cached pre-v5
+     * results that lack the security_stacks key.
+     */
+    public static function compute_warning_needed( array $per_host_results ): bool {
+        foreach ( $per_host_results as $r ) {
+            if ( ( $r['outcome'] ?? '' ) !== 'class_a_clean' ) {
+                return true;
+            }
+            if ( ! empty( $r['security_stacks'] ) ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * AC-N2-SSRF (iii) — response field whitelist.
+     * Drop any field not in the allowed list (defensive against probe_target_stack returning extras).
+     */
+    private static function strip_to_whitelist( array $r ): array {
+        static $allowed = [ 'host','outcome','detected','bypass_suffixes','is_wordpress',
+                            'probed_url_1','probed_url_2','probe_failed','probe_duration_ms',
+                            'cache_hit','reason','protocol_downgrade',
+                            'security_stacks' /* internal SECURITY_STACKS registry ids only (spec 3.3); never raw response content — safe through the AC-N2-SSRF allowlist */ ];
+        return array_intersect_key( $r, array_flip( $allowed ) );
+    }
+
+    private static function is_uniform_outcome( array $results ): bool {
+        if ( empty( $results ) ) return true;
+        $outcomes = array_unique( array_column( $results, 'outcome' ) );
+        return count( $outcomes ) === 1;
+    }
+
+    private static function any_outcome_matches( array $results, string $outcome ): bool {
+        foreach ( $results as $r ) {
+            if ( ( $r['outcome'] ?? '' ) === $outcome ) return true;
+        }
+        return false;
+    }
+
+    /**
+     * FU-NEW-2 Phase 5 — Build the pages[] array for submit_job per spec §4.2 rule.
+     *
+     * - Internal URLs (same host as $home_url) use $host_bypass (today's behavior).
+     * - External URLs use $target_bypass_per_url[url] ?? [] (empty default; NEVER host-leaked).
+     *   When fallback fires, do_action('cu_scanner_target_bypass_missing', [...]) telemetry hook.
+     *
+     * Note: bypass_token is attached downstream where the token is built — this helper
+     * focuses solely on the per-URL bypass_suffixes decision (the load-bearing §4.2 rule).
+     *
+     * @param string[]            $selected_urls         Raw selected URLs (already resolved — the URL we scan).
+     * @param string[]            $host_bypass           Host-detected bypass suffixes (today's array).
+     * @param array<string,array> $target_bypass_per_url Per-URL bypass map from probe response (keyed by URL).
+     * @param string              $home_url              Site's home URL (for internal/external classification).
+     * @param array<string,mixed> $et_set                FU-AAS-EXTRA-TIME — array_flip'd membership set of Extra-Time URLs.
+     * @param array<string,string> $submitted_url_per_url AC-RC-8a — resolved-URL → original-submitted-URL map.
+     *                                                     Mirrors $target_bypass_per_url: keyed by the (resolved)
+     *                                                     scan URL, defaults to the URL itself when absent.
+     * @return array<int,array{url:string,bypass_suffixes:array,extra_time:bool,submitted_url:string,is_external:int}>
+     */
+    private static function build_pages_array( array $selected_urls, array $host_bypass,
+                                                array $target_bypass_per_url, string $home_url,
+                                                array $et_set = [], array $submitted_url_per_url = [] ): array {
+        $home_host = strtolower( preg_replace( '/^www\./i', '',
+            wp_parse_url( $home_url, PHP_URL_HOST ) ?: '' ) );
+        $pages = [];
+        foreach ( $selected_urls as $url ) {
+            $host = strtolower( preg_replace( '/^www\./i', '',
+                wp_parse_url( $url, PHP_URL_HOST ) ?: '' ) );
+            $is_external = ( $host !== '' && $host !== $home_host );
+
+            if ( $is_external ) {
+                if ( isset( $target_bypass_per_url[ $url ] ) ) {
+                    $bypass_suffixes = $target_bypass_per_url[ $url ];
+                } else {
+                    // AC-N2-12 — external URL missing from map → empty fallback + telemetry.
+                    $bypass_suffixes = [];
+                    // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- 'cu_scanner_*' is the long-standing internal prefix shared with the wpservice-saas backend and the Railway worker; renaming would break inter-component contracts.
+                    do_action( 'cu_scanner_target_bypass_missing', [ 'url' => $url, 'host' => $host ] );
+                }
+            } else {
+                $bypass_suffixes = $host_bypass;
+            }
+
+            $et_submitted = $submitted_url_per_url[ $url ] ?? '';
+            $pages[] = [
+                'url'             => $url,
+                'bypass_suffixes' => $bypass_suffixes,
+                // FDEG Plan B Task 3 — worker-side island_expected denominator: 1 when
+                // this page is on someone else's host (we never ask for a dependency
+                // island there), 0 otherwise. Emitted as an int, never a bool, because
+                // the worker's telemetry coercion has no bool branch.
+                'is_external'     => $is_external ? 1 : 0,
+                // FU-AAS-EXTRA-TIME — flag this page for Extra Time if the operator
+                // marked its URL. Match the RESOLVED $url OR its original submitted URL,
+                // because the client may have keyed $et_set on the pre-resolution URL
+                // (1.7.27b backstop for the resolved-vs-unresolved ET mismatch).
+                'extra_time'      => isset( $et_set[ $url ] )
+                                     || ( '' !== $et_submitted && isset( $et_set[ $et_submitted ] ) ),
+                // AC-RC-8a — original operator-submitted URL (pre-redirect-resolution).
+                // $url here is the RESOLVED scan URL; submitted_url preserves what the
+                // operator actually entered so downstream attribution stays honest.
+                // Defaults to $url when the probe found no redirect (identity).
+                'submitted_url'   => $submitted_url_per_url[ $url ] ?? $url,
+                // bypass_token attached downstream where the token is built.
+            ];
+        }
+        return $pages;
+    }
+
+    /**
+     * Reshape page specs (from build_pages_array) into the final pages[] payload
+     * sent to RailwayClient::submit_job. This is the hardcoded-key seam: any key
+     * NOT named here is silently dropped, so FU-AAS-EXTRA-TIME's extra_time flag
+     * must be carried through explicitly.
+     *
+     * @param array<int,array{url:string,bypass_suffixes:array,extra_time?:bool,submitted_url?:string,is_external?:int}> $page_specs
+     * @param callable $build_scan_url fn( string $url, array $bypass_suffixes ): string
+     * @param string   $token          Bypass token attached to every page.
+     * @return array<int,array{url:string,bypass_token:string,bypass_suffixes:array,extra_time:bool,submitted_url:string,is_external:int}>
+     */
+    private static function reshape_page_specs( array $page_specs, callable $build_scan_url, string $token ): array {
+        return array_map(
+            static fn( array $spec ): array => [
+                'url'             => $build_scan_url( $spec['url'], $spec['bypass_suffixes'] ),
+                'bypass_token'    => $token,
+                'bypass_suffixes' => $spec['bypass_suffixes'],
+                'extra_time'      => $spec['extra_time'] ?? false,
+                // AC-RC-8a — original submitted URL. This is the hardcoded-key seam:
+                // any key not named here is silently dropped, so submitted_url must be
+                // carried through explicitly. Falls back to the (resolved) url.
+                'submitted_url'   => $spec['submitted_url'] ?? $spec['url'],
+                // FDEG Plan B Task 3 — same hardcoded-key-seam hazard: is_external must
+                // be carried through explicitly or the worker loses the island_expected
+                // denominator. Emitted as an int (0|1), defaulting to 0 (same-host) if
+                // absent from the spec.
+                'is_external'     => (int) ( $spec['is_external'] ?? 0 ),
+            ],
+            $page_specs
+        );
+    }
+
+    /**
+     * FU-ABSENT-SAFE B2 (review fix) — build the per-URL bypass-suffix map persisted at
+     * submit time (perform_submit_side_effects) and read back in do_build_result() for
+     * the Step-4 "optimizer detected" note. Keyed by the FINAL scan URL (pages[].url —
+     * the resolved URL with the bypass suffix already appended by build_scan_url), which
+     * the Railway worker echoes back VERBATIM, so the result-side lookup is an exact
+     * string match against $pages_raw[$i]['url']. Only pages carrying a non-empty suffix
+     * list are stored (fail-closed: a URL absent from the map yields no note).
+     *
+     * Pure function of the reshaped payload pages — no WP calls — so it is unit-testable
+     * in isolation. Suffix strings originate from PluginDetector::OPTIMIZERS (same-host
+     * rows) or the already-validated probe result (external rows), but are re-validated
+     * to string[] defensively here per WP Compliance Rules 1/2 (trust no stored input).
+     *
+     * @param array<int,mixed> $pages_sent Reshaped payload pages ($payload['pages']).
+     * @return array<string,string[]> url => bypass_suffixes (non-empty entries only).
+     */
+    public static function build_bypass_map( array $pages_sent ): array {
+        $map = [];
+        foreach ( $pages_sent as $page ) {
+            if ( ! is_array( $page ) ) {
+                continue;
+            }
+            $url = (string) ( $page['url'] ?? '' );
+            if ( '' === $url ) {
+                continue;
+            }
+            $suffixes = is_array( $page['bypass_suffixes'] ?? null )
+                ? array_values( array_filter( $page['bypass_suffixes'], 'is_string' ) )
+                : [];
+            if ( ! empty( $suffixes ) ) {
+                $map[ $url ] = $suffixes;
+            }
+        }
+        return $map;
+    }
+
+    /**
+     * The set of FINAL scan URLs (pages[].url) sent to Railway WITH Extra Time, persisted at
+     * submit time (perform_submit_side_effects) and read back in do_build_result() to stamp
+     * each result row's et_requested flag (operator 2026-09-14). Keyed exactly like
+     * build_bypass_map() — the worker echoes pages[].url back verbatim. Pure function — no WP
+     * calls. Only pages whose extra_time is truthy are stored (fail-closed: a URL absent from
+     * the set yields et_requested false, i.e. the note renders as before).
+     *
+     * @param array<int,mixed> $pages_sent Reshaped payload pages ($payload['pages']).
+     * @return array<string,bool> url => true for every page sent with Extra Time.
+     */
+    private static function build_et_url_set( array $pages_sent ): array {
+        $set = [];
+        foreach ( $pages_sent as $page ) {
+            if ( ! is_array( $page ) || empty( $page['extra_time'] ) ) {
+                continue;
+            }
+            $url = (string) ( $page['url'] ?? '' );
+            if ( '' !== $url ) {
+                $set[ $url ] = true;
+            }
+        }
+        return $set;
+    }
+
+    /**
+     * FU-ABSENT-SAFE B2 (review fix) — stamp each Railway result row's bypass_suffixes
+     * from the persisted per-URL map (build_bypass_map), matched on the exact pages[].url
+     * string the worker echoed back. BOTH same-host and external rows are covered — the
+     * external case is the whole point of the review fix (the old live re-detect could
+     * only ever stamp same-host rows). Fail-closed: a row whose URL is absent from the
+     * map (or whose mapped value is empty / non-array) is left untouched → no note.
+     *
+     * Pure function — no WP calls — so it is unit-testable in isolation. The output
+     * bypass_suffixes is a clean string[]; it is escaped downstream JS-side (cuEscHtml),
+     * so it is NOT escaped here (avoid double-escaping) — WP Compliance Rule 3.
+     *
+     * @param array<int,array<string,mixed>> $pages_raw  Railway per-page result rows.
+     * @param array<string,mixed>            $bypass_map url => bypass_suffixes map.
+     * @return array<int,array<string,mixed>> $pages_raw with bypass_suffixes stamped where matched.
+     */
+    public static function stamp_bypass_suffixes( array $pages_raw, array $bypass_map ): array {
+        foreach ( $pages_raw as $i => $page ) {
+            $url = (string) ( ( is_array( $page ) ? $page['url'] : null ) ?? '' );
+            if ( '' === $url || ! isset( $bypass_map[ $url ] ) || ! is_array( $bypass_map[ $url ] ) ) {
+                continue;
+            }
+            $suffixes = array_values( array_filter( $bypass_map[ $url ], 'is_string' ) );
+            if ( ! empty( $suffixes ) ) {
+                $pages_raw[ $i ]['bypass_suffixes'] = $suffixes;
+            }
+        }
+        return $pages_raw;
+    }
+
+    /**
+     * Challenge-script keeplist (Train 2, A1) — aggregate the worker's per-page
+     * kept_protection[] into the one summary the Step-4 note renders.
+     *
+     * COUNT SEMANTICS — DISTINCT HANDLES (operator-confirmed 2026-08-14 from a live
+     * mockup built on scan 305305e6b2c0). `count` is the number of distinct wire-handle
+     * strings across ALL pages, deduped on the FULL '<handle>|<type>' composite: the
+     * composite IS the identity here. One script kept on N pages is ONE script, not N.
+     * Do NOT explode( '|', … ) in this function — the split into handle vs rule-type is
+     * a separate concern that belongs to the rule-type normalization, not to counting.
+     *
+     * `vendors` is the distinct, non-empty display_name list, in first-seen order. A
+     * valid display_name still lists even when its entry contributed no handles, so the
+     * note can name a vendor it could not attribute a handle to.
+     *
+     * D5 guarding: kept_protection arrives from the Railway worker — a remote service,
+     * i.e. untrusted input under WP Compliance Rule 1 — so every level is is_array /
+     * is_string guarded and no shape of junk can fatal or inflate the count. Pure
+     * function, no WP calls, so it is unit-testable in isolation.
+     *
+     * Nothing is escaped here: this produces data, not output. The strings are escaped
+     * downstream at render time JS-side (cuEscHtml), so escaping here would
+     * double-escape — WP Compliance Rules 2 and 3.
+     *
+     * R20 — the same walk now also reads `kept_known_assets` (the worker's non-protection
+     * whitelist keeps: analytics, payments, forms, wp-core) and returns `rows`, the per-label
+     * breakdown the note prints: one {label, count, category} per distinct display_name.
+     *
+     * `count` and `vendors` keep their meanings EXACTLY; `count` simply now spans both fields,
+     * which is the entire point of R20 (a page reporting "1 protection script kept" while the
+     * scanner kept nine things).
+     *
+     * Each composite is claimed by the FIRST label that presents it, protection field first.
+     * That is what makes the per-label counts add up to the headline (AC-9) even if a composite
+     * ever reaches here under two labels — per-label numbers that do not sum to the headline
+     * printed beside them is the visible failure this ordering prevents.
+     *
+     * Zero-count labels are dropped (AC-12): a vendor that contributed no countable handle
+     * would otherwise render as "(0)". It stays in `vendors`, which is unchanged.
+     *
+     * Core entries are NOT grouped here. They carry member-only display_names ("wp.hooks") and
+     * category 'core'; the renderer builds "WordPress core (4): wp.hooks, …" from that. Grouping
+     * here would discard the member names the grouped row exists to expand.
+     *
+     * @param array<int,mixed> $pages_raw Railway per-page result rows.
+     * @return array{count:int,vendors:array<int,string>,rows:array<int,array{label:string,count:int,category:string}>}
+     */
+    public static function aggregate_kept_protection( array $pages_raw ): array {
+        $handles = [];  // Composite-string set, used purely as a dedupe index.
+        $vendors = [];
+        $labels  = [];  // display_name => [ 'count' => int, 'category' => string ]
+        foreach ( $pages_raw as $page ) {
+            if ( ! is_array( $page ) ) {
+                continue;
+            }
+            // Protection FIRST: in the degenerate case of one composite reaching us under two
+            // labels, the protection label claims it — that is the attribution a customer is
+            // least able to afford being wrong.
+            foreach ( [ 'kept_protection' => 'protection', 'kept_known_assets' => '' ] as $field => $forced_category ) {
+                $kp = $page[ $field ] ?? null;
+                if ( ! is_array( $kp ) ) {
+                    continue;
+                }
+                foreach ( $kp as $entry ) {
+                    if ( ! is_array( $entry ) ) {
+                        continue;
+                    }
+                    $new = 0;
+                    $hs  = $entry['handles'] ?? null;
+                    if ( is_array( $hs ) ) {
+                        foreach ( $hs as $h ) {
+                            // Dedupe on the FULL '<handle>|<type>' composite — it IS the identity.
+                            if ( ! is_string( $h ) || '' === $h || isset( $handles[ $h ] ) ) {
+                                continue;
+                            }
+                            $handles[ $h ] = true;
+                            ++$new;
+                        }
+                    }
+                    // A valid display_name still lists even when this entry contributed no
+                    // handles. A nameless entry still COUNTS but can produce no row: the only
+                    // per-member strings it offers are raw WP handles, and naming rule R3
+                    // forbids those in customer copy.
+                    $name = $entry['display_name'] ?? null;
+                    if ( ! is_string( $name ) || '' === $name ) {
+                        continue;
+                    }
+                    if ( ! in_array( $name, $vendors, true ) ) {
+                        $vendors[] = $name;
+                    }
+                    if ( ! isset( $labels[ $name ] ) ) {
+                        $category = $forced_category;
+                        if ( '' === $category ) {
+                            $c        = $entry['category'] ?? null;
+                            $category = ( is_string( $c ) && '' !== $c ) ? $c : 'other';
+                        }
+                        $labels[ $name ] = [ 'count' => 0, 'category' => $category ];
+                    }
+                    $labels[ $name ]['count'] += $new;
+                }
+            }
+        }
+
+        $rows = [];
+        foreach ( $labels as $label => $data ) {
+            if ( $data['count'] < 1 ) {
+                continue;  // AC-12 — a zero-count label must never render as "(0)".
+            }
+            $rows[] = [
+                'label'    => (string) $label,
+                'count'    => $data['count'],
+                'category' => $data['category'],
+            ];
+        }
+        // Deterministic render order, independent of payload order. Case-insensitive so
+        // "wp.hooks" sorts with words rather than after every capitalised vendor.
+        usort(
+            $rows,
+            static function ( array $a, array $b ): int {
+                return strcasecmp( $a['label'], $b['label'] );
+            }
+        );
+
+        return [ 'count' => count( $handles ), 'vendors' => $vendors, 'rows' => $rows ];
+    }
+
+    /**
+     * Sanitize the JS probe's URL => bypass suffixes map.
+     *
+     * @param mixed $post_value Raw unslashed target_bypass_per_url value.
+     * @return array<string,array<int,string>>
+     */
+    private static function sanitize_target_bypass_per_url( $post_value ): array {
+        if ( ! is_array( $post_value ) || empty( $post_value ) ) {
+            return [];
+        }
+
+        $target_bypass_per_url = [];
+        foreach ( $post_value as $url => $suffixes ) {
+            $clean_url = esc_url_raw( (string) $url );
+            if ( $clean_url === '' || ! is_array( $suffixes ) ) {
+                continue;
+            }
+
+            $clean_suffixes = [];
+            foreach ( $suffixes as $suffix ) {
+                $candidate = sanitize_text_field( (string) $suffix );
+                if ( preg_match( '/^[A-Za-z0-9_=.\-]+$/', $candidate ) ) {
+                    $clean_suffixes[] = $candidate;
+                }
+            }
+
+            $target_bypass_per_url[ $clean_url ] = $clean_suffixes;
+        }
+
+        return $target_bypass_per_url;
+    }
+
+    private static function sanitize_target_stack_summary( $post_value ): ?array {
+        return self::capture_target_stack_summary( $post_value );
+    }
+
+    /**
+     * FU-NEW-2 Phase 5 — Capture target_stack_summary from POST data (forwarded by JS after probe).
+     * Returns null if absent/empty (caller omits the field from SaaS payload).
+     * Filters non-conforming entries (missing host or outcome).
+     *
+     * @param mixed $post_value Raw $_POST['target_stack_summary'] value.
+     * @return array<int,array{host:string,detected:array,outcome:string,cache_hit:bool}>|null
+     */
+    private static function capture_target_stack_summary( $post_value ): ?array {
+        if ( ! is_array( $post_value ) || empty( $post_value ) ) return null;
+        $out = [];
+        foreach ( $post_value as $entry ) {
+            if ( ! is_array( $entry ) ) continue;
+            if ( empty( $entry['host'] ) || empty( $entry['outcome'] ) ) continue;
+            $out[] = [
+                'host'      => sanitize_text_field( (string) $entry['host'] ),
+                // FU-TSS-DETECTED — the probe sends each detected entry as an object
+                // {name,class,bypass_query,source}; extract the optimizer name (tolerating
+                // legacy string entries). Casting the object via (string) corrupted it to
+                // "Array" + emitted a PHP warning. Per WP-compliance #27, every leaf of this
+                // untrusted $_POST map is validated (drop nameless entries) + text-sanitized.
+                'detected'  => isset( $entry['detected'] ) && is_array( $entry['detected'] )
+                    ? array_values( array_filter( array_map(
+                        static function ( $d ) {
+                            $name = is_array( $d ) ? ( $d['name'] ?? '' ) : $d;
+                            return sanitize_text_field( (string) $name );
+                        },
+                        $entry['detected']
+                    ), static fn( $n ) => '' !== $n ) )
+                    : [],
+                'outcome'   => sanitize_text_field( (string) $entry['outcome'] ),
+                'cache_hit' => ! empty( $entry['cache_hit'] ),
+            ];
+        }
+        return empty( $out ) ? null : $out;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // ET Result Ratchet helpers (B2 + B3)
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * True iff any page in $pages_raw has `extra_time_charged` truthy.
+     * ET is per-page, not per-scan; treat the whole scan as an ET rescan
+     * if at least one page consumed an ET continuation.
+     *
+     * @param array $pages_raw Per-page Railway result rows.
+     * @return bool
+     */
+    private function is_et_rescan( array $pages_raw ): bool {
+        foreach ( $pages_raw as $page ) {
+            if ( ! empty( $page['extra_time_charged'] ) ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Composite key for the job-scoped ET-rescan marker transient. ONE helper shared
+     * by the writer (perform_submit_side_effects) and the reader (et_rescan_requested)
+     * so the two keys can never drift — the failure mode that motivated the bypass_map
+     * key discipline. $job_id is server-minted (reserve_job), never user input.
+     *
+     * @param string $job_id Reserved job id.
+     * @return string Transient key.
+     */
+    public static function et_rescan_marker_key( string $job_id ): string {
+        return 'cu_scanner_et_rescan_' . $job_id;
+    }
+
+    /**
+     * True iff the submit intent flagged >=1 URL for Extra Time — i.e. the operator
+     * launched this scan as an ET rescan. This is the billing-INDEPENDENT truth the
+     * ratchet gate needs; the worker's extra_time_charged stamp is a downstream billing
+     * outcome that a zero-yield continuation legitimately omits (worker 7a4a161, W1).
+     *
+     * @param array $intent Scan intent (build_submit_payload contract).
+     * @return bool
+     */
+    public static function intent_requests_extra_time( array $intent ): bool {
+        return ! empty( $intent['extra_time_urls'] );
+    }
+
+    /**
+     * True iff AAS persisted an ET-rescan marker for this job at submit time.
+     *
+     * @param string $job_id Reserved job id.
+     * @return bool
+     */
+    private function et_rescan_requested( string $job_id ): bool {
+        return (bool) get_transient( self::et_rescan_marker_key( $job_id ) );
+    }
+
+    /**
+     * Whole-scan ET-rescan decision for the ratchet gate: the submit-time marker
+     * (billing-independent — set on any ET rescan) OR the worker's per-page
+     * extra_time_charged stamp (retained for back-compat + defence in depth). Consumed
+     * by do_build_result() for BOTH the persist gate and the merge gate, so the two
+     * decisions can never disagree.
+     *
+     * @param array  $pages_raw Per-page Railway result rows.
+     * @param string $job_id    Reserved job id.
+     * @return bool
+     */
+    private function resolve_is_et_rescan( array $pages_raw, string $job_id ): bool {
+        return $this->is_et_rescan( $pages_raw ) || $this->et_rescan_requested( $job_id );
+    }
+
+    /**
+     * B2 — Persist R_orig (per-rule identity keys + scanned URL set) to a
+     * user-scoped transient so a subsequent ET rescan can merge against it.
+     * Called only on non-ET scans, after CuJsonBuilder::build() returns.
+     *
+     * @param array $cu_json   Built CU JSON (rules + by_page).
+     * @param array $pages_raw Per-page Railway result rows (for URL set).
+     */
+    private function persist_r_orig( array $cu_json, array $pages_raw ): void {
+        $keys = [];
+        foreach ( $cu_json['rules'] as $r ) {
+            $keys[] = [
+                'url_pattern'  => $r['url_pattern'],
+                'asset_handle' => $r['asset_handle'],
+                'asset_type'   => $r['asset_type'],
+                'device_type'  => $r['device_type'],
+                'group_id'     => $r['group_id'],
+            ];
+        }
+        $urls = array_values( array_unique( array_column( $pages_raw, 'url' ) ) );
+        set_transient(
+            'cu_scanner_r_orig_' . get_current_user_id(),
+            [ 'urls' => $urls, 'rules' => $keys ],
+            HOUR_IN_SECONDS
+        );
+    }
+
+    /**
+     * AC-ETR-9 — staleness guard: the transient is valid and covers the same
+     * URL set as the current ET rescan.
+     *
+     * @param mixed $r_orig     Value returned by get_transient().
+     * @param array $pages_raw  Per-page Railway result rows for this rescan.
+     * @return bool True iff $r_orig is usable for the merge.
+     */
+    private function r_orig_matches( $r_orig, array $pages_raw ): bool {
+        if ( ! is_array( $r_orig ) || empty( $r_orig['rules'] ) || ! isset( $r_orig['urls'] ) ) {
+            return false;
+        }
+        $orig_url_set = array_flip( $r_orig['urls'] );
+        foreach ( array_column( $pages_raw, 'url' ) as $url ) {
+            if ( ! isset( $orig_url_set[ $url ] ) ) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Recompute the by_page tally from merged rules so the Step-4 S/A/N
+     * counts reflect the post-merge rule set.
+     *
+     * Invariant: array_sum(column safe) === count(rules group_id 1),
+     *            array_sum(column aggressive) === count(rules group_id 2).
+     *
+     * Strategy: derive each page's url_pattern the same way CuJsonBuilder
+     * does (via the shared UrlPattern::from_url normalizer both delegate to),
+     * then group merged rules by url_pattern and count per page.
+     * `needed` is preserved from $orig_by_page — recomputing it would require
+     * re-walking the full asset list which is not available here, and the spec
+     * permits preserving the original needed count.
+     *
+     * @param array $rules        Merged CU rule array (recollapsed).
+     * @param array $pages_raw    Per-page Railway result rows (index-aligned with by_page).
+     * @param array $orig_by_page by_page from the pre-merge CuJsonBuilder::build() output.
+     * @return array New by_page array keyed by original page index.
+     */
+    private function recompute_by_page( array $rules, array $pages_raw, array $orig_by_page ): array {
+        // Build a count map: url_pattern → [safe => N, aggressive => M].
+        $rule_map = [];
+        foreach ( $rules as $r ) {
+            $pat = $r['url_pattern'];
+            if ( ! isset( $rule_map[ $pat ] ) ) {
+                $rule_map[ $pat ] = [ 'safe' => 0, 'aggressive' => 0, 'safe_h' => [], 'agg_h' => [] ];
+            }
+            // FU-SAN-HOVER-BREAKDOWN (1.8.2b) — collect the handle in the SAME branch that
+            // increments, exactly as CuJsonBuilder::build() does. This is the second producer of
+            // by_page: emitting the counts here but leaving the breakdown to the pre-merge builder
+            // would pair a MERGED number with an UNMERGED list, and the tooltip would quietly
+            // contradict the token it hangs off.
+            if ( 1 === $r['group_id'] ) {
+                $rule_map[ $pat ]['safe']++;
+                $rule_map[ $pat ]['safe_h'][] = $r['asset_handle'] ?? null;
+            } else {
+                $rule_map[ $pat ]['aggressive']++;
+                $rule_map[ $pat ]['agg_h'][] = $r['asset_handle'] ?? null;
+            }
+        }
+
+        // Walk pages_raw by index; derive pattern per page; look up counts.
+        $by_page = [];
+        foreach ( $pages_raw as $i => $page ) {
+            // Was a production call into RatchetMerger's __test_ seam; both that copy and
+            // CuJsonBuilder's now delegate here. Closes FU-AAS-PRODUCTION-USES-TEST-SEAM.
+            $pat    = \CUScanner\Scanner\UrlPattern::from_url( (string) ( $page['url'] ?? '' ) );
+            $safe   = $rule_map[ $pat ]['safe']       ?? 0;
+            $agg    = $rule_map[ $pat ]['aggressive'] ?? 0;
+            // Preserve original needed count — not affected by merge.
+            $needed = $orig_by_page[ $i ]['needed'] ?? 0;
+            $by_page[ $i ] = [
+                'safe'                 => $safe,
+                'aggressive'           => $agg,
+                'needed'               => $needed,
+                // One shared collapser with CuJsonBuilder::build() — not a second copy, so the
+                // two by_page producers cannot drift on dedup or sort order.
+                'safe_breakdown'       => CuJsonBuilder::handle_breakdown( $rule_map[ $pat ]['safe_h'] ?? [] ),
+                'aggressive_breakdown' => CuJsonBuilder::handle_breakdown( $rule_map[ $pat ]['agg_h'] ?? [] ),
+            ];
+        }
+        return $by_page;
+    }
+
+    /**
+     * Compute the scan-history status string from Railway's completed/total counters.
+     * 'partial' when completed < total (worker was stopped before finishing all pages);
+     * 'complete' otherwise (including the malformed-response case completed > total).
+     *
+     * Extracted so the production write-site and the unit tests share ONE implementation.
+     *
+     * @param int $completed Pages completed (from Railway status, server-authoritative).
+     * @param int $total     Pages total    (from Railway status, server-authoritative).
+     * @return string 'partial' | 'complete'
+     */
+    private function compute_hist_status( int $completed, int $total ): string {
+        return ( $completed < $total ) ? 'partial' : 'complete';
+    }
+
+    /**
+     * Build the partial-scan response fields that do_build_result() merges into its
+     * return array. Extracted so the production return and the unit tests share ONE
+     * implementation (no duplicate RulePusher instantiation in test-only seams).
+     *
+     * @param int $completed Pages completed (from Railway status, server-authoritative).
+     * @param int $total     Pages total    (from Railway status, server-authoritative).
+     * @return array{has_active_cu_rules:bool,is_partial:bool}
+     */
+    private function build_partial_response_fields( int $completed, int $total ): array {
+        return [
+            'has_active_cu_rules' => ( new RulePusher() )->has_active_cu_rules(),
+            'is_partial'          => ( $completed < $total ),
+        ];
+    }
+
+    // --- Test seams (public; call into private helpers for unit testing) ---
+    public function __test_ratchet_enabled(): bool { return $this->ratchet_enabled(); }
+    public function __test_is_et_rescan( array $pages_raw ): bool { return $this->is_et_rescan( $pages_raw ); }
+    public function __test_et_rescan_requested( string $job_id ): bool { return $this->et_rescan_requested( $job_id ); }
+    public function __test_resolve_is_et_rescan( array $pages_raw, string $job_id ): bool { return $this->resolve_is_et_rescan( $pages_raw, $job_id ); }
+    public function __test_persist_r_orig( array $cu_json, array $pages_raw ): void { $this->persist_r_orig( $cu_json, $pages_raw ); }
+    public function __test_should_persist_r_orig( array $pages_raw, string $job_id ): bool { return $this->ratchet_enabled() && ! $this->resolve_is_et_rescan( $pages_raw, $job_id ); }
+    public function __test_r_orig_matches( $r_orig, array $pages_raw ): bool { return $this->r_orig_matches( $r_orig, $pages_raw ); }
+    public function __test_recompute_by_page( array $rules, array $pages_raw, array $orig_by_page ): array { return $this->recompute_by_page( $rules, $pages_raw, $orig_by_page ); }
+    public function __test_ratchet_skip_reason( bool $enabled, bool $is_et, $r_orig, bool $matches ): ?string {
+        return $this->ratchet_skip_reason( $enabled, $is_et, $r_orig, $matches );
+    }
+    public function __test_ratchet_debug_enabled(): bool { return $this->ratchet_debug_enabled(); }
+
+    /** R2 test seam: delegates to the real compute_hist_status() production helper. */
+    public function __test_compute_hist_status( int $completed, int $total ): string {
+        return $this->compute_hist_status( $completed, $total );
+    }
+
+    /** R2 test seam: delegates to the real build_partial_response_fields() production helper. */
+    public function __test_result_flags( int $completed, int $total ): array {
+        return $this->build_partial_response_fields( $completed, $total );
+    }
+
+    /**
+     * B4 test seam: exposes the ratchet_recovered stamp loop so tests can exercise
+     * it in isolation without triggering do_build_result's Railway I/O.
+     *
+     * @param array                                       $pages_payload Pages payload rows (by reference internally; returns stamped copy).
+     * @param array                                       $pages_raw     Raw Railway pages (used for url→pattern derivation).
+     * @param \CUScanner\Scanner\RatchetMerger|null       $merger        Merger instance after merge(), or null if ratchet did not run.
+     * @return array Stamped pages_payload.
+     */
+    public function __test_inject_ratchet_recovered( array $pages_payload, array $pages_raw, ?\CUScanner\Scanner\RatchetMerger $merger ): array {
+        if ( null !== $merger ) {
+            foreach ( $pages_payload as $idx => &$row ) {
+                // Repointed off RatchetMerger's __test_ seam onto the shared normalizer,
+                // alongside recompute_by_page's (FU-AAS-PRODUCTION-USES-TEST-SEAM).
+                $pat = \CUScanner\Scanner\UrlPattern::from_url( (string) ( $pages_raw[ $idx ]['url'] ?? '' ) );
+                $row['ratchet_recovered'] = (int) ( $merger->recovered_by_pattern[ $pat ] ?? 0 );
+            }
+            unset( $row );
+        }
+        return $pages_payload;
+    }
+
+    // --- Test seams (public static; call into private static helpers for unit testing) ---
+    public static function __test_group_urls_by_host( array $urls ): array {
+        return self::group_urls_by_host( $urls );
+    }
+    public static function __test_strip_to_whitelist( array $r ): array {
+        return self::strip_to_whitelist( $r );
+    }
+    public static function __test_build_pages_array( array $selected_urls, array $host_bypass,
+                                                      array $target_bypass_per_url, string $home_url,
+                                                      array $et_set = [], array $submitted_url_per_url = [] ): array {
+        return self::build_pages_array( $selected_urls, $host_bypass, $target_bypass_per_url, $home_url, $et_set, $submitted_url_per_url );
+    }
+    public static function __test_reshape_page_specs( array $page_specs, callable $build_scan_url, string $token ): array {
+        return self::reshape_page_specs( $page_specs, $build_scan_url, $token );
+    }
+    public static function __test_capture_target_stack_summary( $post_value ): ?array {
+        return self::capture_target_stack_summary( $post_value );
+    }
+
+    /**
+     * 1.4.10 — browser-driven badge state poll.
+     *
+     * Backs the setInterval poller in admin/js/menu-badge.js. Each tick (~30s):
+     *   1. Calls MenuBadge::run_polling_check_and_get_state() — drives the
+     *      same Railway poll + transient + ScanHistory update logic as the
+     *      1.4.9 admin_init path.
+     *   2. Returns the resulting badge state ('green' | 'red' | null) so the
+     *      JS can sync the DOM badge node independently of operator navigation.
+     *
+     * Independent of WP Heartbeat (the 1.4.8-diag investigation proved
+     * heartbeat_received is bypassed on operator's WP install) and independent
+     * of admin_init (the 1.4.9 attempt that depends on operator navigation
+     * firing fresh admin requests — fails when operator sits idle on one page
+     * during the scan-end transition window).
+     */
+    public function get_badge_state(): void {
+        $this->check();
+        $state = ( new \CUScanner\MenuBadge() )->run_polling_check_and_get_state();
+
+        // 1.4.11 — also return a `result` snapshot when state is 'green' so the
+        // JS poller can populate cu_scanner_result in localStorage. Without
+        // this the badge appears but operator-returning-to-AAS sees the default
+        // Step 1 screen because no localStorage entry exists (scanner.js init
+        // at admin/js/scanner.js:1349 reads localStorage to restore Step 4,
+        // and the 1.4.10 server-side build_result path doesn't write it).
+        // 1.5.4 — return the full restore payload persisted by do_build_result()
+        // (incl. the per-URL `pages` table + 12-char scan_id) so operator-returning-to-AAS
+        // rebuilds the COMPLETE Step-4 screen, not just summary counts. The JS poller
+        // writes res.data.result verbatim to localStorage (menu-badge.js).
+        $result = null;
+        if ( $state === 'green' ) {
+            $stored = get_option( 'aias_last_result', null );
+            if ( is_array( $stored ) && ! empty( $stored['job_id'] ) ) {
+                $result = $stored;
+            }
+        }
+
+        wp_send_json_success( [ 'badge' => $state, 'result' => $result ] );
+    }
+
+    public function export_history(): void {
+        check_ajax_referer( 'cu_scanner_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_die( 'Forbidden', '', [ 'response' => 403 ] );
+        }
+        $records = ( new ScanHistory() )->get_all();
+        if ( empty( $records ) ) {
+            wp_die( 'No history to export', '', [ 'response' => 200 ] );
+        }
+        if ( ! $this->zip_available() ) {
+            $this->stream_csv_response( $records );
+            return; // unreachable in prod; reachable under test seam
+        }
+        // ZIP primary path.
+        $tmp = wp_tempnam( 'cu-scanner-history' );
+        $missing = [];
+        $history = new ScanHistory();
+        if ( $this->build_zip( $tmp, $records, $history, $missing ) ) {
+            $this->stream_zip( $tmp );
+            return;
+        }
+        // Fall through to CSV-only if ZIP build failed.
+        $this->stream_csv_response( $records );
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase O outbox AJAX handlers (Task 8).
+    // -------------------------------------------------------------------------
+
+    /**
+     * Build the scan $intent array from $_POST, mirroring submit_job()'s
+     * $_POST reads and sanitizers exactly (parity contract shared with Outbox::dispatch).
+     *
+     * Keys produced:
+     *   urls, submitted_urls, extra_time_urls — sanitized URL arrays
+     *   extra_time_count, page_count          — absint scalars (needed by dispatch reserve call)
+     *   target_bypass_per_url                 — nested allowlist-walked map
+     *   target_stack_summary                  — via capture_target_stack_summary()
+     *   class_c_consent_given                 — sanitize_text_field
+     *   user_id                               — get_current_user_id()
+     *
+     * All phpcs:ignore comments are consistent with submit_job()'s equivalent reads.
+     *
+     * @return array Scan intent ready for Outbox::enqueue().
+     */
+    private function intent_from_post(): array {
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Nonce verified in $this->check(); URLs sanitized via array_map sanitize_url.
+        $urls_raw = array_map( 'sanitize_url', wp_unslash( (array) ( $_POST['urls'] ?? [] ) ) );
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Nonce verified in $this->check(); URLs sanitized via array_map sanitize_url.
+        $et_urls_raw = array_map( 'sanitize_url', wp_unslash( (array) ( $_POST['extra_time_urls'] ?? [] ) ) );
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Nonce verified in $this->check(); URLs sanitized via array_map esc_url_raw.
+        $submitted_urls_raw = array_map( 'esc_url_raw', wp_unslash( (array) ( $_POST['submitted_urls'] ?? [] ) ) );
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
+        $extra_time_count = absint( $_POST['extra_time_count'] ?? 0 );
+
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
+        $page_count = absint( $_POST['page_count'] ?? 0 );
+
+        // wp-compliance Rule 25 / proposed-Rule-27 — nested $_POST map: URL key → suffix-array.
+        // Walk and validate each level; drop anything outside the allowlist character class.
+        $target_bypass_per_url_raw = [];
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() before any intent payload is built.
+        if ( isset( $_POST['target_bypass_per_url'] ) ) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Nonce verified in $this->check(); sanitize_target_bypass_per_url() validates every nested URL key and suffix value.
+            $target_bypass_per_url_raw = wp_unslash( $_POST['target_bypass_per_url'] );
+        }
+        $target_bypass_per_url = self::sanitize_target_bypass_per_url( $target_bypass_per_url_raw );
+
+        $target_stack_summary = null;
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() before any intent payload is built.
+	if ( isset( $_POST['target_stack_summary'] ) ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Nonce verified in $this->check(); structured POST array is unslashed, sanitized per leaf below, then schema-filtered by sanitize_target_stack_summary().
+		$target_stack_summary_raw = wp_unslash( $_POST['target_stack_summary'] );
+		$target_stack_summary     = self::sanitize_target_stack_summary( map_deep( $target_stack_summary_raw, 'sanitize_text_field' ) );
+	}
+
+        $class_c_consent_given = '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() before any intent payload is built.
+        if ( isset( $_POST['class_c_consent_given'] ) ) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified via $this->check() / check_ajax_referer().
+            $class_c_consent_given = sanitize_text_field( wp_unslash( $_POST['class_c_consent_given'] ) );
+        }
+
+        return [
+            'urls'                  => $urls_raw,
+            'submitted_urls'        => $submitted_urls_raw,
+            'extra_time_urls'       => $et_urls_raw,
+            'extra_time_count'      => $extra_time_count,
+            'page_count'            => $page_count,
+            'target_bypass_per_url' => $target_bypass_per_url,
+            'target_stack_summary'  => $target_stack_summary,
+            'class_c_consent_given' => $class_c_consent_given,
+            'user_id'               => get_current_user_id(),
+        ];
+    }
+
+    /**
+     * AJAX handler: enqueue a scan intent into the outbox (Phase O).
+     *
+     * Called by the JS outbox path when a submit fails with a retryable error.
+     * The intent is built from $_POST using the same sanitizers as submit_job().
+     * wp-compliance: check() first (nonce + capability); no raw SQL/output.
+     */
+    public function outbox_enqueue(): void {
+        $this->check();
+        $intent = $this->intent_from_post();
+        $ok = \CUScanner\Scanner\Outbox::enqueue( $intent );
+        if ( ! $ok ) {
+            wp_send_json_error( [ 'message' => 'A scan request is already queued locally for this site.' ] );
+            return;
+        }
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- diagnostic; no secrets
+        error_log( '[AI Assets Scanner] outbox: enqueued scan for user ' . get_current_user_id() );
+        wp_send_json_success( [ 'queued' => true ] );
+    }
+
+    /**
+     * AJAX handler: tick the outbox (Phase O done-handoff).
+     *
+     * Attempts a dispatch (internally guarded — early-returns 'pending' when not yet due),
+     * then returns the current state contract so the open tab can react:
+     * queued | failed | dispatched | none.
+     * wp-compliance: check() first (nonce + capability); no raw SQL/output.
+     */
+    public function outbox_tick(): void {
+        $this->check();
+        \CUScanner\Scanner\Outbox::dispatch(); // runs only if due (internally guarded)
+        wp_send_json_success( \CUScanner\Scanner\Outbox::outbox_state_for_user( (int) get_current_user_id() ) );
+    }
+}
