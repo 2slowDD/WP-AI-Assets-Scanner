@@ -15,7 +15,7 @@ jobs:
       matrix:
         php: ['8.0', '8.3']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
@@ -26,8 +26,8 @@ jobs:
   js-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: npm test
@@ -38,7 +38,7 @@ jobs:
       # Pinned Plugin Check revision whose PHPCS rulesets and sniffs the check mirrors.
       PLUGIN_CHECK_REF: 2f273b7c5f7f56ddba5c226d72eb6d0036e37502
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
@@ -52,7 +52,8 @@ jobs:
       - name: Install PHPCS standards
         run: |
           composer global config --no-plugins allow-plugins.dealerdirect/phpcodesniffer-composer-installer true
-          composer global require --no-interaction --no-progress wp-coding-standards/wpcs:^3 phpcompatibility/phpcompatibility-wp:*
+          # PHPCompatibility 10 knows PHP 8.1+ syntax (readonly, true types, enums); 9.3.5 does not.
+          composer global require --no-interaction --no-progress -W wp-coding-standards/wpcs:^3 phpcompatibility/phpcompatibility-wp:* "phpcompatibility/php-compatibility:10.0.0-alpha2 as 9.3.5"
           P="$(composer global config home)/vendor"
           "$P/bin/phpcs" --config-set installed_paths "$P/wp-coding-standards/wpcs,$P/phpcsstandards/phpcsutils,$P/phpcsstandards/phpcsextra,$P/phpcompatibility/php-compatibility,$P/phpcompatibility/phpcompatibility-wp,$P/phpcompatibility/phpcompatibility-paragonie,$PWD/tools/plugin-check/phpcs-sniffs"
           echo "$P/bin" >> "$GITHUB_PATH"
@@ -60,3 +61,5 @@ jobs:
         run: bin/build-zip.sh
       - name: Plugin Check (static sniffs) on the release contents
         run: phpcs --standard=tools/plugin-check.xml --runtime-set testVersion 8.0- --exclude=PHPCompatibility.FunctionNameRestrictions.ReservedFunctionNames dist/ai-assets-scanner
+      - name: PHP 8.0 compatibility of every shipped file (Requires PHP 8.0)
+        run: phpcs --standard=PHPCompatibilityWP --runtime-set testVersion 8.0- --exclude=PHPCompatibility.FunctionNameRestrictions.ReservedFunctionNames --extensions=php -n dist/ai-assets-scanner
