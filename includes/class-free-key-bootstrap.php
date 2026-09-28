@@ -10,6 +10,9 @@ class FreeKeyBootstrap {
     /** @var callable|null */
     private $client_factory;
 
+    /** Why the last run() ended 'pending', for the Settings screen to show. */
+    private ?\RuntimeException $last_error = null;
+
     public function __construct(
         private ?Settings $settings = null,
         ?callable $client_factory = null
@@ -27,6 +30,7 @@ class FreeKeyBootstrap {
      *                converted or revoked free key; see Settings::get_free_key_unusable()).
      */
     public function run(): string {
+        $this->last_error = null;
         $current = $this->settings->get_api_key();
         if ( '' !== $current && ! $this->settings->is_free_key( $current ) && ! $this->settings->is_pending_free_key( $current ) ) {
             return 'kept';
@@ -69,14 +73,24 @@ class FreeKeyBootstrap {
                 }
                 return 'stored';
             }
+            $this->last_error = new \RuntimeException( 'The service replied without a free API key.' );
             return 'pending';
         } catch ( \RuntimeException $e ) {
+            $this->last_error = $e;
             if ( '' === $current ) {
                 $this->settings->set_pending_free_key();
             }
             self::schedule_retry();
             return 'pending';
         }
+    }
+
+    /**
+     * The failure behind the last 'pending' outcome, or null. An Api\HttpException
+     * carries the HTTP status (0 = the service could not be reached).
+     */
+    public function last_error(): ?\RuntimeException {
+        return $this->last_error;
     }
 
     public static function schedule_retry(): void {

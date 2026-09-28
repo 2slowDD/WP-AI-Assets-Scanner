@@ -71,4 +71,31 @@ final class FreeKeyOptInTest extends TestCase {
             $this->assertSame( 'error', $sent->kind );
         }
     }
+
+    public function test_failure_message_names_the_real_cause(): void {
+        WP_Mock::userFunction( 'sanitize_text_field' )->andReturnUsing( fn( $s ) => $s );
+        $http = fn( string $m, int $c ) => new \CUScanner\Api\HttpException( $m, $c );
+
+        $this->assertStringContainsString(
+            'too many free-key requests',
+            SettingsAjax::free_key_failure_message( $http( 'HTTP 429: Too many free key registration attempts. Try again later.', 429 ) )
+        );
+        $this->assertStringContainsString(
+            'could not issue a free key: HTTP 500: Could not allocate a free API key. The plugin',
+            SettingsAjax::free_key_failure_message( $http( 'HTTP 500: Could not allocate a free API key.', 500 ) )
+        );
+        $this->assertStringContainsString(
+            'Could not reach wpservice.pro (cURL error 28: timed out)',
+            SettingsAjax::free_key_failure_message( $http( 'cURL error 28: timed out', 0 ) )
+        );
+        $this->assertStringContainsString(
+            'did not answer',
+            SettingsAjax::free_key_failure_message( null )
+        );
+        $this->assertLessThan(
+            400,
+            strlen( SettingsAjax::free_key_failure_message( $http( 'HTTP 500: ' . str_repeat( 'x', 5000 ), 500 ) ) ),
+            'a huge error body must not be echoed whole'
+        );
+    }
 }

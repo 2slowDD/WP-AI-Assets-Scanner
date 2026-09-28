@@ -30,7 +30,8 @@ class SettingsAjax {
             wp_send_json_error( __( 'An API key is already saved.', 'dr-speed-ai-assets-scanner' ) );
         }
 
-        $outcome = ( new \CUScanner\FreeKeyBootstrap( $settings ) )->run();
+        $bootstrap = new \CUScanner\FreeKeyBootstrap( $settings );
+        $outcome   = $bootstrap->run();
 
         if ( \CUScanner\FreeKeyBootstrap::OUTCOME_UNUSABLE === $outcome ) {
             wp_send_json_error( self::unusable_free_key_message( $settings->get_free_key_unusable() ) );
@@ -38,7 +39,36 @@ class SettingsAjax {
         if ( $settings->is_free_key( $settings->get_api_key() ) ) {
             wp_send_json_success();
         }
-        wp_send_json_error( __( 'The free-credit service did not answer. The plugin will retry in about an hour.', 'dr-speed-ai-assets-scanner' ) );
+        wp_send_json_error( self::free_key_failure_message( $bootstrap->last_error() ) );
+    }
+
+    /**
+     * Says why "Get free credits" failed, using the service's own reply, instead of
+     * one message for every failure. The reply is plain text shown with textContent.
+     */
+    public static function free_key_failure_message( ?\RuntimeException $error ): string {
+        $status = $error instanceof \CUScanner\Api\HttpException ? $error->get_status_code() : -1;
+        $detail = null === $error ? '' : $error->getMessage();
+        if ( function_exists( 'sanitize_text_field' ) ) {
+            $detail = sanitize_text_field( $detail );
+        }
+        if ( strlen( $detail ) > 200 ) {
+            $detail = substr( $detail, 0, 200 );
+        }
+        $detail = rtrim( trim( $detail ), '.' );
+
+        if ( 429 === $status ) {
+            return __( 'wpservice.pro refused the request: too many free-key requests for this site in the last hour. Wait an hour, then click Get free credits again.', 'dr-speed-ai-assets-scanner' );
+        }
+        if ( '' === $detail ) {
+            return __( 'The free-credit service did not answer. The plugin will retry in about an hour.', 'dr-speed-ai-assets-scanner' );
+        }
+        if ( 0 === $status ) {
+            /* translators: %s: the connection error, for example a timeout or DNS failure. */
+            return sprintf( __( 'Could not reach wpservice.pro (%s). The plugin will retry in about an hour.', 'dr-speed-ai-assets-scanner' ), $detail );
+        }
+        /* translators: %s: the error returned by wpservice.pro, for example "HTTP 500: Could not allocate a free API key". */
+        return sprintf( __( 'wpservice.pro could not issue a free key: %s. The plugin will retry in about an hour. If this keeps happening, contact wpservice.pro support.', 'dr-speed-ai-assets-scanner' ), $detail );
     }
 
     /** User-facing explanation for a converted or revoked free key. Shared with the Settings screen. */

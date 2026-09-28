@@ -11,6 +11,7 @@ All notable changes to AI Assets Scanner are documented here.
   - `FreeKeyBootstrap::run()` now reads the `status` in the register answer. For `converted` or `revoked` it does not store the key (a pending placeholder is cleared instead), records the reason in `aias_free_key_unusable`, and cancels the retry.
   - **Get free credits** shows why and what to do: enter the paid key (converted) or contact support (revoked). Settings keeps showing the same explanation, pointing to **Replace API key** when a dead key is already saved.
   - Sites that already stored a dead key recover on their own: the next hourly retry reaches the same check and stops.
+- **"The free-credit service did not answer" for every failure.** `request_free_key` showed that one message whatever went wrong, discarding the service's reply. `FreeKeyBootstrap::last_error()` now keeps the failure, and `SettingsAjax::free_key_failure_message()` reports it: a 429 says too many requests in the last hour and to wait; a connection failure names the error; any other HTTP error shows the service's own message (sanitized, capped at 200 characters). The generic text remains only when no reason is known.
   - The flag clears whenever a working key is saved, replaced or registered, and uninstall removes it.
   - Tests cover converted, revoked-with-placeholder and already-stored cases; removing the status check fails them.
 

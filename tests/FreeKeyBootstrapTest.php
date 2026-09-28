@@ -199,4 +199,24 @@ class FreeKeyBootstrapTest extends TestCase {
         $this->assertSame( FreeKeyBootstrap::OUTCOME_UNUSABLE, $bootstrap->run() );
     }
 
+
+    public function test_the_failure_behind_a_pending_outcome_is_kept_for_the_settings_screen(): void {
+        WP_Mock::userFunction( 'get_option' )->with( 'cu_scanner_api_key', '' )->andReturn( '' );
+        WP_Mock::userFunction( 'update_option' );
+        WP_Mock::userFunction( 'wp_next_scheduled' )->andReturn( false );
+        WP_Mock::userFunction( 'wp_schedule_single_event' );
+
+        $bootstrap = new FreeKeyBootstrap( null, function (): object {
+            return new class {
+                public function register_free_key( string $current ): array {
+                    throw new \CUScanner\Api\HttpException( 'HTTP 429: Too many free key registration attempts. Try again later.', 429 );
+                }
+            };
+        } );
+
+        $this->assertSame( 'pending', $bootstrap->run() );
+        $error = $bootstrap->last_error();
+        $this->assertInstanceOf( \CUScanner\Api\HttpException::class, $error );
+        $this->assertSame( 429, $error->get_status_code() );
+    }
 }

@@ -96,6 +96,7 @@ The WordPress.org edition lives in a different plugin folder, so WordPress sees 
 
 = 1.9.3 =
 * If a site's free key was already upgraded to a paid key or revoked, **Get free credits** now says so and asks for the paid key, instead of saving a key that cannot be used. The background retry for it stops.
+* When **Get free credits** fails, the error now gives the reason (for example, too many requests in the last hour) instead of always saying the service did not answer.
 
 = 1.9.2 =
 * New **Replace API key** button in Settings. It warns that credits on the current key are not transferred, and accepts only a paid API key; the new key's credit balance is shown once it is accepted.
