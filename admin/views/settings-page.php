@@ -91,7 +91,7 @@
                         </div>
                     <?php endif; ?>
                 </div>
-                <?php if ( '' === $api_key ) : ?>
+                <?php if ( \CUScanner\FreeKeyBootstrap::can_request( $settings ) ) : ?>
                     <div class="cu-settings-field cu-free-key-optin" id="cu-free-key-optin">
                         <span class="cu-settings-label"><?php esc_html_e( 'No API key yet?', 'dr-speed-ai-assets-scanner' ); ?></span>
                         <p class="description">

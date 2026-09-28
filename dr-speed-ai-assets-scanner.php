@@ -29,7 +29,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'AIAS_VERSION', '1.9.3' );
-define( 'AIAS_ASSET_VERSION', '1.9.2' );
+define( 'AIAS_ASSET_VERSION', '1.9.3' );
 define( 'AIAS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'AIAS_URL', plugin_dir_url( __FILE__ ) );
 define( 'AIAS_WPSERVICE_BASE', 'https://wpservice.pro' );

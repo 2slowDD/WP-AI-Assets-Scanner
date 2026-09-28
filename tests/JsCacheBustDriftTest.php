@@ -107,6 +107,8 @@ final class JsCacheBustDriftTest extends TestCase {
 		// 1.9.2 — Settings "Replace API key": red button + confirm, paid-key-only form
 		// (settings.js + admin.css). Added, not rewritten.
 		'1.9.2' => '8a60ce8dab58894e1c898fa64fc75b01a0517551362543be4e5f12302060cb77',
+		// 1.9.3 — scanner.js offers to open Settings when the scan has no usable API key.
+		'1.9.3' => '20ccaf4161de10ec90b1ef7a6043d1dfc4dd5572f5f7579668ee381e4b6ad4fa',
 	);
 
 	/**
@@ -158,6 +160,8 @@ final class JsCacheBustDriftTest extends TestCase {
 		// The noopt note chain drops "Needs Extra Time" on rows the server stamped et_requested
 		// (Extra Time was requested for that page in this scan).
 		'1.0.11.12' => 'd149099aa416d95eb650bfda39bcd068daf846fb889237e6db0fbde940e14ad2',
+		// No usable API key: the reserve error carries settings_url and the scanner offers to open Settings.
+		'1.0.11.13' => 'a6e9bae3aadef7d01101caebe6dfde076fbfb8aeb7d471a24c18ef9bdc5f43e3',
 	);
 
 	private function root(): string {

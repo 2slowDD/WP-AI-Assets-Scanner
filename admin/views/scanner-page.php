@@ -34,6 +34,28 @@
 
     <!-- Step 1: Discovery & Filtering -->
     <div id="step-1" class="cu-step cu-step--active cu-body">
+        <?php
+        $aias_settings = new \CUScanner\Settings();
+        $aias_api_key  = $aias_settings->get_api_key();
+        if ( '' === $aias_api_key || $aias_settings->is_pending_free_key( $aias_api_key ) ) :
+            ?>
+            <div class="notice notice-warning inline" id="cu-no-api-key-notice">
+                <p>
+                    <strong><?php esc_html_e( 'No API key yet.', 'dr-speed-ai-assets-scanner' ); ?></strong>
+                    <?php
+                    if ( '' === $aias_api_key ) {
+                        esc_html_e( 'Scans need an API key. If this site had a free key before, clicking Get free credits restores the same key and its remaining credits. Deleting the plugin removes the saved key, but deactivating it does not.', 'dr-speed-ai-assets-scanner' );
+                    } else {
+                        esc_html_e( 'The free key request has not finished yet. Try Get free credits again in Settings.', 'dr-speed-ai-assets-scanner' );
+                    }
+                    ?>
+                </p>
+                <p>
+                    <a class="button button-primary" href="<?php echo esc_url( admin_url( 'admin.php?page=cu-scanner-settings#cu-free-key-optin' ) ); ?>"><?php esc_html_e( 'Get free credits in Settings', 'dr-speed-ai-assets-scanner' ); ?></a>
+                    <?php esc_html_e( 'or enter a paid API key there.', 'dr-speed-ai-assets-scanner' ); ?>
+                </p>
+            </div>
+        <?php endif; ?>
         <section class="cu-panel cu-readiness-card" id="cu-readiness-card" aria-labelledby="cu-readiness-title">
             <div class="cu-panel-heading">
                 <div>

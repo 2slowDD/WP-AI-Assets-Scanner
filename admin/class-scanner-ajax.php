@@ -137,6 +137,47 @@ class ScannerAjax {
      * @param string     $fallback The user-visible detail string for the non-409 case.
      * @return array{message:string,retryable:bool,error?:string}
      */
+    /**
+     * A scan cannot start without a usable key. Without this check the reserve call
+     * went out with an empty key and the operator saw "HTTP 401: Invalid API key"
+     * with no hint that the fix is one click in Settings (typical after the plugin
+     * was deleted and reinstalled, which removes the saved key).
+     *
+     * @return array|null Error payload for wp_send_json_error(), or null when a key is saved.
+     */
+    public static function missing_key_error( Settings $settings ): ?array {
+        $api_key = $settings->get_api_key();
+        if ( '' !== $api_key && ! $settings->is_pending_free_key( $api_key ) ) {
+            return null;
+        }
+        return [
+            'message'      => '' === $api_key
+                ? __( 'No API key is saved, so the scan cannot start. Open Settings and click Get free credits (a site that had a free key gets the same key and its remaining credits back), or enter a paid API key.', 'dr-speed-ai-assets-scanner' )
+                : __( 'The free API key request has not finished yet. Open Settings and click Get free credits again.', 'dr-speed-ai-assets-scanner' ),
+            'retryable'    => false,
+            'error'        => 'no_api_key',
+            'settings_url' => admin_url( 'admin.php?page=cu-scanner-settings#cu-free-key-optin' ),
+        ];
+    }
+
+    /**
+     * wpservice.pro refused the key on reserve (401 invalid, 403 revoked, converted or
+     * wrong domain). Same shape as missing_key_error() so the scanner offers Settings.
+     */
+    public static function rejected_key_error( \Throwable $e ): ?array {
+        $code = $e instanceof \CUScanner\Api\HttpException ? $e->get_status_code() : -1;
+        if ( 401 !== $code && 403 !== $code ) {
+            return null;
+        }
+        return [
+            /* translators: %s: the error returned by wpservice.pro, for example "HTTP 401: Invalid API key". */
+            'message'      => sprintf( __( 'wpservice.pro did not accept the saved API key (%s). Open Settings to check the key, or use Replace API key to enter a paid key.', 'dr-speed-ai-assets-scanner' ), self::truncate_error_detail( $e->getMessage() ) ),
+            'retryable'    => false,
+            'error'        => 'invalid_api_key',
+            'settings_url' => admin_url( 'admin.php?page=cu-scanner-settings' ),
+        ];
+    }
+
     private static function friendly_error( \Throwable $e, string $fallback ): array {
         $code = $e instanceof \CUScanner\Api\HttpException ? $e->get_status_code() : -1;
         if ( 409 === $code ) {
@@ -268,8 +309,9 @@ class ScannerAjax {
         $page_count = absint( $_POST['page_count'] ?? 0 ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
         $extra_time_count = absint( $_POST['extra_time_count'] ?? 0 ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() via check_ajax_referer().
         if ( $page_count < 1 ) { wp_send_json_error( 'Invalid page count' ); return; }
-        if ( $settings->has_pending_free_key() ) {
-            wp_send_json_error( 'Free API key activation is pending. Please try again later.' );
+        $missing = self::missing_key_error( $settings );
+        if ( null !== $missing ) {
+            wp_send_json_error( $missing );
             return;
         }
         try {
@@ -281,7 +323,7 @@ class ScannerAjax {
             wp_send_json_success( [ 'reserved' => true, 'job_token' => $result['job_token'] ] );
         } catch ( \RuntimeException $e ) {
             error_log( '[AI Assets Scanner] reserve_job: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional production logging: full exception detail to server log; truncated user-visible detail via format_reserve_error_detail().
-            wp_send_json_error( self::friendly_error( $e, self::format_reserve_error_detail( $e->getMessage() ) ) );
+            wp_send_json_error( self::rejected_key_error( $e ) ?? self::friendly_error( $e, self::format_reserve_error_detail( $e->getMessage() ) ) );
         }
     }
 

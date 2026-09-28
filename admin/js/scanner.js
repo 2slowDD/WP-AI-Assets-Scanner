@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const SCANNER_JS_VERSION = '1.0.11.12';
+    const SCANNER_JS_VERSION = '1.0.11.13';
     console.log( '[AI Assets Scanner] scanner.js v' + SCANNER_JS_VERSION + ' loaded' );
 
     const ajax    = cuScanner.ajaxUrl;
@@ -1388,6 +1388,13 @@
     // "Error:" prefix — since it's an expected state, not a fault. Everything else keeps
     // the "Error:" prefix.
     function submitErrorAlert(data, msg) {
+        // No or rejected API key: the fix is in Settings, so offer to go there.
+        if (data && data.settings_url) {
+            if (window.confirm(msg + '\n\nOpen Settings now?')) {
+                window.location.href = data.settings_url;
+            }
+            return;
+        }
         if (data && data.error === 'scan_already_active') {
             alert(msg);
         } else {
