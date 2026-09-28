@@ -6,7 +6,7 @@
 
     <div class="cu-header">
         <img class="cu-header-logo"
-             src="<?php echo esc_url( AIAS_URL . 'admin/images/ai-assets-scanner-logo.png' ); ?>"
+             src="<?php echo esc_url( AIAS_URL . 'admin/images/dr-speed-ai-assets-scanner-logo.png' ); ?>"
              alt="AI Assets Scanner" />
         <div class="cu-header-text">
             <h2>AI Assets Scanner <small class="cu-header-version">v<?php echo esc_html( AIAS_VERSION ); ?></small></h2>
@@ -57,10 +57,10 @@
                 <div><span class="cu-eyebrow">Activity</span><h2 id="cu-history-table-title">Recent scans</h2><p>Re-download completed reports or export your full history.</p></div>
                 <div class="cu-history-actions">
                 <button type="button" id="cu-history-export" class="button">
-                    <?php esc_html_e( 'Export to ZIP', 'ai-assets-scanner' ); ?>
+                    <?php esc_html_e( 'Export to ZIP', 'dr-speed-ai-assets-scanner' ); ?>
                 </button>
                 <button type="button" id="cu-history-delete" class="button button-link-delete">
-                    <?php esc_html_e( 'Delete all history', 'ai-assets-scanner' ); ?>
+                    <?php esc_html_e( 'Delete all history', 'dr-speed-ai-assets-scanner' ); ?>
                 </button>
             </div>
             </div>

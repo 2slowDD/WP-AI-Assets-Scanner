@@ -64,7 +64,7 @@ class Settings {
     public function get_buy_credits_url( ?string $api_key = null ): string {
         $api_key = $api_key ?? $this->get_api_key();
         $base    = ( defined( 'AIAS_WPSERVICE_BASE' ) ? AIAS_WPSERVICE_BASE : 'https://wpservice.pro' )
-            . '/our-products/ai-assets-scanner/';
+            . '/our-products/dr-speed-ai-assets-scanner/';
 
         if ( ! $this->is_free_key( $api_key ) ) {
             return $base . '#cu-pricing-inner';

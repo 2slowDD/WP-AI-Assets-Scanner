@@ -7,8 +7,8 @@ use PHPUnit\Framework\TestCase;
 /**
  * FU-H — the shipped version lives in THREE places that must move together.
  *
- *   1. ai-assets-scanner.php   plugin header      ` * Version:     <v>`
- *   2. ai-assets-scanner.php   `define( 'AIAS_VERSION', '<v>' )`
+ *   1. dr-speed-ai-assets-scanner.php   plugin header      ` * Version:     <v>`
+ *   2. dr-speed-ai-assets-scanner.php   `define( 'AIAS_VERSION', '<v>' )`
  *   3. README.md               shields.io badge   `![Version](.../VERSION-<v>-<hex>?...)`
  *
  * The badge is the one that drifts: it is a static literal inside a URL, so nothing in
@@ -76,15 +76,15 @@ class VersionLockstepTest extends TestCase {
     }
 
     public function test_the_three_version_sites_agree(): void {
-        $plugin = $this->read_repo_file( 'ai-assets-scanner.php' );
+        $plugin = $this->read_repo_file( 'dr-speed-ai-assets-scanner.php' );
         $readme = $this->read_repo_file( 'README.md' );
 
-        $header = $this->capture_one( self::HEADER_RE, $plugin, 'ai-assets-scanner.php plugin header' );
-        $define = $this->capture_one( self::DEFINE_RE, $plugin, "ai-assets-scanner.php define( 'AIAS_VERSION', … )" );
+        $header = $this->capture_one( self::HEADER_RE, $plugin, 'dr-speed-ai-assets-scanner.php plugin header' );
+        $define = $this->capture_one( self::DEFINE_RE, $plugin, "dr-speed-ai-assets-scanner.php define( 'AIAS_VERSION', … )" );
         $badge  = $this->capture_one( self::BADGE_RE, $readme, 'README.md shields.io VERSION badge' );
         $stable = $this->capture_one( self::STABLE_TAG_RE, $this->read_repo_file( 'readme.txt' ), 'readme.txt Stable tag' );
 
-        $this->assertSame( '1.9.0', $header, 'the first WordPress.org release is AAS 1.9.0' );
+        $this->assertSame( '1.9.1', $header, 'the WordPress.org submission under the Dr. Speed name is 1.9.1' );
 
         // Shape first: without it, three empty captures would "agree" and pass.
         foreach ( [ 'plugin header' => $header, 'AIAS_VERSION define' => $define, 'README badge' => $badge, 'readme.txt Stable tag' => $stable ] as $where => $v ) {

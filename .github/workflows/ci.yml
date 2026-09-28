@@ -60,6 +60,6 @@ jobs:
       - name: Build release ZIP
         run: bin/build-zip.sh
       - name: Plugin Check (static sniffs) on the release contents
-        run: phpcs --standard=tools/plugin-check.xml --runtime-set testVersion 8.0- --exclude=PHPCompatibility.FunctionNameRestrictions.ReservedFunctionNames dist/ai-assets-scanner
+        run: phpcs --standard=tools/plugin-check.xml --runtime-set testVersion 8.0- --exclude=PHPCompatibility.FunctionNameRestrictions.ReservedFunctionNames dist/dr-speed-ai-assets-scanner
       - name: PHP 8.0 compatibility of every shipped file (Requires PHP 8.0)
-        run: phpcs --standard=PHPCompatibilityWP --runtime-set testVersion 8.0- --exclude=PHPCompatibility.FunctionNameRestrictions.ReservedFunctionNames --extensions=php -n dist/ai-assets-scanner
+        run: phpcs --standard=PHPCompatibilityWP --runtime-set testVersion 8.0- --exclude=PHPCompatibility.FunctionNameRestrictions.ReservedFunctionNames --extensions=php -n dist/dr-speed-ai-assets-scanner

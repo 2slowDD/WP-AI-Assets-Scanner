@@ -1990,7 +1990,7 @@ class ScannerAjax {
     }
 
     private function stream_csv_response( array $records ): void {
-        $filename = 'ai-assets-scanner-history-' . gmdate( 'Y-m-d-His' ) . '.csv';
+        $filename = 'dr-speed-ai-assets-scanner-history-' . gmdate( 'Y-m-d-His' ) . '.csv';
         $this->emit_csv_headers( $filename );
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- php://output is the HTTP response body stream, not a filesystem file; WP_Filesystem cannot target it.
         $fh = fopen( 'php://output', 'w' );
@@ -2063,7 +2063,7 @@ class ScannerAjax {
     }
 
     protected function stream_zip( string $tmp_path ): void {
-        $filename = 'ai-assets-scanner-history-' . gmdate( 'Y-m-d-His' ) . '.zip';
+        $filename = 'dr-speed-ai-assets-scanner-history-' . gmdate( 'Y-m-d-His' ) . '.zip';
         header( 'Content-Type: application/zip' );
         header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
         header( 'Content-Length: ' . filesize( $tmp_path ) );

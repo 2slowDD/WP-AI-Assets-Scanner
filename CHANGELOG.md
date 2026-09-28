@@ -4,6 +4,18 @@ All notable changes to AI Assets Scanner are documented here.
 
 ---
 
+## 1.9.1 — 2026-09-28
+
+Changes requested by the WordPress.org plugin review of 1.9.0.
+
+### Changed
+- Renamed to **Dr. Speed: AI Assets Scanner**. The reviewer requires a distinctive name; a purely descriptive one starting with "AI" is not accepted. Slug, text domain, main file, plugin folder and the admin-page hook prefix (derived from the menu title) are now `dr-speed-ai-assets-scanner`. Option names, AJAX actions and the `cu-scanner` menu slug are unchanged, so an existing key and settings carry over.
+- `Author` header is `Dalibor Druzinec / WPservice`, matching the Code Unloader and Speed Analyzer listings.
+- The menu badge CSS is attached to a file-less style handle with `wp_add_inline_style()` instead of a hand-printed `<style>` tag; the scan-time dependency island is printed with `wp_print_inline_script_tag()`. The worker's island parser already tolerates the newlines core adds around the payload.
+- readme.txt gains an FAQ on switching from a wpservice.pro install: deactivate, install the new plugin, then remove the old folder by FTP rather than the Delete link, whose uninstall routine would erase the secret, worker address and history the new plugin now uses.
+
+---
+
 ## 1.9.0 — 2026-09-26
 
 First WordPress.org release (slug `ai-assets-scanner`).

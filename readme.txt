@@ -1,10 +1,10 @@
-=== AI Assets Scanner ===
+=== Dr. Speed: AI Assets Scanner ===
 Contributors: dalibord
 Tags: performance, optimization, dequeue, debloat, unused css
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.9.0
+Stable tag: 1.9.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -57,8 +57,8 @@ Privacy policy: https://wpservice.pro/privacy-policy/
 == Installation ==
 
 1. Install the plugin from **Plugins > Add New**, or upload the ZIP file, and activate it.
-2. Open **AI Assets Scanner > Settings**. Click **Get free credits**, or paste an API key from wpservice.pro and click **Save**.
-3. Open **AI Assets Scanner**, click **Discover Pages**, choose the pages to scan, and click **Start Scan**.
+2. Open **Dr. Speed: AI Assets Scanner > Settings**. Click **Get free credits**, or paste an API key from wpservice.pro and click **Save**.
+3. Open **Dr. Speed: AI Assets Scanner**, click **Discover Pages**, choose the pages to scan, and click **Start Scan**.
 4. When the scan finishes, download the rule file or push it to Code Unloader.
 
 == Frequently Asked Questions ==
@@ -83,7 +83,20 @@ They can be. Settings shows the exact Cloudflare WAF rule that lets the scanner 
 
 All plugin options, scan history, stored results, scheduled tasks and the saved API key.
 
+= I installed AI Assets Scanner from wpservice.pro before it was on WordPress.org. How do I switch? =
+
+The WordPress.org edition lives in a different plugin folder, so WordPress sees it as a new plugin. Switch in this order:
+
+1. If you want to keep your scan history, open **Scan History** and click **Export to ZIP**.
+2. **Deactivate** the old AI Assets Scanner. Do not delete it yet.
+3. Install and activate **Dr. Speed: AI Assets Scanner** from **Plugins > Add New**. Your API key, credits and settings carry over.
+4. Remove the old plugin's folder, `wp-content/plugins/ai-assets-scanner`, with FTP or your host's file manager. Do not use the **Delete** link: the old version's delete routine erases the scanner secret, worker address and scan history that the new plugin now uses.
+
 == Changelog ==
+
+= 1.9.1 =
+* Renamed to Dr. Speed: AI Assets Scanner; the plugin folder and text domain are now `dr-speed-ai-assets-scanner`. Installs from wpservice.pro: see the FAQ on switching.
+* The menu badge style and the scan-time dependency data are now printed through WordPress's own enqueue functions.
 
 = 1.9.0 =
 * First release on WordPress.org. The plugin is now licensed under GPLv2 or later.
@@ -94,6 +107,9 @@ All plugin options, scan history, stored results, scheduled tasks and the saved 
 * Coding-standard fixes: text domain, translator comments, prefixed names.
 
 == Upgrade Notice ==
+
+= 1.9.1 =
+Renamed to Dr. Speed: AI Assets Scanner. Sites that installed from wpservice.pro should follow the switching steps in the FAQ.
 
 = 1.9.0 =
 First WordPress.org release. Future updates are delivered through WordPress.org.

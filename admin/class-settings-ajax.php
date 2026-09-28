@@ -26,7 +26,7 @@ class SettingsAjax {
 
         $settings = new Settings();
         if ( ! \CUScanner\FreeKeyBootstrap::can_request( $settings ) ) {
-            wp_send_json_error( __( 'An API key is already saved.', 'ai-assets-scanner' ) );
+            wp_send_json_error( __( 'An API key is already saved.', 'dr-speed-ai-assets-scanner' ) );
         }
 
         ( new \CUScanner\FreeKeyBootstrap( $settings ) )->run();
@@ -34,7 +34,7 @@ class SettingsAjax {
         if ( $settings->is_free_key( $settings->get_api_key() ) ) {
             wp_send_json_success();
         }
-        wp_send_json_error( __( 'The free-credit service did not answer. The plugin will retry in about an hour.', 'ai-assets-scanner' ) );
+        wp_send_json_error( __( 'The free-credit service did not answer. The plugin will retry in about an hour.', 'dr-speed-ai-assets-scanner' ) );
     }
 
     public function regenerate_secret(): void {
@@ -157,7 +157,7 @@ class SettingsAjax {
         $settings = new Settings();
         if ( '' === $settings->get_api_key() ) {
             // No key, no remote call: nothing identifies this site to the service yet.
-            wp_send_json_error( __( 'No API key saved.', 'ai-assets-scanner' ) );
+            wp_send_json_error( __( 'No API key saved.', 'dr-speed-ai-assets-scanner' ) );
         }
         if ( $settings->has_pending_free_key() ) {
             ( new \CUScanner\FreeKeyBootstrap() )->run();

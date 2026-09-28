@@ -18,6 +18,19 @@ class DepGraphIslandTest extends TestCase {
 		WP_Mock::setUp();
 		$_GET = [];
 		CU_DepGraph_Island::for_testing_reset();
+
+		// Faithful to core's wp_get_inline_script_tag(): attributes in the given order,
+		// the payload wrapped in newlines, and a newline after the closing tag. The
+		// worker's island regex tolerates all of that; these tests must too.
+		WP_Mock::userFunction( 'wp_print_inline_script_tag' )->andReturnUsing(
+			static function ( string $data, array $attributes = [] ): void {
+				$attr = '';
+				foreach ( $attributes as $k => $v ) {
+					$attr .= sprintf( ' %s="%s"', $k, $v );
+				}
+				printf( "<script%s>\n%s\n</script>\n", $attr, trim( $data, "\n\r " ) );
+			}
+		);
 	}
 
 	public function tearDown(): void {
@@ -88,7 +101,7 @@ class DepGraphIslandTest extends TestCase {
 		$out = $this->capture_emit();
 
 		$this->assertStringContainsString( '<script type="application/json" id="cu-dep-graph">', $out );
-		$this->assertStringEndsWith( '</script>', $out );
+		$this->assertStringEndsWith( "</script>\n", $out );
 		$this->assertStringContainsString( '"jquery-core"', $out );
 
 		$payload = $this->decode_island( $out );
@@ -187,7 +200,7 @@ class DepGraphIslandTest extends TestCase {
 		$this->assertStringNotContainsString( '"scripts"', $out );
 		$this->assertStringNotContainsString( '"dropped"', $out );
 		$this->assertSame(
-			'<script type="application/json" id="cu-dep-graph">{"v":1,"truncated":1}</script>',
+			"<script type=\"application/json\" id=\"cu-dep-graph\">\n{\"v\":1,\"truncated\":1}\n</script>\n",
 			$out
 		);
 	}
@@ -218,9 +231,14 @@ class DepGraphIslandTest extends TestCase {
 
 	/** @return array<string, mixed> */
 	private function decode_island( string $html ): array {
-		$open = '<script type="application/json" id="cu-dep-graph">';
-		$this->assertStringStartsWith( $open, $html );
-		$json    = substr( $html, strlen( $open ), -strlen( '</script>' ) );
+		// Same extraction the worker uses (dep-graph.js ISLAND_PATTERN): any attributes,
+		// any whitespace around the payload.
+		$this->assertSame(
+			1,
+			preg_match( '#<script[^>]*\sid\s*=\s*"cu-dep-graph"[^>]*>([\s\S]*?)</script>#i', $html, $m ),
+			'island tag must be present: ' . $html
+		);
+		$json    = trim( $m[1] );
 		$decoded = json_decode( $json, true );
 		$this->assertIsArray( $decoded, 'Island payload must be valid JSON: ' . $json );
 		return $decoded;

@@ -1,14 +1,14 @@
-# AI Assets Scanner
+# Dr. Speed: AI Assets Scanner
 
 [![CI](https://img.shields.io/github/actions/workflow/status/2slowDD/WP-AI-Assets-Scanner/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/2slowDD/WP-AI-Assets-Scanner/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/LICENSE-GPLv2%2B-blue?style=for-the-badge)](LICENSE)
-![Version](https://img.shields.io/badge/VERSION-1.9.0-007cba?style=for-the-badge)
+![Version](https://img.shields.io/badge/VERSION-1.9.1-007cba?style=for-the-badge)
 ![WordPress](https://img.shields.io/badge/WORDPRESS-6.2%2B-21759b?style=for-the-badge)
 ![PHP](https://img.shields.io/badge/PHP-8.0%2B-777bb4?style=for-the-badge)
 
 Find the CSS and JavaScript each WordPress page does not use. An AI scan renders every page on desktop and mobile and builds per-page rules to unload the rest, by [WPservice.pro](https://wpservice.pro).
 
-This is the WordPress.org edition of the plugin (slug `ai-assets-scanner`). The user-facing description, the external-services disclosure and the changelog live in [`readme.txt`](readme.txt), which is what WordPress.org displays.
+This is the WordPress.org edition of the plugin (slug `dr-speed-ai-assets-scanner`). The user-facing description, the external-services disclosure and the changelog live in [`readme.txt`](readme.txt), which is what WordPress.org displays.
 
 ## How it works
 
@@ -24,6 +24,10 @@ AI Assets Scanner plugin  ──→  wpservice.pro API  ──→  scanning work
 
 Nothing is sent to wpservice.pro until an administrator saves an API key or clicks **Get free credits**. See the *External services* section of [`readme.txt`](readme.txt) for exactly what is sent and when.
 
+## Switching from the wpservice.pro edition (1.8.9 and earlier)
+
+The WordPress.org edition lives in the folder `dr-speed-ai-assets-scanner`, so WordPress treats it as a separate plugin and the old private updater cannot move a site across. On each site: export the scan history if you want to keep it, **deactivate** the old plugin, install and activate the new one (the API key and settings carry over because the option names are unchanged), then remove `wp-content/plugins/ai-assets-scanner` by FTP. Do not use the Plugins-screen **Delete** link on the old copy: its uninstall routine deletes the scanner secret, the worker address and the scan history that the new plugin is now using.
+
 ## Requirements
 
 - WordPress 6.2 or later
@@ -37,7 +41,7 @@ Nothing is sent to wpservice.pro until an administrator saves an API key or clic
 composer install     # PHPUnit + WP_Mock (dev only, never shipped)
 composer test        # PHP unit tests
 npm test             # admin JavaScript tests (Node 22+)
-bin/build-zip.sh     # builds dist/ai-assets-scanner.zip for WordPress.org
+bin/build-zip.sh     # builds dist/dr-speed-ai-assets-scanner.zip for WordPress.org
 ```
 
 CI runs the tests plus the static part of the official [Plugin Check](https://github.com/WordPress/plugin-check) on every push, using the same PHPCS sniffs and prefix rules (`tools/plugin-check.xml`).

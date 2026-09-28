@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Builds dist/ai-assets-scanner.zip for WordPress.org from an explicit allowlist.
+# Builds dist/dr-speed-ai-assets-scanner.zip for WordPress.org from an explicit allowlist.
 # Anything not listed here (tests, Composer/npm files, Markdown, dotfiles) is never shipped.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-SLUG=ai-assets-scanner
-SHIP=(ai-assets-scanner.php uninstall.php readme.txt LICENSE admin includes)
+SLUG=dr-speed-ai-assets-scanner
+SHIP=(dr-speed-ai-assets-scanner.php uninstall.php readme.txt LICENSE admin includes)
 
 rm -rf dist
 mkdir -p "dist/$SLUG"

@@ -6,7 +6,7 @@
 	<exclude-pattern>*/tests/*</exclude-pattern>
 	<exclude-pattern>*/node_modules/*</exclude-pattern>
 	<rule ref="./plugin-check/phpcs-rulesets/plugin-review.xml"/>
-	<rule ref="WordPress.WP.I18n"><properties><property name="text_domain" type="array"><element value="ai-assets-scanner"/></property></properties></rule>
+	<rule ref="WordPress.WP.I18n"><properties><property name="text_domain" type="array"><element value="dr-speed-ai-assets-scanner"/></property></properties></rule>
 	<rule ref="WordPress.NamingConventions.PrefixAllGlobals"><properties><property name="prefixes" type="array"><element value="cuscanner"/><element value="aias"/></property></properties></rule>
 	<rule ref="WordPress.Security.EscapeOutput"/>
 	<rule ref="WordPress.Security.SafeRedirect"/>

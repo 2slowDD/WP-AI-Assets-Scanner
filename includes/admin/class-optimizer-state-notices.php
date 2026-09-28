@@ -41,11 +41,11 @@ class OptimizerStateNotices {
             '<div class="notice notice-warning"><p>%1$s <a href="%2$s">%3$s</a></p></div>',
             sprintf(
                 /* translators: %s: comma-separated list of optimizer plugin slugs */
-                \esc_html__( 'Scan in progress — %s temporarily paused. Re-enabled automatically when the scan finishes.', 'ai-assets-scanner' ),
+                \esc_html__( 'Scan in progress — %s temporarily paused. Re-enabled automatically when the scan finishes.', 'dr-speed-ai-assets-scanner' ),
                 \esc_html( implode( ', ', $slugs ) )
             ),
             \esc_url( $url ),
-            \esc_html__( 'Force restore now', 'ai-assets-scanner' )
+            \esc_html__( 'Force restore now', 'dr-speed-ai-assets-scanner' )
         );
     }
 

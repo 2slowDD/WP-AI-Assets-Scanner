@@ -6,7 +6,7 @@
 
     <div class="cu-header">
         <img class="cu-header-logo"
-             src="<?php echo esc_url( AIAS_URL . 'admin/images/ai-assets-scanner-logo.png' ); ?>"
+             src="<?php echo esc_url( AIAS_URL . 'admin/images/dr-speed-ai-assets-scanner-logo.png' ); ?>"
              alt="AI Assets Scanner" />
         <div class="cu-header-text">
             <h2>AI Assets Scanner <small class="cu-header-version">v<?php echo esc_html( AIAS_VERSION ); ?></small></h2>
@@ -52,19 +52,19 @@
                            autocomplete="off" class="regular-text" placeholder="cusk_..." />
                     <p class="description">Get your API key from <a href="https://wpservice.pro" target="_blank" rel="noopener">wpservice.pro</a>.</p>
                     <?php if ( $settings->is_pending_free_key( $api_key ) ) : ?>
-                        <p class="cu-inline-state cu-inline-state--pending"><?php esc_html_e( 'Free API key activation is pending. The plugin retries about once an hour.', 'ai-assets-scanner' ); ?></p>
+                        <p class="cu-inline-state cu-inline-state--pending"><?php esc_html_e( 'Free API key activation is pending. The plugin retries about once an hour.', 'dr-speed-ai-assets-scanner' ); ?></p>
                     <?php endif; ?>
                 </div>
                 <?php if ( '' === $api_key ) : ?>
                     <div class="cu-settings-field cu-free-key-optin" id="cu-free-key-optin">
-                        <span class="cu-settings-label"><?php esc_html_e( 'No API key yet?', 'ai-assets-scanner' ); ?></span>
+                        <span class="cu-settings-label"><?php esc_html_e( 'No API key yet?', 'dr-speed-ai-assets-scanner' ); ?></span>
                         <p class="description">
-                            <?php esc_html_e( 'Get a free API key with starter scan credits. Clicking the button sends this site\'s domain and the plugin version to wpservice.pro, which creates the key. Nothing is sent until you click.', 'ai-assets-scanner' ); ?>
-                            <a href="https://wpservice.pro/terms-and-conditions/" target="_blank" rel="noopener"><?php esc_html_e( 'Terms', 'ai-assets-scanner' ); ?></a>
+                            <?php esc_html_e( 'Get a free API key with starter scan credits. Clicking the button sends this site\'s domain and the plugin version to wpservice.pro, which creates the key. Nothing is sent until you click.', 'dr-speed-ai-assets-scanner' ); ?>
+                            <a href="https://wpservice.pro/terms-and-conditions/" target="_blank" rel="noopener"><?php esc_html_e( 'Terms', 'dr-speed-ai-assets-scanner' ); ?></a>
                             &middot;
-                            <a href="https://wpservice.pro/privacy-policy/" target="_blank" rel="noopener"><?php esc_html_e( 'Privacy policy', 'ai-assets-scanner' ); ?></a>
+                            <a href="https://wpservice.pro/privacy-policy/" target="_blank" rel="noopener"><?php esc_html_e( 'Privacy policy', 'dr-speed-ai-assets-scanner' ); ?></a>
                         </p>
-                        <p><button type="button" id="cu-get-free-key" class="button button-primary"><?php esc_html_e( 'Get free credits', 'ai-assets-scanner' ); ?></button></p>
+                        <p><button type="button" id="cu-get-free-key" class="button button-primary"><?php esc_html_e( 'Get free credits', 'dr-speed-ai-assets-scanner' ); ?></button></p>
                     </div>
                 <?php endif; ?>
                 <div class="cu-settings-field cu-settings-field--balance">
@@ -119,7 +119,7 @@
                 <div class="cu-settings-options-list">
                     <label for="cu_omit_cu_bypass" class="cu-option-row">
                         <input type="checkbox" id="cu_omit_cu_bypass" name="omit_cu_bypass" value="1" <?php checked( $omit_cu_bypass ); ?> />
-                        <span><strong><?php esc_html_e( "Remove Code Unloader's suffix (?nowpcu) from scans", 'ai-assets-scanner' ); ?></strong><small>Scan pages with your existing Code Unloader rules applied.</small></span>
+                        <span><strong><?php esc_html_e( "Remove Code Unloader's suffix (?nowpcu) from scans", 'dr-speed-ai-assets-scanner' ); ?></strong><small>Scan pages with your existing Code Unloader rules applied.</small></span>
                     </label><span class="cu-help" tabindex="0" aria-label="Scans normally add ?nowpcu to each URL, which switches Code Unloader off so the scanner sees every asset a page can load. Tick this to leave the suffix off. Scans then run with your existing Code Unloader rules applied, the pages as visitors actually receive them. On heavy pages this often surfaces rules an earlier scan missed, because the page loads lighter and the scanner gets further through it. Assets your current rules already unload will not appear in the results, so use Sync with Code Unloader to add new rules on top of your existing ones. Push would replace them."><span class="cu-help-box">Scans normally add <strong>?nowpcu</strong> to each URL, which switches Code Unloader off so the scanner sees every asset a page can load.<br><br>Tick this to leave the suffix off. Scans then run with your existing Code Unloader rules applied &mdash; the pages as visitors actually receive them. On heavy pages this often surfaces rules an earlier scan missed, because the page loads lighter and the scanner gets further through it.<br><br>Assets your current rules already unload won't appear in the results, so use <strong>Sync with Code Unloader</strong> to add new rules on top of your existing ones. <strong>Push</strong> would replace them.</span></span>
                 </div>
             </section>

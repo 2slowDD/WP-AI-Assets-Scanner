@@ -45,7 +45,7 @@ final class FreeKeyOptInTest extends TestCase {
     }
 
     public function test_bootstrap_file_registers_no_activation_or_admin_init_registration(): void {
-        $src = (string) file_get_contents( dirname( __DIR__ ) . '/ai-assets-scanner.php' );
+        $src = (string) file_get_contents( dirname( __DIR__ ) . '/dr-speed-ai-assets-scanner.php' );
         $this->assertStringNotContainsString( 'register_activation_hook', $src );
         $this->assertDoesNotMatchRegularExpression( "/add_action\(\s*'admin_init'/", $src );
     }

@@ -93,7 +93,7 @@ class MenuBadge {
         add_filter( 'add_menu_classes',                    [ $this, 'filter_menu_title' ],     10, 1 );
         add_filter( 'heartbeat_received',                  [ $this, 'filter_heartbeat' ],      10, 2 );
         add_action( 'admin_head-toplevel_page_cu-scanner', [ $this, 'mark_seen_on_main_page' ] );
-        add_action( 'admin_print_styles',                  [ $this, 'print_inline_css' ] );
+        add_action( 'admin_enqueue_scripts',               [ $this, 'enqueue_inline_css' ] );
         add_action( 'admin_enqueue_scripts',               [ $this, 'enqueue_heartbeat_listener' ] );
 
         // 1.4.9 — server-side polling via admin_init instead of heartbeat_received.
@@ -402,21 +402,25 @@ class MenuBadge {
     }
 
     /**
-     * Inline CSS for the badge. Emitted unconditionally on every wp-admin page.
+     * Inline CSS for the badge, attached to a file-less style handle so WordPress
+     * prints it through its own pipeline. Enqueued on every wp-admin page.
      *
      * Why not gated on get_badge_state() !== null: the Heartbeat path can
      * transition state null → green/red WITHOUT a page reload; the JS would
      * then inject a <span> with no CSS to style it. Emitting ~200 bytes of
      * inline CSS on every admin page is the cheaper trade-off.
      */
-    public function print_inline_css(): void {
-        echo '<style id="aias-menu-badge-css">'
-            . '.aias-menu-badge { display:block; clear:both; width:fit-content; '
+    public function enqueue_inline_css(): void {
+        wp_register_style( 'aias-menu-badge', false, [], AIAS_ASSET_VERSION );
+        wp_enqueue_style( 'aias-menu-badge' );
+        wp_add_inline_style(
+            'aias-menu-badge',
+            '.aias-menu-badge { display:block; clear:both; width:fit-content; '
             . 'margin:3px auto 4px; padding:1px 8px; border-radius:10px; color:#fff; '
             . 'font-weight:bold; font-size:11px; line-height:17px; text-align:center; }'
             . '.aias-menu-badge--green { background:#46b450; }'
             . '.aias-menu-badge--red   { background:#dc3232; }'
-            . '</style>';
+        );
     }
 
     public function enqueue_heartbeat_listener(): void {

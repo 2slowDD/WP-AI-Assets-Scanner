@@ -7,7 +7,7 @@
     <!-- Header (step label updated by JS via data-step-label) -->
     <div class="cu-header">
         <img class="cu-header-logo"
-             src="<?php echo esc_url( AIAS_URL . 'admin/images/ai-assets-scanner-logo.png' ); ?>"
+             src="<?php echo esc_url( AIAS_URL . 'admin/images/dr-speed-ai-assets-scanner-logo.png' ); ?>"
              alt="AI Assets Scanner" />
         <div class="cu-header-text">
             <h2>AI Assets Scanner <small class="cu-header-version">v<?php echo esc_html( AIAS_VERSION ); ?></small></h2>

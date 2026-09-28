@@ -3,7 +3,7 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Shared event idempotency hash. MIRRORED byte-identically in
- * ai-assets-scanner/includes/lib-fields-hash.php.
+ * dr-speed-ai-assets-scanner/includes/lib-fields-hash.php.
  * Any change here MUST be applied to both copies.
  */
 

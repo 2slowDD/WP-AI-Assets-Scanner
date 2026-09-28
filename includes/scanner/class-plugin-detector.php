@@ -577,16 +577,16 @@ class PluginDetector {
     public static function stack_display_names(): array {
         return [
             // SECURITY_STACKS (probe modal) + Cdn\Detector (same-site CDN leg):
-            'cloudflare'         => __( 'Cloudflare', 'ai-assets-scanner' ),
-            'sucuri'             => __( 'Sucuri', 'ai-assets-scanner' ),
-            'akamai'             => __( 'Akamai', 'ai-assets-scanner' ),
-            'imperva'            => __( 'Imperva/Incapsula', 'ai-assets-scanner' ),
+            'cloudflare'         => __( 'Cloudflare', 'dr-speed-ai-assets-scanner' ),
+            'sucuri'             => __( 'Sucuri', 'dr-speed-ai-assets-scanner' ),
+            'akamai'             => __( 'Akamai', 'dr-speed-ai-assets-scanner' ),
+            'imperva'            => __( 'Imperva/Incapsula', 'dr-speed-ai-assets-scanner' ),
             // Cdn\Detector-only ids (same-site CDN leg):
-            'bunnycdn'           => __( 'BunnyCDN', 'ai-assets-scanner' ),
-            'fastly'             => __( 'Fastly', 'ai-assets-scanner' ),
+            'bunnycdn'           => __( 'BunnyCDN', 'dr-speed-ai-assets-scanner' ),
+            'fastly'             => __( 'Fastly', 'dr-speed-ai-assets-scanner' ),
             // Reserved (unconsumed today — see doc block):
-            'wordfence'          => __( 'Wordfence', 'ai-assets-scanner' ),
-            'siteground_antibot' => __( 'SiteGround Antibot', 'ai-assets-scanner' ),
+            'wordfence'          => __( 'Wordfence', 'dr-speed-ai-assets-scanner' ),
+            'siteground_antibot' => __( 'SiteGround Antibot', 'dr-speed-ai-assets-scanner' ),
         ];
     }
 

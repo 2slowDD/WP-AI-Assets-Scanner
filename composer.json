@@ -1,5 +1,5 @@
 {
-    "name": "2slowdd/ai-assets-scanner",
+    "name": "2slowdd/dr-speed-ai-assets-scanner",
     "description": "AI Assets Scanner WordPress plugin (development dependencies only; nothing from vendor/ is shipped).",
     "license": "GPL-2.0-or-later",
     "type": "wordpress-plugin",

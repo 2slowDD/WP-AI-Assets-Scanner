@@ -395,7 +395,7 @@ class MenuBadgeTest extends TestCase {
         // Prove the registration is OUTSIDE the is_admin() gate: with is_admin()=false
         // (the cron / front-end context), Plugin::init() must still add the cron callback,
         // otherwise the scheduled cu_scanner_r3_rebuild event would have no handler.
-        WP_Mock::userFunction( 'plugin_basename' )->andReturn( 'ai-assets-scanner/ai-assets-scanner.php' );
+        WP_Mock::userFunction( 'plugin_basename' )->andReturn( 'dr-speed-ai-assets-scanner/dr-speed-ai-assets-scanner.php' );
         WP_Mock::userFunction( 'is_admin' )->andReturn( false );
         // The handler is registered as an instance callback [ new MenuBadge(), 'run_r3_rebuild' ].
         // WP_Mock keys plain-object callbacks by spl_object_hash (unpredictable), so match any

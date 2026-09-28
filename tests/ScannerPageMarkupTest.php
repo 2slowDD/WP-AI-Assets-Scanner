@@ -222,7 +222,7 @@ class ScannerPageMarkupTest extends TestCase {
 	 * `position: absolute` + clipped instead.
 	 */
 	public function test_no_css_rule_hides_the_sync_push_busy_live_region(): void {
-		$css = file_get_contents( dirname( __DIR__ ) . '/admin/css/ai-assets-scanner-admin.css' );
+		$css = file_get_contents( dirname( __DIR__ ) . '/admin/css/dr-speed-ai-assets-scanner-admin.css' );
 
 		$this->assertIsString( $css );
 		$css = (string) preg_replace( '#/\*.*?\*/#s', '', $css ); // comments may quote `display: none`

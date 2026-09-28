@@ -15,8 +15,11 @@ class AdminPages {
 
     public function add_menus(): void {
         $icon = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMCAyMCIgZmlsbD0ibm9uZSI+PGNpcmNsZSBjeD0iMTAiIGN5PSIxMCIgcj0iOC41IiBzdHJva2U9IiM3MmFlZTYiIHN0cm9rZS13aWR0aD0iMS4yIiBvcGFjaXR5PSIwLjMiLz48Y2lyY2xlIGN4PSIxMCIgY3k9IjEwIiByPSI1LjUiIHN0cm9rZT0iIzcyYWVlNiIgc3Ryb2tlLXdpZHRoPSIxLjIiIG9wYWNpdHk9IjAuNTUiLz48Y2lyY2xlIGN4PSIxMCIgY3k9IjEwIiByPSIyLjgiIHN0cm9rZT0iIzcyYWVlNiIgc3Ryb2tlLXdpZHRoPSIxLjIiIG9wYWNpdHk9IjAuODUiLz48Y2lyY2xlIGN4PSIxMCIgY3k9IjEwIiByPSIxIiBmaWxsPSIjNzJhZWU2Ii8+PGxpbmUgeDE9IjEwIiB5MT0iMTAiIHgyPSIxNi41IiB5Mj0iMy41IiBzdHJva2U9IiM3MmFlZTYiIHN0cm9rZS13aWR0aD0iMS4yIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48L3N2Zz4=';
+        // The menu title also names the admin page hooks (sanitize_title() of it is the
+        // "<title>_page_<slug>" prefix used in enqueue_assets and the history notice), so
+        // it must stay in step with the plugin slug.
         add_menu_page(
-            'AI Assets Scanner', 'AI Assets Scanner', 'manage_options',
+            'Dr. Speed: AI Assets Scanner', 'Dr. Speed: AI Assets Scanner', 'manage_options',
             'cu-scanner', [ $this, 'render_scanner' ],
             $icon, 80
         );
@@ -31,9 +34,9 @@ class AdminPages {
     }
 
     public function enqueue_assets( string $hook ): void {
-        $pages = [ 'toplevel_page_cu-scanner', 'ai-assets-scanner_page_cu-scanner-settings', 'ai-assets-scanner_page_cu-scanner-history' ];
+        $pages = [ 'toplevel_page_cu-scanner', 'dr-speed-ai-assets-scanner_page_cu-scanner-settings', 'dr-speed-ai-assets-scanner_page_cu-scanner-history' ];
         if ( ! in_array( $hook, $pages, true ) ) return;
-        wp_enqueue_style( 'cu-scanner-admin', AIAS_URL . 'admin/css/ai-assets-scanner-admin.css', [], AIAS_ASSET_VERSION );
+        wp_enqueue_style( 'cu-scanner-admin', AIAS_URL . 'admin/css/dr-speed-ai-assets-scanner-admin.css', [], AIAS_ASSET_VERSION );
         if ( $hook === 'toplevel_page_cu-scanner' ) {
             wp_enqueue_script( 'cu-scanner-scanner', AIAS_URL . 'admin/js/scanner.js', [], AIAS_ASSET_VERSION, true );
             wp_localize_script( 'cu-scanner-scanner', 'cuScanner', [
@@ -64,14 +67,14 @@ class AdminPages {
                 'security_plugins' => \CUScanner\Scanner\PluginDetector::active_security_warn_ids(),
             ] );
         }
-        if ( $hook === 'ai-assets-scanner_page_cu-scanner-settings' ) {
+        if ( $hook === 'dr-speed-ai-assets-scanner_page_cu-scanner-settings' ) {
             wp_enqueue_script( 'cu-scanner-settings', AIAS_URL . 'admin/js/settings.js', [], AIAS_ASSET_VERSION, true );
             wp_localize_script( 'cu-scanner-settings', 'cuScannerSettings', [
                 'ajaxUrl' => admin_url( 'admin-ajax.php' ),
                 'nonce'   => wp_create_nonce( 'cu_scanner_settings_nonce' ),
             ] );
         }
-        if ( $hook === 'ai-assets-scanner_page_cu-scanner-history' ) {
+        if ( $hook === 'dr-speed-ai-assets-scanner_page_cu-scanner-history' ) {
             wp_enqueue_script(
                 'cu-scanner-history',
                 AIAS_URL . 'admin/js/history.js',
@@ -84,7 +87,7 @@ class AdminPages {
                 'nonce'         => wp_create_nonce( 'cu_scanner_nonce' ),
                 'deleteWarning' => __(
                     "\xE2\x9A\xA0 This will permanently delete all scan history AND all stored scan JSON snapshots. Re-download links will stop working for old scans.\n\nDid you export a backup first?\n\nClick OK to delete everything, or Cancel to abort.",
-                    'ai-assets-scanner'
+                    'dr-speed-ai-assets-scanner'
                 ),
             ] );
         }
@@ -92,7 +95,7 @@ class AdminPages {
 
     public function maybe_render_history_deleted_notice(): void {
         $screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
-        if ( ! $screen || $screen->id !== 'ai-assets-scanner_page_cu-scanner-history' ) {
+        if ( ! $screen || $screen->id !== 'dr-speed-ai-assets-scanner_page_cu-scanner-history' ) {
             return;
         }
         $count = get_transient( 'cu_scanner_history_deleted_notice' );
@@ -104,7 +107,7 @@ class AdminPages {
         <div class="notice notice-success is-dismissible">
             <p><?php
                 // translators: %d = number of deleted records.
-                printf( esc_html__( 'History deleted (%d records).', 'ai-assets-scanner' ), (int) $count );
+                printf( esc_html__( 'History deleted (%d records).', 'dr-speed-ai-assets-scanner' ), (int) $count );
             ?></p>
         </div>
         <?php

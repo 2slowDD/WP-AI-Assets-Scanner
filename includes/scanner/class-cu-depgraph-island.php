@@ -118,8 +118,11 @@ final class CU_DepGraph_Island {
 			return;
 		}
 
-		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $json comes from wp_json_encode() with JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT, which escapes < > & ' " to \uXXXX; no registry value can break out of the script element. esc_* would corrupt the JSON the worker parses.
-		echo '<script type="application/json" id="cu-dep-graph">' . $json . '</script>';
+		// Printed through WordPress's inline-script helper, which writes the tag and its
+		// attributes itself. $json is not escaped further: wp_json_encode() ran with
+		// JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT, so no registry value can
+		// close the element, and esc_* would corrupt the JSON the worker parses.
+		wp_print_inline_script_tag( $json, [ 'type' => 'application/json', 'id' => 'cu-dep-graph' ] );
 	}
 
 	// -------------------------------------------------------------------------

@@ -1,16 +1,16 @@
 <?php
 /**
- * Plugin Name:       AI Assets Scanner
+ * Plugin Name:       Dr. Speed: AI Assets Scanner
  * Plugin URI:        https://github.com/2slowDD/WP-AI-Assets-Scanner
  * Description:       Scans your pages with an AI service and builds per-page rules to unload unused CSS and JavaScript.
- * Version:           1.9.0
+ * Version:           1.9.1
  * Requires at least: 6.2
  * Requires PHP:      8.0
- * Author:            WPservice.pro
+ * Author:            Dalibor Druzinec / WPservice
  * Author URI:        https://wpservice.pro/
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
- * Text Domain:       ai-assets-scanner
+ * Text Domain:       dr-speed-ai-assets-scanner
  */
 /*
  * AI Assets Scanner - Copyright (C) 2026 Dalibor Druzinec / WPservice.pro
@@ -28,7 +28,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'AIAS_VERSION', '1.9.0' );
+define( 'AIAS_VERSION', '1.9.1' );
 define( 'AIAS_ASSET_VERSION', '1.9.0' );
 define( 'AIAS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'AIAS_URL', plugin_dir_url( __FILE__ ) );

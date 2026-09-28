@@ -169,14 +169,14 @@ final class JsCacheBustDriftTest extends TestCase {
 	 * That shadow is the reason the three-place lockstep was blind for as long as it was.
 	 */
 	private function plugin_version_from_source(): string {
-		$src = (string) file_get_contents( $this->root() . '/ai-assets-scanner.php' );
+		$src = (string) file_get_contents( $this->root() . '/dr-speed-ai-assets-scanner.php' );
 		$this->assertSame( 1, preg_match( '/^\s*\*\s*Version:\s*(\S+)\s*$/m', $src, $m ),
 			'the plugin header Version: line must be findable' );
 		return $m[1];
 	}
 
 	private function asset_version_from_source(): string {
-		$src = (string) file_get_contents( $this->root() . '/ai-assets-scanner.php' );
+		$src = (string) file_get_contents( $this->root() . '/dr-speed-ai-assets-scanner.php' );
 		$this->assertSame( 1, preg_match( "/define\(\s*'AIAS_ASSET_VERSION',\s*'([^']+)'\s*\)/", $src, $m ),
 			'AIAS_ASSET_VERSION must be findable' );
 		return $m[1];

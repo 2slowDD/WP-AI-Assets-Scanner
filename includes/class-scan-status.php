@@ -17,7 +17,7 @@ class AIAS_Scan_Status {
 		if ( 'origin_unavailable' === $status ) {
 			return [
 				'class'   => 'skipped',
-				'label'   => __( 'Origin unavailable', 'ai-assets-scanner' ),
+				'label'   => __( 'Origin unavailable', 'dr-speed-ai-assets-scanner' ),
 				'credits' => 0,
 			];
 		}
@@ -55,7 +55,7 @@ class AIAS_Scan_Status {
 		if ( null !== $bot_reason ) {
 			return [
 				'class'   => 'blocked',
-				'label'   => sprintf( /* translators: %s reason */ __( 'Blocked: %s', 'ai-assets-scanner' ), AIAS_Broken_Banner::reason_phrase( $bot_reason ) ),
+				'label'   => sprintf( /* translators: %s reason */ __( 'Blocked: %s', 'dr-speed-ai-assets-scanner' ), AIAS_Broken_Banner::reason_phrase( $bot_reason ) ),
 				'credits' => $credits,
 			];
 		}
@@ -65,8 +65,8 @@ class AIAS_Scan_Status {
 				'class'   => 'error',
 				'label'   => $first
 					/* translators: %s: short reason the scan failed, e.g. "bot protection". */
-					? sprintf( __( 'Error: %s', 'ai-assets-scanner' ), $first )
-					: __( 'Error', 'ai-assets-scanner' ),
+					? sprintf( __( 'Error: %s', 'dr-speed-ai-assets-scanner' ), $first )
+					: __( 'Error', 'dr-speed-ai-assets-scanner' ),
 				'credits' => $credits,
 			];
 		}
@@ -74,11 +74,11 @@ class AIAS_Scan_Status {
 			$device = (string) array_key_first( $affected );
 			return [
 				'class'   => 'partial',
-				'label'   => sprintf( /* translators: 1 device, 2 reason */ __( '%1$s failed: %2$s', 'ai-assets-scanner' ), ucfirst( $device ), AIAS_Broken_Banner::reason_phrase( $affected[ $device ] ) ),
+				'label'   => sprintf( /* translators: 1 device, 2 reason */ __( '%1$s failed: %2$s', 'dr-speed-ai-assets-scanner' ), ucfirst( $device ), AIAS_Broken_Banner::reason_phrase( $affected[ $device ] ) ),
 				'credits' => $credits,
 			];
 		}
-		return [ 'class' => 'ok', 'label' => __( 'OK', 'ai-assets-scanner' ), 'credits' => $credits ];
+		return [ 'class' => 'ok', 'label' => __( 'OK', 'dr-speed-ai-assets-scanner' ), 'credits' => $credits ];
 	}
 
 	/**
@@ -143,7 +143,7 @@ class AIAS_Scan_Status {
 			if ( $is_partial && empty( $page['assets'] ) ) {
 				$st = [
 					'class'   => 'cancelled',
-					'label'   => __( 'Cancelled — not scanned', 'ai-assets-scanner' ),
+					'label'   => __( 'Cancelled — not scanned', 'dr-speed-ai-assets-scanner' ),
 					'credits' => 0,
 				];
 			}

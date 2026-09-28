@@ -77,11 +77,11 @@ class AIAS_Broken_Banner {
 		ob_start();
 		?>
 		<div class="notice notice-warning aias-broken-banner" data-scan-id="<?php echo esc_attr( $scan_id ); ?>">
-			<p><strong>&#9888; <?php echo esc_html__( 'Some pages couldn\'t be fully scanned', 'ai-assets-scanner' ); ?></strong></p>
+			<p><strong>&#9888; <?php echo esc_html__( 'Some pages couldn\'t be fully scanned', 'dr-speed-ai-assets-scanner' ); ?></strong></p>
 			<p><?php echo wp_kses_post( $copy ); ?></p>
 			<p>
 				<button type="button" class="button aias-dismiss-banner">
-					<?php esc_html_e( 'Got it — don\'t show again for this scan', 'ai-assets-scanner' ); ?>
+					<?php esc_html_e( 'Got it — don\'t show again for this scan', 'dr-speed-ai-assets-scanner' ); ?>
 				</button>
 			</p>
 		</div>
@@ -105,7 +105,7 @@ class AIAS_Broken_Banner {
 		if ( $blocked_d > 0 ) {
 			$bits[] = sprintf(
 				/* translators: 1: blocked page count, 2: total page count */
-				esc_html__( 'Desktop scanner blocked on %1$d of %2$d pages.', 'ai-assets-scanner' ),
+				esc_html__( 'Desktop scanner blocked on %1$d of %2$d pages.', 'dr-speed-ai-assets-scanner' ),
 				$blocked_d,
 				$total_pages
 			);
@@ -113,7 +113,7 @@ class AIAS_Broken_Banner {
 		if ( $blocked_m > 0 ) {
 			$bits[] = sprintf(
 				/* translators: 1: blocked page count, 2: total page count */
-				esc_html__( 'Mobile scanner blocked on %1$d of %2$d pages.', 'ai-assets-scanner' ),
+				esc_html__( 'Mobile scanner blocked on %1$d of %2$d pages.', 'dr-speed-ai-assets-scanner' ),
 				$blocked_m,
 				$total_pages
 			);
@@ -172,16 +172,16 @@ class AIAS_Broken_Banner {
 				// T0-C: name the party that actually rate-limited the scan. $attribution is
 				// already allowlisted by normalize_attribution() — it only picks a branch here.
 				$settings_url = esc_url( admin_url( 'admin.php?page=cu-scanner-settings#cu-cloudflare-waf-bypass' ) );
-				$tail         = esc_html__( 'The rules from the unblocked device (if any) are complete and safe to apply.', 'ai-assets-scanner' );
+				$tail         = esc_html__( 'The rules from the unblocked device (if any) are complete and safe to apply.', 'dr-speed-ai-assets-scanner' );
 
 				if ( 'cloudflare' === $attribution ) {
 					// Deliberately does NOT say "not your server": aggregate_rate_limit_attribution()
 					// ranks cloudflare above host, so a mixed scan resolves here — denying the origin
 					// would be positively false for the origin-limited pages.
-					return esc_html__( 'Cloudflare rate-limited the scan. Whoever manages your Cloudflare — you, your host, or your agency — needs to allowlist the scanner.', 'ai-assets-scanner' )
+					return esc_html__( 'Cloudflare rate-limited the scan. Whoever manages your Cloudflare — you, your host, or your agency — needs to allowlist the scanner.', 'dr-speed-ai-assets-scanner' )
 						. ' ' . wp_kses_post( sprintf(
 							/* translators: %s: URL to AI Assets Scanner settings WAF bypass section */
-							__( 'If you manage the Cloudflare account yourself, set up the one-time scanner exemption — <a href="%s">open AI Assets Scanner settings</a>.', 'ai-assets-scanner' ),
+							__( 'If you manage the Cloudflare account yourself, set up the one-time scanner exemption — <a href="%s">open AI Assets Scanner settings</a>.', 'dr-speed-ai-assets-scanner' ),
 							$settings_url
 						) ) . ' ' . $tail;
 				}
@@ -190,28 +190,28 @@ class AIAS_Broken_Banner {
 					// No settings link by design. The "will not help here" sentence is LOAD-BEARING:
 					// without it a user who already has a working CDN exemption concludes it is
 					// broken and re-does it. Do not trim it for length.
-					return esc_html__( "Your host's server rate-limited the scan. A CDN or WAF exemption will not help here. Wait a few minutes between scans, or ask your host to raise the rate limit during scans.", 'ai-assets-scanner' )
+					return esc_html__( "Your host's server rate-limited the scan. A CDN or WAF exemption will not help here. Wait a few minutes between scans, or ask your host to raise the rate limit during scans.", 'dr-speed-ai-assets-scanner' )
 						. ' ' . $tail;
 				}
 
-				return esc_html__( 'The scan was rate-limited. Wait a few minutes between scans.', 'ai-assets-scanner' )
+				return esc_html__( 'The scan was rate-limited. Wait a few minutes between scans.', 'dr-speed-ai-assets-scanner' )
 					. ' ' . wp_kses_post( sprintf(
 						/* translators: %s: URL to AI Assets Scanner settings WAF bypass section */
-						__( 'If a CDN or WAF sits in front of your site, ask whoever manages it to allowlist the scanner; otherwise check your own server\'s rate limits — <a href="%s">open AI Assets Scanner settings</a>.', 'ai-assets-scanner' ),
+						__( 'If a CDN or WAF sits in front of your site, ask whoever manages it to allowlist the scanner; otherwise check your own server\'s rate limits — <a href="%s">open AI Assets Scanner settings</a>.', 'dr-speed-ai-assets-scanner' ),
 						$settings_url
 					) ) . ' ' . $tail;
 			}
 			if ( $categories[0] === 'error' ) {
 				return esc_html__(
 					'Your server returned an error or didn\'t respond. The rules from the unblocked device (if any) are complete and safe to apply. Try again later, or check site health.',
-					'ai-assets-scanner'
+					'dr-speed-ai-assets-scanner'
 				);
 			}
 		}
 
 		$base = esc_html__(
 			'Your bot protection denied the scanner. The rules from the unblocked device are complete and safe to apply. For full coverage, temporarily disable bot protection during scans.',
-			'ai-assets-scanner'
+			'dr-speed-ai-assets-scanner'
 		);
 		$settings_url = esc_url( admin_url( 'admin.php?page=cu-scanner-settings#cu-cloudflare-waf-bypass' ) );
 		if ( in_array( 'rate', $categories, true ) ) {
@@ -219,13 +219,13 @@ class AIAS_Broken_Banner {
 			// link — the generic bot one is gated off to avoid duplicate copy.
 			$base .= ' ' . wp_kses_post( sprintf(
 				/* translators: %s: URL to AI Assets Scanner settings WAF bypass section */
-				__( 'Behind Cloudflare or another CDN? Set up the scanner rate-limit exemption so future scans aren\'t throttled — <a href="%s">open AI Assets Scanner settings</a>.', 'ai-assets-scanner' ),
+				__( 'Behind Cloudflare or another CDN? Set up the scanner rate-limit exemption so future scans aren\'t throttled — <a href="%s">open AI Assets Scanner settings</a>.', 'dr-speed-ai-assets-scanner' ),
 				$settings_url
 			) );
 		} else {
 			$base .= ' ' . wp_kses_post( sprintf(
 				/* translators: %s: URL to AI Assets Scanner settings WAF bypass section */
-				__( 'Behind Cloudflare or another CDN? Set up the scanner exemption so future scans aren\'t blocked — <a href="%s">open AI Assets Scanner settings</a>.', 'ai-assets-scanner' ),
+				__( 'Behind Cloudflare or another CDN? Set up the scanner exemption so future scans aren\'t blocked — <a href="%s">open AI Assets Scanner settings</a>.', 'dr-speed-ai-assets-scanner' ),
 				$settings_url
 			) );
 		}
@@ -241,29 +241,29 @@ class AIAS_Broken_Banner {
 	public static function reason_phrase( string $reason ): string {
 		switch ( $reason ) {
 			case 'tier2_cf_challenge':
-				return esc_html__( 'Cloudflare challenge', 'ai-assets-scanner' );
+				return esc_html__( 'Cloudflare challenge', 'dr-speed-ai-assets-scanner' );
 			case 'tier2_akamai_challenge':
-				return esc_html__( 'Akamai Bot Manager', 'ai-assets-scanner' );
+				return esc_html__( 'Akamai Bot Manager', 'dr-speed-ai-assets-scanner' );
 			case 'tier2_imperva_challenge':
-				return esc_html__( 'Imperva WAF', 'ai-assets-scanner' );
+				return esc_html__( 'Imperva WAF', 'dr-speed-ai-assets-scanner' );
 			case 'tier2_waf_challenge':
-				return esc_html__( 'firewall/WAF', 'ai-assets-scanner' );
+				return esc_html__( 'firewall/WAF', 'dr-speed-ai-assets-scanner' );
 			case 'tier2_unknown_challenge':
-				return esc_html__( 'bot/firewall protection (unidentified)', 'ai-assets-scanner' );
+				return esc_html__( 'bot/firewall protection (unidentified)', 'dr-speed-ai-assets-scanner' );
 			case 'tier2_rocket_loader_stub':
-				return esc_html__( 'Cloudflare Rocket-Loader stub', 'ai-assets-scanner' );
+				return esc_html__( 'Cloudflare Rocket-Loader stub', 'dr-speed-ai-assets-scanner' );
 			case 'tier2_small_body':
-				return esc_html__( 'asymmetric stub response', 'ai-assets-scanner' );
+				return esc_html__( 'asymmetric stub response', 'dr-speed-ai-assets-scanner' );
 			case 'tier1_zero_bytes':
-				return esc_html__( 'empty response', 'ai-assets-scanner' );
+				return esc_html__( 'empty response', 'dr-speed-ai-assets-scanner' );
 			case 'tier1_http_4xx':
-				return esc_html__( 'site denial (4xx)', 'ai-assets-scanner' );
+				return esc_html__( 'site denial (4xx)', 'dr-speed-ai-assets-scanner' );
 			case 'tier1_http_5xx':
-				return esc_html__( 'site error (5xx)', 'ai-assets-scanner' );
+				return esc_html__( 'site error (5xx)', 'dr-speed-ai-assets-scanner' );
 			case 'tier1_http_rate_limit':
-				return esc_html__( 'rate limit (429)', 'ai-assets-scanner' );
+				return esc_html__( 'rate limit (429)', 'dr-speed-ai-assets-scanner' );
 			case 'tier1_transport_error':
-				return esc_html__( 'unreachable', 'ai-assets-scanner' );
+				return esc_html__( 'unreachable', 'dr-speed-ai-assets-scanner' );
 			default:
 				return esc_html( $reason );
 		}
@@ -279,39 +279,39 @@ class AIAS_Broken_Banner {
 	public static function reason_remediation( string $reason ): string {
 		switch ( $reason ) {
 			case 'tier2_cf_challenge':
-				return __( 'Cloudflare bot protection challenged the scanner. Set up the one-time WAF exemption in AI Assets Scanner settings. Free Cloudflare plan: also turn Bot Fight Mode off during scans (a Skip rule cannot bypass it). Alternative rule key for admins: skip on query strings containing cu_scan_token.', 'ai-assets-scanner' );
+				return __( 'Cloudflare bot protection challenged the scanner. Set up the one-time WAF exemption in AI Assets Scanner settings. Free Cloudflare plan: also turn Bot Fight Mode off during scans (a Skip rule cannot bypass it). Alternative rule key for admins: skip on query strings containing cu_scan_token.', 'dr-speed-ai-assets-scanner' );
 			case 'tier2_rocket_loader_stub':
-				return __( 'Cloudflare Rocket Loader served a stub page to the scanner. The WAF exemption rule in AI Assets Scanner settings also skips this.', 'ai-assets-scanner' );
+				return __( 'Cloudflare Rocket Loader served a stub page to the scanner. The WAF exemption rule in AI Assets Scanner settings also skips this.', 'dr-speed-ai-assets-scanner' );
 			case 'tier1_http_rate_limit':
-				return __( 'Your server rate-limited the scanner. The rules from the unblocked device (if any) are complete and safe to apply. Wait a few minutes between scans, or temporarily raise rate limits during scans. Behind Cloudflare or another CDN: set up the scanner exemption in AI Assets Scanner settings.', 'ai-assets-scanner' );
+				return __( 'Your server rate-limited the scanner. The rules from the unblocked device (if any) are complete and safe to apply. Wait a few minutes between scans, or temporarily raise rate limits during scans. Behind Cloudflare or another CDN: set up the scanner exemption in AI Assets Scanner settings.', 'dr-speed-ai-assets-scanner' );
 			case 'tier2_akamai_challenge':
-				return __( 'Akamai Bot Manager blocked the scan. Ask your CDN admin to allowlist requests carrying the x-cu-scanner header (value: your Scanner Secret, shown in AI Assets Scanner settings).', 'ai-assets-scanner' );
+				return __( 'Akamai Bot Manager blocked the scan. Ask your CDN admin to allowlist requests carrying the x-cu-scanner header (value: your Scanner Secret, shown in AI Assets Scanner settings).', 'dr-speed-ai-assets-scanner' );
 			case 'tier2_imperva_challenge':
-				return __( 'Imperva/Incapsula blocked the scan. Ask your security admin to allowlist requests carrying the x-cu-scanner header (value: your Scanner Secret, shown in AI Assets Scanner settings).', 'ai-assets-scanner' );
+				return __( 'Imperva/Incapsula blocked the scan. Ask your security admin to allowlist requests carrying the x-cu-scanner header (value: your Scanner Secret, shown in AI Assets Scanner settings).', 'dr-speed-ai-assets-scanner' );
 			case 'tier2_waf_challenge':
-				return __( 'A firewall/WAF challenged the scanner. Wordfence: enable Learning Mode during scans, or allowlist the scanner. Behind a CDN: set up the exemption in AI Assets Scanner settings.', 'ai-assets-scanner' );
+				return __( 'A firewall/WAF challenged the scanner. Wordfence: enable Learning Mode during scans, or allowlist the scanner. Behind a CDN: set up the exemption in AI Assets Scanner settings.', 'dr-speed-ai-assets-scanner' );
 			case 'tier2_unknown_challenge':
-				return __( 'Unidentified bot protection denied the scanner. Try the CDN exemption in AI Assets Scanner settings, or temporarily disable bot protection during scans.', 'ai-assets-scanner' );
+				return __( 'Unidentified bot protection denied the scanner. Try the CDN exemption in AI Assets Scanner settings, or temporarily disable bot protection during scans.', 'dr-speed-ai-assets-scanner' );
 			case 'tier2_small_body':
-				return __( 'The site served a reduced page to the scanner (likely bot protection). Set up the CDN exemption in AI Assets Scanner settings, or temporarily disable bot protection during scans.', 'ai-assets-scanner' );
+				return __( 'The site served a reduced page to the scanner (likely bot protection). Set up the CDN exemption in AI Assets Scanner settings, or temporarily disable bot protection during scans.', 'dr-speed-ai-assets-scanner' );
 			case 'tier1_zero_bytes':
-				return __( 'Empty response. Check your host/WAF security logs for blocked requests, then re-scan.', 'ai-assets-scanner' );
+				return __( 'Empty response. Check your host/WAF security logs for blocked requests, then re-scan.', 'dr-speed-ai-assets-scanner' );
 			case 'tier1_http_4xx':
-				return __( 'The site denied the request. Check security-plugin blocklists or IP bans — allowlist by the x-cu-scanner header, not by IP (scanner IPs change).', 'ai-assets-scanner' );
+				return __( 'The site denied the request. Check security-plugin blocklists or IP bans — allowlist by the x-cu-scanner header, not by IP (scanner IPs change).', 'dr-speed-ai-assets-scanner' );
 			case 'tier1_http_5xx':
-				return __( 'The server errored. Re-scan later; if persistent, check site health and host status.', 'ai-assets-scanner' );
+				return __( 'The server errored. Re-scan later; if persistent, check site health and host status.', 'dr-speed-ai-assets-scanner' );
 			case 'tier1_transport_error':
-				return __( 'The site was unreachable (DNS/TLS/timeout). Verify the URL loads from outside your network, then re-scan.', 'ai-assets-scanner' );
+				return __( 'The site was unreachable (DNS/TLS/timeout). Verify the URL loads from outside your network, then re-scan.', 'dr-speed-ai-assets-scanner' );
 			default:
 				// Category-clause fallback, plain-text (mirrors action_clause() semantics without HTML).
 				$cat = self::reason_category( $reason );
 				if ( 'rate' === $cat ) {
-					return __( 'Your server rate-limited the scanner. Wait a few minutes between scans, or temporarily raise rate limits during scans.', 'ai-assets-scanner' );
+					return __( 'Your server rate-limited the scanner. Wait a few minutes between scans, or temporarily raise rate limits during scans.', 'dr-speed-ai-assets-scanner' );
 				}
 				if ( 'error' === $cat ) {
-					return __( 'Your server returned an error or did not respond. Try again later, or check site health.', 'ai-assets-scanner' );
+					return __( 'Your server returned an error or did not respond. Try again later, or check site health.', 'dr-speed-ai-assets-scanner' );
 				}
-				return __( 'Your bot protection denied the scanner. For full coverage, set up the CDN exemption in AI Assets Scanner settings or temporarily disable bot protection during scans.', 'ai-assets-scanner' );
+				return __( 'Your bot protection denied the scanner. For full coverage, set up the CDN exemption in AI Assets Scanner settings or temporarily disable bot protection during scans.', 'dr-speed-ai-assets-scanner' );
 		}
 	}
 
@@ -329,18 +329,18 @@ class AIAS_Broken_Banner {
 			'tier1_http_rate_limit', 'tier1_transport_error',
 		];
 		$phrases = [
-			'tier2_cf_challenge'      => __( 'Cloudflare challenge', 'ai-assets-scanner' ),
-			'tier2_akamai_challenge'  => __( 'Akamai Bot Manager', 'ai-assets-scanner' ),
-			'tier2_imperva_challenge' => __( 'Imperva WAF', 'ai-assets-scanner' ),
-			'tier2_waf_challenge'     => __( 'firewall/WAF', 'ai-assets-scanner' ),
-			'tier2_unknown_challenge' => __( 'bot/firewall protection (unidentified)', 'ai-assets-scanner' ),
-			'tier2_rocket_loader_stub' => __( 'Cloudflare Rocket-Loader stub', 'ai-assets-scanner' ),
-			'tier2_small_body'        => __( 'asymmetric stub response', 'ai-assets-scanner' ),
-			'tier1_zero_bytes'        => __( 'empty response', 'ai-assets-scanner' ),
-			'tier1_http_4xx'          => __( 'site denial (4xx)', 'ai-assets-scanner' ),
-			'tier1_http_5xx'          => __( 'site error (5xx)', 'ai-assets-scanner' ),
-			'tier1_http_rate_limit'   => __( 'rate limit (429)', 'ai-assets-scanner' ),
-			'tier1_transport_error'   => __( 'unreachable', 'ai-assets-scanner' ),
+			'tier2_cf_challenge'      => __( 'Cloudflare challenge', 'dr-speed-ai-assets-scanner' ),
+			'tier2_akamai_challenge'  => __( 'Akamai Bot Manager', 'dr-speed-ai-assets-scanner' ),
+			'tier2_imperva_challenge' => __( 'Imperva WAF', 'dr-speed-ai-assets-scanner' ),
+			'tier2_waf_challenge'     => __( 'firewall/WAF', 'dr-speed-ai-assets-scanner' ),
+			'tier2_unknown_challenge' => __( 'bot/firewall protection (unidentified)', 'dr-speed-ai-assets-scanner' ),
+			'tier2_rocket_loader_stub' => __( 'Cloudflare Rocket-Loader stub', 'dr-speed-ai-assets-scanner' ),
+			'tier2_small_body'        => __( 'asymmetric stub response', 'dr-speed-ai-assets-scanner' ),
+			'tier1_zero_bytes'        => __( 'empty response', 'dr-speed-ai-assets-scanner' ),
+			'tier1_http_4xx'          => __( 'site denial (4xx)', 'dr-speed-ai-assets-scanner' ),
+			'tier1_http_5xx'          => __( 'site error (5xx)', 'dr-speed-ai-assets-scanner' ),
+			'tier1_http_rate_limit'   => __( 'rate limit (429)', 'dr-speed-ai-assets-scanner' ),
+			'tier1_transport_error'   => __( 'unreachable', 'dr-speed-ai-assets-scanner' ),
 		];
 		$remediation = [];
 		$categories  = [];

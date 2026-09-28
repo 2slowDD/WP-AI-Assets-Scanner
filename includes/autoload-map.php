@@ -2,7 +2,7 @@
 /**
  * The ONE class→file autoload map.
  *
- * Was duplicated as an inline array in ai-assets-scanner.php AND tests/bootstrap.php.
+ * Was duplicated as an inline array in dr-speed-ai-assets-scanner.php AND tests/bootstrap.php.
  * Both are hand-maintained, so a new class registered in one and forgotten in the other
  * leaves the whole suite green while a live site fatals on first use — the test map is
  * an injected activation path; this file makes both consumers load the real one (P17).

@@ -5,7 +5,7 @@ define( 'ABSPATH', '/fake/wp/' );
 define( 'WP_PLUGIN_DIR', '/fake/wp/wp-content/plugins' );
 define( 'AIAS_DIR', dirname( __DIR__ ) . '/' );
 define( 'AIAS_VERSION', '1.0.0' );
-define( 'AIAS_URL', 'https://example.test/wp-content/plugins/ai-assets-scanner/' );
+define( 'AIAS_URL', 'https://example.test/wp-content/plugins/dr-speed-ai-assets-scanner/' );
 define( 'AIAS_WPSERVICE_URL', 'https://api.wpservice.pro' );
 require_once AIAS_DIR . 'includes/debug.php';
 defined( 'HOUR_IN_SECONDS' )   || define( 'HOUR_IN_SECONDS',   3600 );
@@ -51,7 +51,7 @@ if ( ! class_exists( 'WP_Query' ) ) {
 }
 
 spl_autoload_register( function ( string $class ): void {
-    // Shared with ai-assets-scanner.php so the suite exercises the REAL production
+    // Shared with dr-speed-ai-assets-scanner.php so the suite exercises the REAL production
     // autoload map, not a hand-maintained test-only copy that can silently drift.
     $map = require AIAS_DIR . 'includes/autoload-map.php';
     if ( isset( $map[ $class ] ) ) {
