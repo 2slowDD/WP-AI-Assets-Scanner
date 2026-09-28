@@ -30,12 +30,23 @@ class SettingsAjax {
             wp_send_json_error( __( 'An API key is already saved.', 'dr-speed-ai-assets-scanner' ) );
         }
 
-        ( new \CUScanner\FreeKeyBootstrap( $settings ) )->run();
+        $outcome = ( new \CUScanner\FreeKeyBootstrap( $settings ) )->run();
 
+        if ( \CUScanner\FreeKeyBootstrap::OUTCOME_UNUSABLE === $outcome ) {
+            wp_send_json_error( self::unusable_free_key_message( $settings->get_free_key_unusable() ) );
+        }
         if ( $settings->is_free_key( $settings->get_api_key() ) ) {
             wp_send_json_success();
         }
         wp_send_json_error( __( 'The free-credit service did not answer. The plugin will retry in about an hour.', 'dr-speed-ai-assets-scanner' ) );
+    }
+
+    /** User-facing explanation for a converted or revoked free key. Shared with the Settings screen. */
+    public static function unusable_free_key_message( string $status ): string {
+        if ( 'revoked' === $status ) {
+            return __( 'This site\'s free key has been revoked, so no more free credits can be issued here. Enter a paid API key, or contact wpservice.pro support.', 'dr-speed-ai-assets-scanner' );
+        }
+        return __( 'This site has already used its free key, and it was upgraded to a paid key. Enter your paid API key instead; you can find it in your wpservice.pro account.', 'dr-speed-ai-assets-scanner' );
     }
 
     public function regenerate_secret(): void {
@@ -117,6 +128,7 @@ class SettingsAjax {
             $auth   = $client->authenticate();
             if ( ! $keep ) {
                 $settings->set_api_key( $api_key );
+                $settings->clear_free_key_unusable();
             }
             // Guarded like fetch_balance() below. An auth response without
             // railway_url would pass null into set_railway_url( string ), and
@@ -178,6 +190,7 @@ class SettingsAjax {
 
         $settings->set_api_key( $new_key );
         $settings->clear_pending_free_key();
+        $settings->clear_free_key_unusable();
         wp_clear_scheduled_hook( 'cu_scanner_free_key_retry' );
         self::store_railway_url( $settings, $auth );
 

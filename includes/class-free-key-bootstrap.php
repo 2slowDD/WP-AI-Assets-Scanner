@@ -18,10 +18,18 @@ class FreeKeyBootstrap {
         $this->client_factory = $client_factory;
     }
 
-    public function run(): void {
+    /** run() outcomes that callers act on. */
+    public const OUTCOME_UNUSABLE = 'unusable';
+
+    /**
+     * @return string 'stored', 'pending', 'kept' (a paid key is saved) or
+     *                self::OUTCOME_UNUSABLE (the service returned this site's
+     *                converted or revoked free key; see Settings::get_free_key_unusable()).
+     */
+    public function run(): string {
         $current = $this->settings->get_api_key();
         if ( '' !== $current && ! $this->settings->is_free_key( $current ) && ! $this->settings->is_pending_free_key( $current ) ) {
-            return;
+            return 'kept';
         }
 
         try {
@@ -32,20 +40,42 @@ class FreeKeyBootstrap {
                 $sanitized = sanitize_text_field( $api_key );
                 $api_key   = is_string( $sanitized ) ? $sanitized : $api_key;
             }
+
+            // The service allows one free key per domain and returns the domain's
+            // existing key on every request. If that key was converted to a paid key
+            // or revoked, /auth refuses it forever: storing it would leave the site
+            // with a dead key, no balance, and an hourly retry that never succeeds.
+            $status = (string) ( $result['status'] ?? '' );
+            if ( in_array( $status, [ 'converted', 'revoked' ], true ) ) {
+                if ( $this->settings->is_pending_free_key( $current ) ) {
+                    $this->settings->set_api_key( '' );
+                    $this->settings->clear_pending_free_key();
+                }
+                $this->settings->set_free_key_unusable( $status );
+                if ( function_exists( 'wp_clear_scheduled_hook' ) ) {
+                    wp_clear_scheduled_hook( 'cu_scanner_free_key_retry' );
+                }
+                return self::OUTCOME_UNUSABLE;
+            }
+
             if ( $this->settings->is_free_key( $api_key ) ) {
                 $this->settings->set_api_key( $api_key );
                 $this->settings->clear_pending_free_key();
+                $this->settings->clear_free_key_unusable();
                 try {
                     $this->cache_railway_url( $api_key );
                 } catch ( \RuntimeException $e ) {
                     self::schedule_retry();
                 }
+                return 'stored';
             }
+            return 'pending';
         } catch ( \RuntimeException $e ) {
             if ( '' === $current ) {
                 $this->settings->set_pending_free_key();
             }
             self::schedule_retry();
+            return 'pending';
         }
     }
 

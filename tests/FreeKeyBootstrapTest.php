@@ -41,6 +41,9 @@ class FreeKeyBootstrapTest extends TestCase {
         WP_Mock::userFunction( 'delete_option' )
             ->with( 'cu_scanner_free_key_pending' )
             ->once();
+        WP_Mock::userFunction( 'delete_option' )
+            ->with( 'aias_free_key_unusable' )
+            ->once();
 
         $bootstrap = new FreeKeyBootstrap( null, function (): object {
             return new class {
@@ -63,6 +66,9 @@ class FreeKeyBootstrapTest extends TestCase {
             ->once();
         WP_Mock::userFunction( 'delete_option' )
             ->with( 'cu_scanner_free_key_pending' )
+            ->once();
+        WP_Mock::userFunction( 'delete_option' )
+            ->with( 'aias_free_key_unusable' )
             ->once();
         WP_Mock::userFunction( 'wp_parse_url' )
             ->andReturnUsing( function ( string $url, ?int $component = null ) {
@@ -136,4 +142,61 @@ class FreeKeyBootstrapTest extends TestCase {
         $this->assertFalse( FreeKeyBootstrap::can_request( new \CUScanner\Settings() ) );
         $this->assertFalse( FreeKeyBootstrap::can_request( new \CUScanner\Settings() ) );
     }
+
+    public function test_converted_key_is_not_stored_and_stops_the_retry_loop(): void {
+        // The service returns the domain's existing key; this one was upgraded to paid.
+        WP_Mock::userFunction( 'get_option' )->with( 'cu_scanner_api_key', '' )->andReturn( '' );
+        WP_Mock::userFunction( 'update_option' )->with( 'cu_scanner_api_key', \Mockery::any() )->never();
+        WP_Mock::userFunction( 'update_option' )->with( 'aias_free_key_unusable', 'converted', false )->once();
+        WP_Mock::userFunction( 'wp_clear_scheduled_hook' )->with( 'cu_scanner_free_key_retry' )->once();
+        WP_Mock::userFunction( 'wp_schedule_single_event' )->never();
+
+        $bootstrap = new FreeKeyBootstrap( null, function (): object {
+            return new class {
+                public function register_free_key( string $current ): array {
+                    return [ 'api_key' => 'cusk_Freekey_9', 'balance' => 5, 'status' => 'converted' ];
+                }
+            };
+        } );
+
+        $this->assertSame( FreeKeyBootstrap::OUTCOME_UNUSABLE, $bootstrap->run() );
+    }
+
+    public function test_revoked_key_clears_a_pending_placeholder_instead_of_storing_the_key(): void {
+        WP_Mock::userFunction( 'get_option' )->with( 'cu_scanner_api_key', '' )->andReturn( 'cusk_Freekey_?' );
+        WP_Mock::userFunction( 'update_option' )->with( 'cu_scanner_api_key', '' )->once();
+        WP_Mock::userFunction( 'delete_option' )->with( 'cu_scanner_free_key_pending' )->once();
+        WP_Mock::userFunction( 'update_option' )->with( 'aias_free_key_unusable', 'revoked', false )->once();
+        WP_Mock::userFunction( 'wp_clear_scheduled_hook' )->with( 'cu_scanner_free_key_retry' )->once();
+
+        $bootstrap = new FreeKeyBootstrap( null, function (): object {
+            return new class {
+                public function register_free_key( string $current ): array {
+                    return [ 'api_key' => 'cusk_Freekey_9', 'balance' => 0, 'status' => 'revoked' ];
+                }
+            };
+        } );
+
+        $this->assertSame( FreeKeyBootstrap::OUTCOME_UNUSABLE, $bootstrap->run() );
+    }
+
+    public function test_site_already_holding_a_dead_key_keeps_it_but_stops_retrying(): void {
+        // A 1.9.1 site that stored its converted key: the next hourly retry lands here.
+        WP_Mock::userFunction( 'get_option' )->with( 'cu_scanner_api_key', '' )->andReturn( 'cusk_Freekey_9' );
+        WP_Mock::userFunction( 'update_option' )->with( 'cu_scanner_api_key', \Mockery::any() )->never();
+        WP_Mock::userFunction( 'update_option' )->with( 'aias_free_key_unusable', 'converted', false )->once();
+        WP_Mock::userFunction( 'wp_clear_scheduled_hook' )->with( 'cu_scanner_free_key_retry' )->once();
+        WP_Mock::userFunction( 'wp_schedule_single_event' )->never();
+
+        $bootstrap = new FreeKeyBootstrap( null, function (): object {
+            return new class {
+                public function register_free_key( string $current ): array {
+                    return [ 'api_key' => 'cusk_Freekey_9', 'balance' => 5, 'status' => 'converted' ];
+                }
+            };
+        } );
+
+        $this->assertSame( FreeKeyBootstrap::OUTCOME_UNUSABLE, $bootstrap->run() );
+    }
+
 }

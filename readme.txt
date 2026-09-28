@@ -4,7 +4,7 @@ Tags: performance, optimization, dequeue, debloat, unused css
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.9.2
+Stable tag: 1.9.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -94,6 +94,9 @@ The WordPress.org edition lives in a different plugin folder, so WordPress sees 
 
 == Changelog ==
 
+= 1.9.3 =
+* If a site's free key was already upgraded to a paid key or revoked, **Get free credits** now says so and asks for the paid key, instead of saving a key that cannot be used. The background retry for it stops.
+
 = 1.9.2 =
 * New **Replace API key** button in Settings. It warns that credits on the current key are not transferred, and accepts only a paid API key; the new key's credit balance is shown once it is accepted.
 * Once a key is saved, the API key field is read-only; a key can be changed only through Replace API key.
@@ -111,6 +114,9 @@ The WordPress.org edition lives in a different plugin folder, so WordPress sees 
 * Coding-standard fixes: text domain, translator comments, prefixed names.
 
 == Upgrade Notice ==
+
+= 1.9.3 =
+Fixes a site getting stuck on a free key that was already upgraded or revoked.
 
 = 1.9.2 =
 Adds a Replace API key option for switching to a paid key.

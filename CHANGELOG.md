@@ -4,6 +4,18 @@ All notable changes to AI Assets Scanner are documented here.
 
 ---
 
+## 1.9.3 — 2026-09-28
+
+### Fixed
+- **A site stuck on a dead free key.** The service allows one free key per domain and answers `/free-key/register` with the domain's existing key. If that key had been converted to a paid key or revoked, the plugin stored it anyway: `/auth` then refused it on every call, the balance showed "—", **Get free credits** reported success, and a background retry re-registered it every hour, indefinitely. Present since the free-key flow was added.
+  - `FreeKeyBootstrap::run()` now reads the `status` in the register answer. For `converted` or `revoked` it does not store the key (a pending placeholder is cleared instead), records the reason in `aias_free_key_unusable`, and cancels the retry.
+  - **Get free credits** shows why and what to do: enter the paid key (converted) or contact support (revoked). Settings keeps showing the same explanation, pointing to **Replace API key** when a dead key is already saved.
+  - Sites that already stored a dead key recover on their own: the next hourly retry reaches the same check and stops.
+  - The flag clears whenever a working key is saved, replaced or registered, and uninstall removes it.
+  - Tests cover converted, revoked-with-placeholder and already-stored cases; removing the status check fails them.
+
+---
+
 ## 1.9.2 — 2026-09-28
 
 ### Added

@@ -52,6 +52,7 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 		'cu_scanner_secret',
 		'aias_db_version',
 		'aias_dismissed_warnings',
+		'aias_free_key_unusable',
 		'aias_railway_url',
 		'aias_last_push_sync_undo',
 		'aias_last_result',

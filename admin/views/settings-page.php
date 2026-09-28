@@ -60,6 +60,17 @@
                     <?php if ( $settings->is_pending_free_key( $api_key ) ) : ?>
                         <p class="cu-inline-state cu-inline-state--pending"><?php esc_html_e( 'Free API key activation is pending. The plugin retries about once an hour.', 'dr-speed-ai-assets-scanner' ); ?></p>
                     <?php endif; ?>
+                    <?php
+                    $aias_unusable = $settings->get_free_key_unusable();
+                    if ( '' !== $aias_unusable && ( '' === $api_key || $settings->is_free_key( $api_key ) ) ) :
+                        ?>
+                        <p class="cu-inline-state cu-inline-state--pending" id="cu-free-key-unusable">
+                            <?php echo esc_html( \CUScanner\Admin\SettingsAjax::unusable_free_key_message( $aias_unusable ) ); ?>
+                            <?php if ( '' !== $api_key ) : ?>
+                                <?php esc_html_e( 'Use Replace API key below.', 'dr-speed-ai-assets-scanner' ); ?>
+                            <?php endif; ?>
+                        </p>
+                    <?php endif; ?>
                     <?php if ( $aias_has_key ) : ?>
                         <p class="cu-replace-key">
                             <button type="button" id="cu-replace-key-open" class="button cu-replace-key-btn"

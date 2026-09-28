@@ -61,6 +61,24 @@ class Settings {
         delete_option( 'cu_scanner_free_key_pending' );
     }
 
+    /**
+     * Why this site's free key cannot be used, as the service reported it when the
+     * site asked for free credits: 'converted' (upgraded to a paid key) or
+     * 'revoked'. '' when there is nothing to report.
+     */
+    public function get_free_key_unusable(): string {
+        $status = (string) get_option( 'aias_free_key_unusable', '' );
+        return in_array( $status, [ 'converted', 'revoked' ], true ) ? $status : '';
+    }
+
+    public function set_free_key_unusable( string $status ): void {
+        update_option( 'aias_free_key_unusable', $status, false );
+    }
+
+    public function clear_free_key_unusable(): void {
+        delete_option( 'aias_free_key_unusable' );
+    }
+
     public function get_buy_credits_url( ?string $api_key = null ): string {
         $api_key = $api_key ?? $this->get_api_key();
         $base    = ( defined( 'AIAS_WPSERVICE_BASE' ) ? AIAS_WPSERVICE_BASE : 'https://wpservice.pro' )
