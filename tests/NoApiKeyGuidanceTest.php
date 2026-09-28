@@ -12,7 +12,7 @@ use WP_Mock\Tools\TestCase;
  * plugin may not contact wpservice.pro on its own afterwards. A scan started in
  * that state used to fail with a bare "HTTP 401: Invalid API key". These tests pin
  * the guidance that replaced it: the scan stops before any request and points
- * to Get free credits in Settings.
+ * to Validate your key in Settings.
  */
 final class NoApiKeyGuidanceTest extends TestCase {
 
@@ -39,7 +39,7 @@ final class NoApiKeyGuidanceTest extends TestCase {
         $this->assertIsArray( $error );
         $this->assertSame( 'no_api_key', $error['error'] );
         $this->assertFalse( $error['retryable'], 'must not be queued for retry: nothing changes until the admin acts' );
-        $this->assertStringContainsString( 'Get free credits', $error['message'] );
+        $this->assertStringContainsString( 'Validate your key', $error['message'] );
         $this->assertStringEndsWith( 'page=cu-scanner-settings#cu-free-key-optin', $error['settings_url'] );
     }
 
@@ -93,7 +93,7 @@ final class NoApiKeyGuidanceTest extends TestCase {
         $this->assertStringContainsString(
             'FreeKeyBootstrap::can_request( $settings )',
             $page,
-            'Get free credits must also be offered while an earlier request is pending'
+            'Validate your key must also be offered while an earlier request is pending'
         );
         $this->assertStringContainsString( 'data.settings_url', $js );
     }

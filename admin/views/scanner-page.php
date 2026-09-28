@@ -44,14 +44,14 @@
                     <strong><?php esc_html_e( 'No API key yet.', 'dr-speed-ai-assets-scanner' ); ?></strong>
                     <?php
                     if ( '' === $aias_api_key ) {
-                        esc_html_e( 'Scans need an API key. If this site had a free key before, clicking Get free credits restores the same key and its remaining credits. Deleting the plugin removes the saved key, but deactivating it does not.', 'dr-speed-ai-assets-scanner' );
+                        esc_html_e( 'Scans need an API key. Using the plugin for the first time, or reinstalled it? Click Validate your key in Settings: a new site gets a free key with starter credits, and a site that had a key before gets the same key and its remaining credits back.', 'dr-speed-ai-assets-scanner' );
                     } else {
-                        esc_html_e( 'The free key request has not finished yet. Try Get free credits again in Settings.', 'dr-speed-ai-assets-scanner' );
+                        esc_html_e( 'The free key request has not finished yet. Click Validate your key again in Settings.', 'dr-speed-ai-assets-scanner' );
                     }
                     ?>
                 </p>
                 <p>
-                    <a class="button button-primary" href="<?php echo esc_url( admin_url( 'admin.php?page=cu-scanner-settings#cu-free-key-optin' ) ); ?>"><?php esc_html_e( 'Get free credits in Settings', 'dr-speed-ai-assets-scanner' ); ?></a>
+                    <a class="button button-primary" href="<?php echo esc_url( admin_url( 'admin.php?page=cu-scanner-settings#cu-free-key-optin' ) ); ?>"><?php esc_html_e( 'Validate your key in Settings', 'dr-speed-ai-assets-scanner' ); ?></a>
                     <?php esc_html_e( 'or enter a paid API key there.', 'dr-speed-ai-assets-scanner' ); ?>
                 </p>
             </div>

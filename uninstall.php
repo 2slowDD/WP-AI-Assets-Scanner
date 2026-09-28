@@ -71,6 +71,8 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 		'aias_bypass_misuse_throttle',
 		'aias_event_overflow_warned',
 		'aias_menu_badge_last_poll',
+		'aias_free_key_welcome',
+		'aias_claim_checked',
 	) as $transient ) {
 		delete_transient( $transient );
 	}

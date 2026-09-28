@@ -91,16 +91,46 @@
                         </div>
                     <?php endif; ?>
                 </div>
+                <?php
+                $aias_welcome = get_transient( \CUScanner\FreeKeyBootstrap::WELCOME_TRANSIENT );
+                if ( is_array( $aias_welcome ) ) :
+                    delete_transient( \CUScanner\FreeKeyBootstrap::WELCOME_TRANSIENT );
+                    ?>
+                    <div class="notice notice-success inline" id="cu-free-key-welcome">
+                        <p>
+                            <?php
+                            if ( ! empty( $aias_welcome['restored'] ) ) {
+                                printf(
+                                    /* translators: 1: the restored free API key, 2: its remaining credits. */
+                                    esc_html__( 'Welcome back. This site\'s existing free key %1$s was restored with %2$d credits.', 'dr-speed-ai-assets-scanner' ),
+                                    '<code>' . esc_html( (string) ( $aias_welcome['key'] ?? '' ) ) . '</code>',
+                                    (int) ( $aias_welcome['balance'] ?? 0 )
+                                );
+                                if ( (int) ( $aias_welcome['balance'] ?? 0 ) < 1 ) {
+                                    echo ' ' . esc_html__( 'No free credits are left on it; use Buy credits to keep scanning.', 'dr-speed-ai-assets-scanner' );
+                                }
+                            } else {
+                                printf(
+                                    /* translators: 1: the new free API key, 2: its starter credits. */
+                                    esc_html__( 'Free API key %1$s created with %2$d starter credits.', 'dr-speed-ai-assets-scanner' ),
+                                    '<code>' . esc_html( (string) ( $aias_welcome['key'] ?? '' ) ) . '</code>',
+                                    (int) ( $aias_welcome['balance'] ?? 0 )
+                                );
+                            }
+                            ?>
+                        </p>
+                    </div>
+                <?php endif; ?>
                 <?php if ( \CUScanner\FreeKeyBootstrap::can_request( $settings ) ) : ?>
                     <div class="cu-settings-field cu-free-key-optin" id="cu-free-key-optin">
-                        <span class="cu-settings-label"><?php esc_html_e( 'No API key yet?', 'dr-speed-ai-assets-scanner' ); ?></span>
+                        <span class="cu-settings-label"><?php esc_html_e( 'Validate your key', 'dr-speed-ai-assets-scanner' ); ?></span>
                         <p class="description">
-                            <?php esc_html_e( 'Get a free API key with starter scan credits. Clicking the button sends this site\'s domain and the plugin version to wpservice.pro, which creates the key. Nothing is sent until you click.', 'dr-speed-ai-assets-scanner' ); ?>
+                            <?php esc_html_e( 'First time using the plugin? This creates a free API key with starter scan credits. Reinstalled it? This restores this site\'s existing key and its remaining credits. Clicking sends this site\'s domain and the plugin version to wpservice.pro; nothing is sent until you click. Have a paid key? Paste it in the API key field above instead.', 'dr-speed-ai-assets-scanner' ); ?>
                             <a href="https://wpservice.pro/terms-and-conditions/" target="_blank" rel="noopener"><?php esc_html_e( 'Terms', 'dr-speed-ai-assets-scanner' ); ?></a>
                             &middot;
                             <a href="https://wpservice.pro/privacy-policy/" target="_blank" rel="noopener"><?php esc_html_e( 'Privacy policy', 'dr-speed-ai-assets-scanner' ); ?></a>
                         </p>
-                        <p><button type="button" id="cu-get-free-key" class="button button-primary"><?php esc_html_e( 'Get free credits', 'dr-speed-ai-assets-scanner' ); ?></button></p>
+                        <p><button type="button" id="cu-get-free-key" class="button button-primary"><?php esc_html_e( 'Validate your key', 'dr-speed-ai-assets-scanner' ); ?></button></p>
                     </div>
                 <?php endif; ?>
                 <div class="cu-settings-field cu-settings-field--balance">

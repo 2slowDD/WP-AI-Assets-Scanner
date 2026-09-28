@@ -18,7 +18,7 @@ class SettingsAjax {
 
     /**
      * Opt-in free-credit registration. Runs only when an administrator clicks
-     * "Get free credits", after the Settings screen has said what is sent
+     * "Validate your key", after the Settings screen has said what is sent
      * (this site's domain and the plugin version) and to whom (wpservice.pro).
      */
     public function request_free_key(): void {
@@ -43,7 +43,7 @@ class SettingsAjax {
     }
 
     /**
-     * Says why "Get free credits" failed, using the service's own reply, instead of
+     * Says why "Validate your key" failed, using the service's own reply, instead of
      * one message for every failure. The reply is plain text shown with textContent.
      */
     public static function free_key_failure_message( ?\RuntimeException $error ): string {
@@ -58,7 +58,8 @@ class SettingsAjax {
         $detail = rtrim( trim( $detail ), '.' );
 
         if ( 429 === $status ) {
-            return __( 'wpservice.pro refused the request: too many free-key requests for this site in the last hour. Wait an hour, then click Get free credits again.', 'dr-speed-ai-assets-scanner' );
+            /* translators: %s: the service's reply, for example "HTTP 429: Too many free key registration attempts. Try again later". */
+            return sprintf( __( 'wpservice.pro refused the request: too many requests for this site in the last hour (%s). Wait an hour, then click Validate your key again.', 'dr-speed-ai-assets-scanner' ), '' === $detail ? 'HTTP 429' : $detail );
         }
         if ( '' === $detail ) {
             return __( 'The free-credit service did not answer. The plugin will retry in about an hour.', 'dr-speed-ai-assets-scanner' );
@@ -268,7 +269,10 @@ class SettingsAjax {
             $api_key = $settings->get_api_key();
             $updated = false;
 
-            if ( $settings->is_free_key( $api_key ) ) {
+            // The paid-key claim runs on every Settings load and window focus; once a
+            // minute is enough to pick up a purchase and keeps the service's counter low.
+            if ( $settings->is_free_key( $api_key ) && false === get_transient( 'aias_claim_checked' ) ) {
+                set_transient( 'aias_claim_checked', 1, MINUTE_IN_SECONDS );
                 try {
                     $claim = ( new WpserviceClient( AIAS_WPSERVICE_URL, $api_key ) )
                         ->claim_paid_key( $api_key, $settings->get_paid_key_claim_token() );

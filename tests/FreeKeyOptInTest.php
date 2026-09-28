@@ -76,9 +76,12 @@ final class FreeKeyOptInTest extends TestCase {
         WP_Mock::userFunction( 'sanitize_text_field' )->andReturnUsing( fn( $s ) => $s );
         $http = fn( string $m, int $c ) => new \CUScanner\Api\HttpException( $m, $c );
 
+        $rate = SettingsAjax::free_key_failure_message( $http( 'HTTP 429: Too many free key registration attempts. Try again later.', 429 ) );
+        $this->assertStringContainsString( 'too many requests for this site in the last hour', $rate );
         $this->assertStringContainsString(
-            'too many free-key requests',
-            SettingsAjax::free_key_failure_message( $http( 'HTTP 429: Too many free key registration attempts. Try again later.', 429 ) )
+            'Too many free key registration attempts',
+            $rate,
+            'the service text tells a SaaS limit apart from a Cloudflare or host block'
         );
         $this->assertStringContainsString(
             'could not issue a free key: HTTP 500: Could not allocate a free API key. The plugin',
@@ -97,5 +100,15 @@ final class FreeKeyOptInTest extends TestCase {
             strlen( SettingsAjax::free_key_failure_message( $http( 'HTTP 500: ' . str_repeat( 'x', 5000 ), 500 ) ) ),
             'a huge error body must not be echoed whole'
         );
+    }
+
+    public function test_paid_key_claim_is_checked_at_most_once_a_minute(): void {
+        $src   = (string) file_get_contents( dirname( __DIR__ ) . '/admin/class-settings-ajax.php' );
+        $start = strpos( $src, 'public function fetch_balance(): void' );
+        $body  = substr( $src, $start, 3000 );
+        $guard = strpos( $body, "false === get_transient( 'aias_claim_checked' )" );
+        $this->assertNotFalse( $guard, 'the claim call must be gated by the once-a-minute transient' );
+        $this->assertLessThan( strpos( $body, '->claim_paid_key(' ), $guard );
+        $this->assertStringContainsString( "set_transient( 'aias_claim_checked', 1, MINUTE_IN_SECONDS )", $body );
     }
 }

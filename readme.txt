@@ -34,11 +34,11 @@ The plugin adds nothing to your public pages. Its code runs in wp-admin, and on 
 
 == External services ==
 
-This plugin connects to two services run by WPservice.pro. Nothing is sent until you either save an API key or click **Get free credits** in Settings.
+This plugin connects to two services run by WPservice.pro. Nothing is sent until you either save an API key or click **Validate your key** in Settings.
 
 **wpservice.pro API** (`https://wpservice.pro/wp-json/cu-scanner/v1/`) handles accounts and credits.
 
-* When you click **Get free credits**: your site's domain and the plugin version, to create a free API key.
+* When you click **Validate your key**: your site's domain and the plugin version, to create a free API key (first install) or restore this site's existing one.
 * When you save or refresh your key: the API key and your site's domain, to check the key and read your credit balance.
 * When you start a scan: the number of pages, your domain and the API key, to reserve credits. Credits are charged or returned when the scan ends.
 * During a scan: status events tied to the scan ID, so the scan can be billed and supported. They contain the names of caching or optimization plugins detected on your site, whether each was paused for the scan, and hashed (unreadable) page paths.
@@ -57,7 +57,7 @@ Privacy policy: https://wpservice.pro/privacy-policy/
 == Installation ==
 
 1. Install the plugin from **Plugins > Add New**, or upload the ZIP file, and activate it.
-2. Open **Dr. Speed: AI Assets Scanner > Settings**. Click **Get free credits**, or paste an API key from wpservice.pro and click **Save**.
+2. Open **Dr. Speed: AI Assets Scanner > Settings**. Click **Validate your key** to get a free key with starter credits, or paste an API key from wpservice.pro and click **Save**.
 3. Open **Dr. Speed: AI Assets Scanner**, click **Discover Pages**, choose the pages to scan, and click **Start Scan**.
 4. When the scan finishes, download the rule file or push it to Code Unloader.
 
@@ -92,12 +92,18 @@ The WordPress.org edition lives in a different plugin folder, so WordPress sees 
 3. Install and activate **Dr. Speed: AI Assets Scanner** from **Plugins > Add New**. Your API key, credits and settings carry over.
 4. Remove the old plugin's folder, `wp-content/plugins/ai-assets-scanner`, with FTP or your host's file manager. Do not use the **Delete** link: the old version's delete routine erases the scanner secret, worker address and scan history that the new plugin now uses.
 
+= I deleted and reinstalled the plugin. Where is my key? =
+
+Deleting the plugin removes the saved key from your site, but the key and its credits stay on wpservice.pro. Open **Settings** and click **Validate your key**: the same key comes back with its remaining credits. Deactivating the plugin does not remove the key.
+
 == Changelog ==
 
 = 1.9.3 =
-* If a site's free key was already upgraded to a paid key or revoked, **Get free credits** now says so and asks for the paid key, instead of saving a key that cannot be used. The background retry for it stops.
-* When **Get free credits** fails, the error now gives the reason (for example, too many requests in the last hour) instead of always saying the service did not answer.
+* If a site's free key was already upgraded to a paid key or revoked, the free-key button now says so and asks for the paid key, instead of saving a key that cannot be used. The background retry for it stops.
+* When the free-key button fails, the error now gives the reason (for example, too many requests in the last hour) instead of always saying the service did not answer.
 * A scan started without an API key (for example after the plugin was deleted and reinstalled) now stops before contacting the service and offers to open Settings, instead of failing with "HTTP 401: Invalid API key". The scanner page shows the same guidance up front.
+* The free-key button is now called **Validate your key**. On a first install it creates a free key with starter credits; after a reinstall it restores the site's existing key and remaining credits, and Settings says "Welcome back" with the restored balance.
+* The check for a purchased paid key now runs at most once a minute instead of on every visit to Settings.
 
 = 1.9.2 =
 * New **Replace API key** button in Settings. It warns that credits on the current key are not transferred, and accepts only a paid API key; the new key's credit balance is shown once it is accepted.

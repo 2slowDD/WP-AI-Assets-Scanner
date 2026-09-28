@@ -24,6 +24,9 @@ class FreeKeyBootstrap {
     /** run() outcomes that callers act on. */
     public const OUTCOME_UNUSABLE = 'unusable';
 
+    /** One-shot Settings message after a key is stored: restored (welcome back) or new. */
+    public const WELCOME_TRANSIENT = 'aias_free_key_welcome';
+
     /**
      * @return string 'stored', 'pending', 'kept' (a paid key is saved) or
      *                self::OUTCOME_UNUSABLE (the service returned this site's
@@ -66,6 +69,18 @@ class FreeKeyBootstrap {
                 $this->settings->set_api_key( $api_key );
                 $this->settings->clear_pending_free_key();
                 $this->settings->clear_free_key_unusable();
+                // Shown once by the Settings screen: "welcome back" for a restored key.
+                if ( function_exists( 'set_transient' ) ) {
+                    set_transient(
+                        self::WELCOME_TRANSIENT,
+                        [
+                            'restored' => ! empty( $result['restored'] ),
+                            'key'      => $api_key,
+                            'balance'  => (int) ( $result['balance'] ?? 0 ),
+                        ],
+                        10 * MINUTE_IN_SECONDS
+                    );
+                }
                 try {
                     $this->cache_railway_url( $api_key );
                 } catch ( \RuntimeException $e ) {
@@ -100,7 +115,7 @@ class FreeKeyBootstrap {
     }
 
     /**
-     * Whether the "Get free credits" opt-in can be offered: no key saved yet, or an
+     * Whether the "Validate your key" opt-in can be offered: no key saved yet, or an
      * earlier opt-in is still waiting for the service. Never true for a real key.
      */
     public static function can_request( Settings $settings ): bool {

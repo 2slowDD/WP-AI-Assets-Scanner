@@ -49,7 +49,7 @@ spl_autoload_register( function ( string $class ): void {
 
 add_action( 'rest_api_init', [ \CUScanner\Scanner\RestPreflight::class, 'register_routes' ] );
 
-// No request goes to wpservice.pro until an administrator clicks "Get free credits"
+// No request goes to wpservice.pro until an administrator clicks "Validate your key"
 // on the Settings screen (SettingsAjax::request_free_key). The retry below only
 // exists after that opt-in: FreeKeyBootstrap::run() is its sole scheduler.
 add_action( 'cu_scanner_free_key_retry', function (): void {

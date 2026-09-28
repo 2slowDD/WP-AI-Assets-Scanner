@@ -22,7 +22,7 @@ AI Assets Scanner plugin  ──→  wpservice.pro API  ──→  scanning work
 3. The worker loads each page with a one-time bypass token, so caching and optimization plugins step aside for that request only.
 4. The plugin turns the result into safe and aggressive unload rules, which you download as JSON or push into [Code Unloader](https://github.com/2slowDD/Code-Unloader), with snapshot and undo.
 
-Nothing is sent to wpservice.pro until an administrator saves an API key or clicks **Get free credits**. See the *External services* section of [`readme.txt`](readme.txt) for exactly what is sent and when.
+Nothing is sent to wpservice.pro until an administrator saves an API key or clicks **Validate your key**. See the *External services* section of [`readme.txt`](readme.txt) for exactly what is sent and when.
 
 ## Switching from the wpservice.pro edition (1.8.9 and earlier)
 

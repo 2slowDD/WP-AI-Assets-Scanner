@@ -219,4 +219,34 @@ class FreeKeyBootstrapTest extends TestCase {
         $this->assertInstanceOf( \CUScanner\Api\HttpException::class, $error );
         $this->assertSame( 429, $error->get_status_code() );
     }
+
+    /** @dataProvider welcome_cases */
+    public function test_stored_key_leaves_a_one_shot_welcome_for_settings( array $reply, bool $restored ): void {
+        WP_Mock::userFunction( 'get_option' )->with( 'cu_scanner_api_key', '' )->andReturn( '' );
+        WP_Mock::userFunction( 'update_option' );
+        WP_Mock::userFunction( 'delete_option' );
+        WP_Mock::userFunction( 'set_transient' )
+            ->with( FreeKeyBootstrap::WELCOME_TRANSIENT, [ 'restored' => $restored, 'key' => 'cusk_Freekey_12', 'balance' => 4 ], 600 )
+            ->once();
+
+        $bootstrap = new FreeKeyBootstrap( null, function () use ( $reply ): object {
+            return new class( $reply ) {
+                public function __construct( private array $reply ) {}
+                public function register_free_key( string $current ): array {
+                    return $this->reply;
+                }
+            };
+        } );
+
+        $this->assertSame( 'stored', $bootstrap->run() );
+    }
+
+    public static function welcome_cases(): array {
+        $base = [ 'api_key' => 'cusk_Freekey_12', 'balance' => 4, 'status' => 'active' ];
+        return [
+            'domain had a key: welcome back' => [ $base + [ 'restored' => true ], true ],
+            'new key'                        => [ $base + [ 'restored' => false ], false ],
+            'SaaS older than 1.2.47'         => [ $base, false ],
+        ];
+    }
 }

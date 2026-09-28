@@ -152,8 +152,8 @@ class ScannerAjax {
         }
         return [
             'message'      => '' === $api_key
-                ? __( 'No API key is saved, so the scan cannot start. Open Settings and click Get free credits (a site that had a free key gets the same key and its remaining credits back), or enter a paid API key.', 'dr-speed-ai-assets-scanner' )
-                : __( 'The free API key request has not finished yet. Open Settings and click Get free credits again.', 'dr-speed-ai-assets-scanner' ),
+                ? __( 'No API key is saved, so the scan cannot start. Open Settings and click Validate your key (a new site gets a free key with starter credits; a site that had a key before gets the same key and its remaining credits back), or enter a paid API key.', 'dr-speed-ai-assets-scanner' )
+                : __( 'The free API key request has not finished yet. Open Settings and click Validate your key again.', 'dr-speed-ai-assets-scanner' ),
             'retryable'    => false,
             'error'        => 'no_api_key',
             'settings_url' => admin_url( 'admin.php?page=cu-scanner-settings#cu-free-key-optin' ),
