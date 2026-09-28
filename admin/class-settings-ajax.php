@@ -13,6 +13,7 @@ class SettingsAjax {
         add_action( 'wp_ajax_cu_scanner_ack_cdn', [ $this, 'ack_cdn' ] );
         add_action( 'wp_ajax_cu_scanner_regenerate_secret', [ $this, 'regenerate_secret' ] );
         add_action( 'wp_ajax_cu_scanner_request_free_key', [ $this, 'request_free_key' ] );
+        add_action( 'wp_ajax_cu_scanner_replace_key', [ $this, 'replace_key' ] );
     }
 
     /**
@@ -66,7 +67,12 @@ class SettingsAjax {
         // this option has nothing to do with API-key validity.
         $settings->set_omit_cu_bypass( isset( $_POST['omit_cu_bypass'] ) );
 
-        $keep = ! empty( $_POST['keep_api_key'] );
+        // Once a key is saved, this form never changes it: a new key goes through
+        // replace_key(), which accepts paid keys only. Without this, typing a free
+        // key into the field and pressing Save would bypass that rule. A pending
+        // free-key placeholder is not a real key, so it may still be overwritten.
+        $stored = $settings->get_api_key();
+        $keep   = ! empty( $_POST['keep_api_key'] ) || ( '' !== $stored && ! $settings->is_pending_free_key( $stored ) );
         if ( $keep ) {
             $api_key = $settings->get_api_key();
         } else {
@@ -119,25 +125,7 @@ class SettingsAjax {
             // .catch() for the 500, so the form silently does nothing. The key
             // HAS authenticated by this point, so an absent railway_url is a
             // success that simply leaves the cached URL untouched.
-            $railway_url = ! empty( $auth['railway_url'] ) ? (string) $auth['railway_url'] : '';
-            if ( '' !== $railway_url ) {
-                try {
-                    $settings->set_railway_url( $railway_url );
-                } catch ( \RuntimeException $e ) {
-                    // FU-O — a URL we REFUSE to store is not a failed save. By this point the
-                    // key has authenticated and been committed above, so letting this throw
-                    // reach the outer catch answered wp_send_json_error() and told the user
-                    // their settings had not saved — about a save that had stored their key,
-                    // the one thing they opened the form to do. Safe behaviour, lying message.
-                    //
-                    // The value arrives in the SaaS auth response, NOT from the user, so there
-                    // is no user action to prompt for. Treated exactly like an ABSENT
-                    // railway_url (see the guard above): cached URL untouched, save succeeds.
-                    // Blanked rather than echoed back so the response cannot advertise a URL
-                    // we just declined to trust.
-                    $railway_url = '';
-                }
-            }
+            $railway_url = self::store_railway_url( $settings, $auth );
             // balance is guarded for the same reason and in the same style as
             // fetch_balance() below: an auth response without it would emit an
             // "undefined array key" warning and put null on the wire, which
@@ -148,6 +136,74 @@ class SettingsAjax {
         } catch ( \RuntimeException $e ) {
             wp_send_json_error( $e->getMessage() );
         }
+    }
+
+    /**
+     * Replace the saved API key with a new PAID key. The Settings screen reaches
+     * this only after the user confirmed a warning that credits on the current
+     * key are not transferred.
+     *
+     * Free keys are refused twice: by shape before any request, and by the /auth
+     * answer (a paid key returns its account's user_id, a free key returns
+     * key_type "free" and user_id 0). As in save_settings(), the new key is
+     * committed only after /auth accepted it, so a rejected or unreachable
+     * replacement never removes the key that works.
+     */
+    public function replace_key(): void {
+        check_ajax_referer( 'cu_scanner_settings_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
+
+        $settings = new Settings();
+        $new_key  = sanitize_text_field( wp_unslash( $_POST['new_api_key'] ?? '' ) );
+
+        if ( '' === $new_key ) {
+            wp_send_json_error( __( 'Enter the new paid API key.', 'dr-speed-ai-assets-scanner' ) );
+        }
+        if ( $settings->is_free_key( $new_key ) || $settings->is_pending_free_key( $new_key ) ) {
+            wp_send_json_error( __( 'Only a paid API key can replace your current key. Free keys cannot be used here.', 'dr-speed-ai-assets-scanner' ) );
+        }
+        if ( $new_key === $settings->get_api_key() ) {
+            wp_send_json_error( __( 'That is already your current API key.', 'dr-speed-ai-assets-scanner' ) );
+        }
+
+        try {
+            $auth = ( new WpserviceClient( AIAS_WPSERVICE_URL, $new_key ) )->authenticate();
+        } catch ( \RuntimeException $e ) {
+            wp_send_json_error( $e->getMessage() );
+        }
+
+        if ( 'free' === ( $auth['key_type'] ?? '' ) || (int) ( $auth['user_id'] ?? 0 ) < 1 ) {
+            wp_send_json_error( __( 'Only a paid API key can replace your current key. Free keys cannot be used here.', 'dr-speed-ai-assets-scanner' ) );
+        }
+
+        $settings->set_api_key( $new_key );
+        $settings->clear_pending_free_key();
+        wp_clear_scheduled_hook( 'cu_scanner_free_key_retry' );
+        self::store_railway_url( $settings, $auth );
+
+        wp_send_json_success( [ 'credits' => (int) ( $auth['balance'] ?? 0 ) ] );
+    }
+
+    /**
+     * Cache the worker URL from an /auth answer. Returns what was stored, or ''.
+     *
+     * An absent value, or one the host allowlist refuses, leaves the cached URL
+     * untouched and is not an error: the key has authenticated, and the value
+     * came from the service, not the user, so there is nothing for them to fix.
+     * Blanked rather than echoed back so the response cannot advertise a URL we
+     * just declined to trust.
+     */
+    private static function store_railway_url( Settings $settings, array $auth ): string {
+        $railway_url = ! empty( $auth['railway_url'] ) ? (string) $auth['railway_url'] : '';
+        if ( '' === $railway_url ) {
+            return '';
+        }
+        try {
+            $settings->set_railway_url( $railway_url );
+        } catch ( \RuntimeException $e ) {
+            return '';
+        }
+        return $railway_url;
     }
 
     public function fetch_balance(): void {

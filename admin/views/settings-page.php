@@ -44,15 +44,40 @@
                     <span class="cu-settings-icon" aria-hidden="true">&#9673;</span>
                     <div><span class="cu-eyebrow">Account</span><h2 id="cu-settings-account-title">API access and credits</h2><p>Connect the scanner and keep track of available scan credits.</p></div>
                 </div>
+                <?php
+                // A saved key is changed only through "Replace API key" below, which accepts
+                // paid keys only; SettingsAjax::save_settings() enforces the same rule.
+                $aias_has_key = '' !== $api_key && ! $settings->is_pending_free_key( $api_key );
+                ?>
                 <div class="cu-settings-field">
                     <label for="cu_api_key">API key</label>
                     <input type="text" id="cu_api_key" name="api_key"
                            value="<?php echo esc_attr( $masked ); ?>"
-                           <?php if ( $is_masked ) : ?>data-masked="1"<?php endif; ?>
+                           <?php if ( $is_masked || $aias_has_key ) : ?>data-masked="1"<?php endif; ?>
+                           <?php if ( $aias_has_key ) : ?>readonly<?php endif; ?>
                            autocomplete="off" class="regular-text" placeholder="cusk_..." />
                     <p class="description">Get your API key from <a href="https://wpservice.pro" target="_blank" rel="noopener">wpservice.pro</a>.</p>
                     <?php if ( $settings->is_pending_free_key( $api_key ) ) : ?>
                         <p class="cu-inline-state cu-inline-state--pending"><?php esc_html_e( 'Free API key activation is pending. The plugin retries about once an hour.', 'dr-speed-ai-assets-scanner' ); ?></p>
+                    <?php endif; ?>
+                    <?php if ( $aias_has_key ) : ?>
+                        <p class="cu-replace-key">
+                            <button type="button" id="cu-replace-key-open" class="button cu-replace-key-btn"
+                                    data-confirm="<?php echo esc_attr__( "Replace your API key?\n\nYour current key will be removed from this site. Credits on it are NOT transferred to the new key; they stay with the current key's account.\n\nOnly a paid API key from wpservice.pro can be used as the replacement.", 'dr-speed-ai-assets-scanner' ); ?>">
+                                <?php esc_html_e( 'Replace API key', 'dr-speed-ai-assets-scanner' ); ?>
+                            </button>
+                        </p>
+                        <div id="cu-replace-key-form" class="cu-replace-key-form" hidden>
+                            <label for="cu-new-api-key"><?php esc_html_e( 'New paid API key', 'dr-speed-ai-assets-scanner' ); ?></label>
+                            <input type="text" id="cu-new-api-key" class="regular-text" autocomplete="off" placeholder="cusk_..." />
+                            <p class="description cu-replace-key-warning">
+                                <?php esc_html_e( 'Only a paid API key from your wpservice.pro account is accepted. Credits on your current key are not transferred.', 'dr-speed-ai-assets-scanner' ); ?>
+                            </p>
+                            <p>
+                                <button type="button" id="cu-replace-key-submit" class="button cu-replace-key-btn"><?php esc_html_e( 'Replace key', 'dr-speed-ai-assets-scanner' ); ?></button>
+                                <button type="button" id="cu-replace-key-cancel" class="button"><?php esc_html_e( 'Cancel', 'dr-speed-ai-assets-scanner' ); ?></button>
+                            </p>
+                        </div>
                     <?php endif; ?>
                 </div>
                 <?php if ( '' === $api_key ) : ?>

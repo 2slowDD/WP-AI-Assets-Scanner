@@ -118,6 +118,57 @@
             });
         }
 
+        // Replace API key: warn first, then accept a paid key only (the server
+        // refuses free keys and anything /auth does not accept as a paid account).
+        const replaceOpen   = document.getElementById('cu-replace-key-open');
+        const replaceForm   = document.getElementById('cu-replace-key-form');
+        const replaceInput  = document.getElementById('cu-new-api-key');
+        const replaceSubmit = document.getElementById('cu-replace-key-submit');
+        const replaceCancel = document.getElementById('cu-replace-key-cancel');
+        if (replaceOpen && replaceForm && replaceInput && replaceSubmit && replaceCancel) {
+            replaceOpen.addEventListener('click', function () {
+                if (!window.confirm(replaceOpen.dataset.confirm || 'Replace your API key?')) {
+                    return;
+                }
+                replaceOpen.hidden = true;
+                replaceForm.hidden = false;
+                replaceInput.focus();
+            });
+            replaceCancel.addEventListener('click', function () {
+                replaceInput.value = '';
+                replaceForm.hidden = true;
+                replaceOpen.hidden = false;
+            });
+            replaceSubmit.addEventListener('click', function () {
+                const key = replaceInput.value.trim();
+                if (key === '') {
+                    showMsg('Error: Enter the new paid API key.', 'error');
+                    return;
+                }
+                replaceSubmit.disabled = true;
+                const data = new FormData();
+                data.append('action', 'cu_scanner_replace_key');
+                data.append('nonce', cuScannerSettings.nonce);
+                data.append('new_api_key', key);
+                fetch(cuScannerSettings.ajaxUrl, { method: 'POST', body: data })
+                    .then(r => r.json())
+                    .then(res => {
+                        if (res.success) {
+                            showMsg('API key replaced. Credit balance: ' + res.data.credits, 'success');
+                            setBalance(res.data.credits);
+                            window.setTimeout(function () { window.location.reload(); }, 1500);
+                            return;
+                        }
+                        replaceSubmit.disabled = false;
+                        showMsg('Error: ' + res.data, 'error');
+                    })
+                    .catch(function () {
+                        replaceSubmit.disabled = false;
+                        showMsg('Could not reach the server. Your current key was not changed.', 'error');
+                    });
+            });
+        }
+
         const copyBtn = document.getElementById('cu-copy-secret');
         if (copyBtn) {
             copyBtn.addEventListener('click', function () {

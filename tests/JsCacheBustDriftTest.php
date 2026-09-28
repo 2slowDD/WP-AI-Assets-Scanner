@@ -104,6 +104,9 @@ final class JsCacheBustDriftTest extends TestCase {
 		// 1.9.0 (WordPress.org release) — settings.js: "Get free credits" opt-in button, and the
 		// balance auto-refresh skipped while no API key is saved. Added, not rewritten.
 		'1.9.0' => '1a600345ea728711842d866373066c6074ed64a7ce3793da0d295489aa4a0329',
+		// 1.9.2 — Settings "Replace API key": red button + confirm, paid-key-only form
+		// (settings.js + admin.css). Added, not rewritten.
+		'1.9.2' => '8a60ce8dab58894e1c898fa64fc75b01a0517551362543be4e5f12302060cb77',
 	);
 
 	/**

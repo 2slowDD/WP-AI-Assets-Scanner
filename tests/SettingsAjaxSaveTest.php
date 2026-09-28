@@ -38,11 +38,15 @@ final class SettingsAjaxSaveTest extends TestCase {
     /** @var array<int,array{0:string,1:mixed}> Every update_option() call, in order. */
     private array $writes = [];
 
+    /** What get_option( 'cu_scanner_api_key' ) returns: '' = no key saved yet. */
+    private string $stored_key = '';
+
     public function setUp(): void {
         parent::setUp();
         WP_Mock::setUp();
-        $this->writes = [];
-        $_POST        = [];
+        $this->writes     = [];
+        $this->stored_key = '';
+        $_POST            = [];
     }
 
     public function tearDown(): void {
@@ -67,6 +71,8 @@ final class SettingsAjaxSaveTest extends TestCase {
                 $this->writes[] = [ $name, $value ];
                 return true;
             } );
+        WP_Mock::userFunction( 'get_option' )
+            ->andReturnUsing( fn( $name, $default = false ) => 'cu_scanner_api_key' === $name ? $this->stored_key : $default );
         WP_Mock::userFunction( 'wp_send_json_success' )
             ->andReturnUsing( function ( $data = null ) {
                 throw new SettingsAjaxJsonSent( 'success', $data );
@@ -167,9 +173,8 @@ final class SettingsAjaxSaveTest extends TestCase {
     }
 
     public function test_keep_sentinel_reuses_stored_key_without_rewriting_it(): void {
+        $this->stored_key = self::FAKE_KEY;
         $this->mock_common();
-        WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_api_key', '' )->andReturn( self::FAKE_KEY );
         $this->mock_auth_response(
             200,
             '{"balance":12,"railway_url":"' . self::RAILWAY_URL . '"}'
@@ -204,6 +209,24 @@ final class SettingsAjaxSaveTest extends TestCase {
         $this->assertSame( 'success', $sent->kind );
         $this->assertSame( 42, $sent->payload['credits'] );
         $this->assertSame( self::RAILWAY_URL, $sent->payload['railway_url'] );
+    }
+
+    public function test_save_never_changes_an_already_saved_key(): void {
+        // A new key goes through replace_key(), which accepts paid keys only.
+        // Typing a key into the field and pressing Save must not bypass that.
+        $this->stored_key = self::FAKE_KEY;
+        $this->mock_common();
+        $this->mock_auth_response(
+            200,
+            '{"balance":5,"key_type":"free","user_id":0,"railway_url":"' . self::RAILWAY_URL . '"}'
+        );
+
+        $_POST['api_key'] = 'cusk_Freekey_12';
+
+        $sent = $this->run_handler();
+
+        $this->assertSame( [], $this->api_key_writes(), 'Save replaced an already-saved key' );
+        $this->assertSame( 'success', $sent->kind, 'the rest of the form still saves' );
     }
 
     public function test_unvalidated_options_still_persist_before_authentication(): void {

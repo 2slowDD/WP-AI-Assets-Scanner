@@ -4,6 +4,18 @@ All notable changes to AI Assets Scanner are documented here.
 
 ---
 
+## 1.9.2 — 2026-09-28
+
+### Added
+- **Settings → Replace API key**, a red button under the API key. It first asks for confirmation: the current key is removed from the site and its credits are not transferred. Then it shows a field for the new key, which must be a **paid** key. Free keys are refused twice: by shape before any request, and by the `/auth` answer (a paid key returns its account's `user_id`; a free key returns `key_type: free` and `user_id: 0`). As with Save, the new key is committed only after `/auth` accepted it, so a typo or an unreachable service never removes the working key. On success the new key's balance is shown, the worker URL is refreshed, and any pending free-key retry is cancelled.
+
+### Changed
+- Once a key is saved, the API key field is read-only and `save_settings()` keeps the stored key whatever is submitted, so Replace API key's paid-only rule cannot be bypassed by typing into the field and pressing Save. A pending free-key placeholder still counts as "no key".
+- The worker-URL caching shared by Save and Replace moved into one helper.
+- Admin asset cache key 1.9.2.
+
+---
+
 ## 1.9.1 — 2026-09-28
 
 Changes requested by the WordPress.org plugin review of 1.9.0.

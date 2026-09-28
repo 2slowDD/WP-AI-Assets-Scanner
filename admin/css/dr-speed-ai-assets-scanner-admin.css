@@ -1953,6 +1953,13 @@
 .cu-check-row { display: flex !important; gap: 7px; align-items: center; margin-top: 9px !important; font-weight: 500 !important; }
 .cu-inline-state { padding: 8px 10px; border-radius: 6px; }
 .cu-inline-state--pending { background: #fff8e8; color: #745416; }
+.cu-replace-key { margin-top: 10px !important; }
+.cu-settings-form .button.cu-replace-key-btn { color: #b32d2e; border-color: #b32d2e; background: #fff; }
+.cu-settings-form .button.cu-replace-key-btn:hover,
+.cu-settings-form .button.cu-replace-key-btn:focus { color: #fff; border-color: #8a2424; background: #b32d2e; }
+.cu-replace-key-form { margin-top: 10px; padding: 12px; border: 1px solid #f0c9c9; border-radius: 6px; background: #fcf0f1; }
+.cu-replace-key-form label { display: block; font-weight: 600; margin-bottom: 6px; }
+.cu-replace-key-warning { color: #8a2424 !important; }
 .cu-settings-savebar { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 20px; align-items: center; padding: 15px 17px; border: 1px solid #cbd8e5; border-radius: 8px; background: #edf3fa; }
 .cu-settings-savebar span { display: block; margin-top: 2px; color: var(--cu-muted); font-size: 11px; }
 #cu-settings-message { grid-column: 1 / -1; }
