@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>Dr. Speed: AI Assets Scanner</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16243a"/>
+      <stop offset="1" stop-color="#1e3a5f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#22c55e" stop-opacity=".30"/>
+      <stop offset="1" stop-color="#22c55e" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sweep" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#72aee6" stop-opacity="0"/>
+      <stop offset="1" stop-color="#72aee6" stop-opacity=".38"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="url(#bg)"/>
+  <!-- scanner rings -->
+  <g fill="none" stroke="#72aee6">
+    <circle cx="128" cy="128" r="110" stroke-opacity=".14" stroke-width="3"/>
+    <circle cx="128" cy="128" r="84" stroke-opacity=".24" stroke-width="3"/>
+    <circle cx="128" cy="128" r="58" stroke-opacity=".34" stroke-width="3"/>
+  </g>
+  <!-- radar sweep, upper right -->
+  <path d="M128 128 L128 18 A110 110 0 0 1 222 71 Z" fill="url(#sweep)"/>
+  <line x1="128" y1="128" x2="222" y2="71" stroke="#9fcbf0" stroke-opacity=".65" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="128" cy="128" r="74" fill="url(#glow)"/>
+  <!-- pharmacy cross -->
+  <path d="M106 58h44a4 4 0 0 1 4 4v40h40a4 4 0 0 1 4 4v44a4 4 0 0 1-4 4h-40v40a4 4 0 0 1-4 4h-44a4 4 0 0 1-4-4v-40H62a4 4 0 0 1-4-4v-44a4 4 0 0 1 4-4h40V62a4 4 0 0 1 4-4z" fill="#22c55e"/>
+</svg>
