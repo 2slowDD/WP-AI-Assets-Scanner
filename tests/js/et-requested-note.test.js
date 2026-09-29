@@ -40,7 +40,7 @@ function rowHtml(tableHtml, rowIndex) {
   throw new Error('row ' + rowIndex + ' not found');
 }
 function sanCellHtml(tableHtml, rowIndex) {
-  const m = /<td class="cu-san">([\s\S]*?)<\/td>/.exec(rowHtml(tableHtml, rowIndex));
+  const m = /<td class="cu-san"[^>]*>([\s\S]*?)<\/td>/.exec(rowHtml(tableHtml, rowIndex));
   if (!m) throw new Error('cu-san cell not found in row ' + rowIndex);
   return m[1];
 }
@@ -62,7 +62,7 @@ function runRequestedRowHasNoNote() {
     'an et_requested row renders the S/A/N tokens and NO note in its place');
   assert.strictEqual(row.indexOf('cu-noopt-et'), -1, 'no cu-noopt-et element on an et_requested row');
   assert.strictEqual(row.indexOf('Needs Extra Time'), -1, 'no "Needs Extra Time" text on an et_requested row');
-  assert.ok(row.indexOf('<td>yes</td>') !== -1, 'the ET candidate cell still reads "yes"');
+  assert.ok(row.indexOf('<td data-label="ET candidate">yes</td>') !== -1, 'the ET candidate cell still reads "yes"');
   assert.ok(/<input type="checkbox" class="cu-et-result-cb" data-url="https:\/\/example\.test\/et"[^>]*>/.test(row),
     'the per-row Extra Time checkbox still renders');
   console.log('OK et_requested row: no Needs Extra Time note; ET candidate "yes" + checkbox intact');

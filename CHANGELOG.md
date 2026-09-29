@@ -19,6 +19,17 @@ WordPress.org review of 1.9.3 found two problems.
 - Removed `includes/lib-fields-hash.php`: an unprefixed global function wrapped in `function_exists()`, never called by this plugin.
 - `includes/debug.php` no longer wraps its function in `function_exists()`.
 
+### Changed — header and responsive layout
+- **Dr. Speed header.** One shared partial (`admin/views/partials/brand-title.php`) renders "✚ Dr. Speed | AI Assets Scanner" plus the tagline "Safely debloat your pages with one push of a button." on all three screens. Brand green `#22C55E` measures 6.4:1 against the navy header (the true pharmacy green `#00A651` is 4.5:1 and read as dim). The cross is decorative (`aria-hidden`); screen readers hear "Dr. Speed: AI Assets Scanner". On the scanner the step label moved beside the progress dots, so the header keeps its height. Brand rules: `BRANDING.md`.
+- **No sideways scrollbar at any width.** Audited with `tools/responsive-audit.js` (new, not shipped) on the scanner (step 1 and step 4 results), settings and history at 1920, 1440, 1280, 1024, 900, 782, 600, 480, 390 and 360px: 40 of 40 pass, from 6 failing plus a scrollbar the operator reported on the results table. Causes fixed:
+  - the results table had `min-width: 820px`: removed; below 760px of *card* width (a container query, since the card shares its row with a sidebar) each URL becomes a labelled block; cells carry `data-label`;
+  - the history table (8 columns) did not fit a 740px card: labelled rows below 1100px;
+  - Sync/Push/Download buttons were `nowrap` with a fixed width and clipped their labels: they wrap;
+  - settings and history lacked the scanner's compact header, so "Powered by" pushed the page 34–64px wide on phones;
+  - the scan summary kept a desktop `left: 10%` nudge on phones;
+  - long history status badges did not wrap.
+- `ResponsiveLayoutTest` pins these causes.
+
 ### Migration
 - `Migrations` m2 (DB version 2) moves this plugin's options (fixed names from `includes/names.php` and per-scan prefixes) and pending cron events to the new names, in place, keeping values and autoload. It never matches the wpservice.pro service plugin's `cu_scanner_` options: one fixed SELECT over both old prefixes, then an explicit allow-list. Runs before m1, so older sites get both. Verified live on WordPress 6.2 and 6.5: key, secret, worker URL, history, scan JSON and a queued watchdog event moved; the service plugin's options were untouched.
 - `uninstall.php` reads the same `includes/names.php` and deletes both the new and the old names.

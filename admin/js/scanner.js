@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const SCANNER_JS_VERSION = '1.0.11.14';
+    const SCANNER_JS_VERSION = '1.0.11.15';
     console.log( '[AI Assets Scanner] scanner.js v' + SCANNER_JS_VERSION + ' loaded' );
 
     const ajax    = drspeedAias.ajaxUrl;
@@ -3456,16 +3456,16 @@
             var urlCell = '<span class="cu-url-primary">' + urlHtml + '</span>'
                 + ( urlMeta ? '<span class="cu-url-meta">' + urlMeta + '</span>' : '' );
             return '<tr class="cu-row-' + cuEscHtml( p.status_class ) + ( noopt ? ' cu-row-noopt' : '' ) + '">'
-                + '<td>' + cuEscHtml( p.n ) + '</td>'
-                + '<td class="cu-url-cell">' + urlCell + '</td>'
-                + '<td><span class="cu-row-status cu-row-status--' + esc( p.status_class ) + '">' + cuEscHtml( p.status_label ) + '</span></td>'
+                + '<td data-label="#">' + cuEscHtml( p.n ) + '</td>'
+                + '<td class="cu-url-cell" data-label="URL">' + urlCell + '</td>'
+                + '<td data-label="Status"><span class="cu-row-status cu-row-status--' + esc( p.status_class ) + '">' + cuEscHtml( p.status_label ) + '</span></td>'
                 // 0 when every rule on this page was already in CU — the page was credited back,
                 // so the gross page_credit() charge is not what the customer actually paid.
                 // page_credit() itself is deliberately untouched (spec AC-7, golden-tested).
-                + '<td>' + cuEscHtml( allAlready ? 0 : p.credits ) + '</td>'
-                + '<td class="cu-san">' + san + '</td>'
-                + '<td>' + cuEscHtml( p.et_candidate ? 'yes' : '—' ) + '</td>'
-                + '<td>' + ( p.et_candidate
+                + '<td data-label="Credits">' + cuEscHtml( allAlready ? 0 : p.credits ) + '</td>'
+                + '<td class="cu-san" data-label="S / A / N">' + san + '</td>'
+                + '<td data-label="ET candidate">' + cuEscHtml( p.et_candidate ? 'yes' : '—' ) + '</td>'
+                + '<td data-label="Extra Time">' + ( p.et_candidate
                     ? '<input type="checkbox" class="cu-et-result-cb" data-url="' + esc( p.url ) + '"' + ( st.etChecked.has( p.url ) ? ' checked' : '' ) + '>'
                     : '—' ) + '</td></tr>';
         } ).join( '' );

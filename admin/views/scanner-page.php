@@ -8,9 +8,9 @@
     <div class="cu-header">
         <img class="cu-header-logo"
              src="<?php echo esc_url( DRSPEED_AIAS_URL . 'admin/images/dr-speed-ai-assets-scanner-logo.png' ); ?>"
-             alt="AI Assets Scanner" />
+             alt="" />
         <div class="cu-header-text">
-            <h2>AI Assets Scanner <small class="cu-header-version">v<?php echo esc_html( DRSPEED_AIAS_VERSION ); ?></small></h2>
+            <?php include __DIR__ . '/partials/brand-title.php'; ?>
             <span class="cu-step-label" id="cu-step-label">Step 1 &mdash; Discover Pages</span>
         </div>
         <svg class="cu-header-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" width="36" height="36">

@@ -102,6 +102,8 @@ Deleting the plugin removes the saved key from your site, but the key and its cr
 * Fixed a fatal error on WordPress versions before 7.0 when the scanner loaded a page with its scan token.
 * Every setting, option and hook now uses the plugin's own `drspeed_aias_` prefix. Your API key, settings and scan history move to the new names automatically on the first page load after updating.
 * Fixed PHP warnings on the history page and in the menu badge for incomplete history records.
+* New Dr. Speed header on every screen: "Dr. Speed | AI Assets Scanner" with the tagline "Safely debloat your pages with one push of a button."
+* Every screen now fits any window width without a sideways scrollbar. On narrow screens the scan results and the scan history show each URL or scan as a labelled card, and buttons wrap their labels instead of cutting them off.
 
 = 1.9.3 =
 * If a site's free key was already upgraded to a paid key or revoked, the free-key button now says so and asks for the paid key, instead of saving a key that cannot be used. The background retry for it stops.

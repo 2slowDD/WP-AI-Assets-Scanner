@@ -13,7 +13,7 @@ const assert = require('assert');
 const { createHarness } = require('./r3-stage-c-harness');
 
 function sanCellHtml(tableHtml, rowIndex) {
-  const re = /<td class="cu-san">([\s\S]*?)<\/td>/g;
+  const re = /<td class="cu-san"[^>]*>([\s\S]*?)<\/td>/g;
   let m, i = 0;
   while ((m = re.exec(tableHtml)) !== null) {
     if (i === rowIndex) return m[1];

@@ -7,9 +7,9 @@
     <div class="cu-header">
         <img class="cu-header-logo"
              src="<?php echo esc_url( DRSPEED_AIAS_URL . 'admin/images/dr-speed-ai-assets-scanner-logo.png' ); ?>"
-             alt="AI Assets Scanner" />
+             alt="" />
         <div class="cu-header-text">
-            <h2>AI Assets Scanner <small class="cu-header-version">v<?php echo esc_html( DRSPEED_AIAS_VERSION ); ?></small></h2>
+            <?php include __DIR__ . '/partials/brand-title.php'; ?>
             <span class="cu-step-label">Scan history</span>
         </div>
         <svg class="cu-header-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" width="36" height="36" aria-hidden="true">
@@ -85,10 +85,10 @@
                     $cu_status_modifier = in_array( $cu_status, $cu_status_classes, true ) ? $cu_status : 'unknown';
                     ?>
                     <tr>
-                        <td><?php echo esc_html( $record['created_at'] ); ?></td>
-                        <td class="cu-history-domain"><?php echo esc_html( $record['domain'] ); ?></td>
-                        <td><?php echo esc_html( $record['page_count'] ); ?></td>
-                        <td><?php
+                        <td data-label="Date"><?php echo esc_html( $record['created_at'] ); ?></td>
+                        <td class="cu-history-domain" data-label="Domain"><?php echo esc_html( $record['domain'] ); ?></td>
+                        <td data-label="Pages"><?php echo esc_html( $record['page_count'] ); ?></td>
+                        <td data-label="Credits"><?php
                             // Result-truth: gross charge, annotated with what came back.
                             // The two numbers are shown side by side rather than netted —
                             // credits_used keeps its existing meaning everywhere.
@@ -100,9 +100,9 @@
                                 echo ' (' . esc_html( $cu_refunded ) . ' returned)';
                             }
                         ?></td>
-                        <td><?php echo esc_html( $record['safe_count'] ); ?></td>
-                        <td><?php echo esc_html( $record['aggressive_count'] ); ?></td>
-                        <td><span class="cu-history-status cu-history-status--<?php echo esc_attr( $cu_status_modifier ); ?>"><?php if ( 'partial' === $cu_status ) {
+                        <td data-label="Safe"><?php echo esc_html( $record['safe_count'] ); ?></td>
+                        <td data-label="Aggressive"><?php echo esc_html( $record['aggressive_count'] ); ?></td>
+                        <td data-label="Status"><span class="cu-history-status cu-history-status--<?php echo esc_attr( $cu_status_modifier ); ?>"><?php if ( 'partial' === $cu_status ) {
                                 // Show the actual charge (credits_used), NOT a "X of Y pages" count:
                                 // credits_used adds +1 per Extra-Time page, so it can diverge from the
                                 // completed-page count the live banner shows (data.completed). Labelling it
@@ -118,7 +118,7 @@
                             } else {
                                 echo esc_html( $cu_status );
                             } ?></span></td>
-                        <td>
+                        <td data-label="Actions">
                             <?php if ( in_array( $cu_status, [ 'complete', 'partial' ], true ) ) :
                                 $dl_url = admin_url( 'admin-ajax.php' ) . '?action=drspeed_aias_download_json&job_id=' . rawurlencode( $record['job_id'] ) . '&nonce=' . wp_create_nonce( 'drspeed_aias_nonce' );
                             ?>

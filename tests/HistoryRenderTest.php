@@ -61,7 +61,7 @@ class HistoryRenderTest extends TestCase {
 	/** No refund => byte-identical to today. A regression here is a visible change. */
 	public function test_credits_cell_is_unchanged_when_not_refunded(): void {
 		$out = $this->render( [ $this->record() ] );
-		$this->assertStringContainsString( '<td>3</td>', $out );
+		$this->assertStringContainsString( '<td data-label="Credits">3</td>', $out );
 		$this->assertStringNotContainsString( 'returned', $out );
 	}
 
@@ -70,7 +70,7 @@ class HistoryRenderTest extends TestCase {
 		$rec = $this->record();
 		unset( $rec['credits_refunded'] );
 		$out = $this->render( [ $rec ] );
-		$this->assertStringContainsString( '<td>3</td>', $out );
+		$this->assertStringContainsString( '<td data-label="Credits">3</td>', $out );
 		$this->assertStringNotContainsString( 'returned', $out );
 	}
 

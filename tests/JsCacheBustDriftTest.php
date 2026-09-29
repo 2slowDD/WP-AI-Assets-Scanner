@@ -111,7 +111,7 @@ final class JsCacheBustDriftTest extends TestCase {
 		'1.9.3' => '20ccaf4161de10ec90b1ef7a6043d1dfc4dd5572f5f7579668ee381e4b6ad4fa',
 		// 1.9.4 — WordPress.org prefix review: localized globals, AJAX actions, handles and
 		// page slugs renamed to drspeed_aias / drspeedAias / drspeed-aias.
-		'1.9.4' => '99101a73b91e2315b224ba35a338ec0494737836e1b1d2f84a2506ccd2834835',
+		'1.9.4' => '8afbb8c06eca12b3fa0d21b7612b80cd9f8e15cc327c55950eb375976aa62b02',
 	);
 
 	/**
@@ -167,6 +167,8 @@ final class JsCacheBustDriftTest extends TestCase {
 		'1.0.11.13' => 'a6e9bae3aadef7d01101caebe6dfde076fbfb8aeb7d471a24c18ef9bdc5f43e3',
 		// Prefix rename (drspeedAias globals, drspeed_aias_ AJAX actions).
 		'1.0.11.14' => 'd9a35b1982092d488db391ae2c584494be58f42453ba1d76c0180c9e0db3e9e2',
+		// Results-table cells carry data-label for the narrow-card labelled layout.
+		'1.0.11.15' => '072a841e2ac694b8dd9c7cb832d0532f51755358d73f41740ba1a1ede72b6c48',
 	);
 
 	private function root(): string {

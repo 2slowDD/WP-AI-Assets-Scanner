@@ -54,7 +54,7 @@ function expectedUrlCell(url, meta) {
 // renderResultUrlListPage). Non-greedy match up to the first following </td> is safe: the
 // url-cell content itself never contains a literal "</td>".
 function urlCellHtml(tableHtml, rowIndex) {
-  const re = /<td class="cu-url-cell">([\s\S]*?)<\/td>/g;
+  const re = /<td class="cu-url-cell"[^>]*>([\s\S]*?)<\/td>/g;
   let m, i = 0;
   while ((m = re.exec(tableHtml)) !== null) {
     if (i === rowIndex) return m[1];

@@ -19,7 +19,7 @@ function escHtml(s) {
 }
 
 function urlCellHtml(tableHtml, rowIndex) {
-  const re = /<td class="cu-url-cell">([\s\S]*?)<\/td>/g;
+  const re = /<td class="cu-url-cell"[^>]*>([\s\S]*?)<\/td>/g;
   let m, i = 0;
   while ((m = re.exec(tableHtml)) !== null) {
     if (i === rowIndex) return m[1];

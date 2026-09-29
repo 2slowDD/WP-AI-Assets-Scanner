@@ -47,7 +47,7 @@ function expectedUrlCell(url, meta) {
 // (rows render in st.pages order — see renderResultUrlListPage). Non-greedy up to the first
 // following </td> is safe: neither cell's content contains a literal "</td>".
 function cellHtml(tableHtml, cls, rowIndex) {
-  const re = new RegExp('<td class="' + cls + '">([\\s\\S]*?)<\\/td>', 'g');
+  const re = new RegExp('<td class="' + cls + '"[^>]*>([\\s\\S]*?)<\\/td>', 'g');
   let m, i = 0;
   while ((m = re.exec(tableHtml)) !== null) {
     if (i === rowIndex) return m[1];

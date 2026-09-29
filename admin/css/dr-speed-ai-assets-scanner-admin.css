@@ -2153,7 +2153,7 @@
 #drspeed-aias-app .cu-results-summary-block #cu-result-refund { margin: 4px 0 0; font-size: 10px; }
 #drspeed-aias-app #cu-result-url-list { overflow-x: auto; margin: 0; border: 0; border-top: 1px solid #e2e8ee; border-radius: 0; }
 #drspeed-aias-app .cu-url-summary { padding: 8px 14px; }
-#drspeed-aias-app .cu-url-table { width: 100%; min-width: 820px; table-layout: fixed; }
+#drspeed-aias-app .cu-url-table { width: 100%; table-layout: fixed; }
 #drspeed-aias-app .cu-url-table th,
 #drspeed-aias-app .cu-url-table td { padding: 9px 8px; }
 #drspeed-aias-app .cu-url-table thead th {
@@ -2403,4 +2403,174 @@
         border-color: #2271b1;
         animation: cuOrbitPulse 1.6s ease-in-out infinite;
     }
+}
+
+/* =============================================================
+   1.9.4 — Dr. Speed brand lockup (see BRANDING.md).
+   "✚ Dr. Speed | AI Assets Scanner", tagline on line two. On the
+   scanner wizard the step label sits beside the progress dots;
+   settings and history keep it under the tagline.
+   Brand green #22C55E: 6.4:1 on the navy header (WCAG AA).
+   ============================================================= */
+#drspeed-aias-app .cu-header-text .cu-brand-title,
+.cu-admin-page .cu-header-text .cu-brand-title { display: flex; flex-wrap: wrap; align-items: center; gap: 0; margin: 0 0 4px; }
+#drspeed-aias-app .cu-brand-cross,
+.cu-admin-page .cu-brand-cross { flex-shrink: 0; width: 20px; height: 20px; margin-right: 8px; color: #22c55e; }
+#drspeed-aias-app .cu-brand-name,
+.cu-admin-page .cu-brand-name { color: #22c55e; font-weight: 700; }
+#drspeed-aias-app .cu-brand-sep,
+.cu-admin-page .cu-brand-sep { display: inline-block; width: 1px; height: 1em; margin: 0 12px; background: rgba(255, 255, 255, .35); }
+#drspeed-aias-app .cu-brand-product,
+.cu-admin-page .cu-brand-product { color: #d6e4f2; font-weight: 400; }
+#drspeed-aias-app .cu-header-text .cu-header-version,
+.cu-admin-page .cu-header-text .cu-header-version { margin-left: 10px; }
+#drspeed-aias-app .cu-header-tagline,
+.cu-admin-page .cu-header-tagline { margin: 0 0 4px; color: #c9d8e8; font-size: 13.5px; line-height: 1.4; }
+#drspeed-aias-app .cu-header-text { position: static; }
+#drspeed-aias-app .cu-header-text .cu-step-label {
+    position: absolute;
+    left: 298px;
+    bottom: 7px;
+    margin: 0;
+    font-size: 11px;
+    letter-spacing: .06em;
+    white-space: nowrap;
+    z-index: 1;
+}
+#drspeed-aias-app .cu-header { min-height: 108px; }
+.cu-admin-page .cu-header-text .cu-step-label { font-size: 11px; letter-spacing: .06em; }
+
+#drspeed-aias-app .cu-brand-mark,
+.cu-admin-page .cu-brand-mark { display: inline-flex; align-items: center; white-space: nowrap; }
+#drspeed-aias-app .cu-brand-line,
+.cu-admin-page .cu-brand-line { white-space: nowrap; }
+
+/* History table: fits its card on desktop and tablet; long domains break. */
+.cu-admin-page .cu-history-table-card th { white-space: normal; }
+.cu-admin-page .cu-history-table-card .cu-history-domain { overflow-wrap: anywhere; word-break: break-word; }
+
+@media (max-width: 1100px) {
+    /* The radar icon gives its room to the brand title; "Powered by" stays. */
+    #drspeed-aias-app .cu-header-icon,
+    .cu-admin-page .cu-header-icon { display: none; }
+    #drspeed-aias-app .cu-header,
+    .cu-admin-page .cu-header { grid-template-columns: auto minmax(0, 1fr) auto; }
+
+    /* Eight columns do not fit the card below this width: rows become labelled blocks. */
+    .cu-admin-page .cu-history-table-card thead { display: none; }
+    .cu-admin-page .cu-history-table-card table,
+    .cu-admin-page .cu-history-table-card tbody,
+    .cu-admin-page .cu-history-table-card tr { display: block; width: 100%; }
+    .cu-admin-page .cu-history-table-card tr { box-sizing: border-box; padding: 12px 16px; border-bottom: 1px solid #e3e9ef; }
+    .cu-admin-page .cu-history-table-card tr:not(.inline-edit-row):not(.no-items) td {
+        display: block;
+        position: relative;
+        box-sizing: border-box;
+        width: auto;
+        min-height: 22px;
+        padding: 4px 0 4px calc(30% + 10px);
+        border: 0;
+        overflow: visible;
+    }
+    .cu-admin-page .cu-history-table-card tr:not(.inline-edit-row):not(.no-items) td::before {
+        content: attr(data-label);
+        position: absolute;
+        top: 6px;
+        left: 0;
+        width: 30%;
+        color: #536276;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+    }
+
+}
+
+@media (max-width: 782px) {
+    /* Settings and history get the scanner wizard's compact header. */
+    .cu-admin-page .cu-header-by { display: none; }
+    .cu-admin-page .cu-header { grid-template-columns: auto minmax(0, 1fr) auto; }
+
+    /* The dots span the full width here: the step label returns under the tagline. */
+    #drspeed-aias-app .cu-header-text .cu-step-label { position: static; display: block; margin-top: 2px; }
+    #drspeed-aias-app .cu-header-tagline,
+    .cu-admin-page .cu-header-tagline { font-size: 12.5px; }
+    #drspeed-aias-app .cu-header-text .cu-brand-title,
+    .cu-admin-page .cu-header-text .cu-brand-title { font-size: 18px; }
+}
+
+@media (max-width: 600px) {
+    .cu-admin-page .cu-header { grid-template-columns: auto minmax(0, 1fr); }
+    .cu-admin-page .cu-header-icon { display: none; }
+    /* Break between the mark and the product line; the divider has nothing to divide. */
+    #drspeed-aias-app .cu-brand-sep,
+    .cu-admin-page .cu-brand-sep { display: none; }
+    #drspeed-aias-app .cu-brand-line,
+    .cu-admin-page .cu-brand-line { flex-basis: 100%; margin-top: 2px; font-size: 16px; }
+    #drspeed-aias-app .cu-contact-hint,
+    #drspeed-aias-app .cu-discover-row { flex-wrap: wrap; }
+    #drspeed-aias-app .cu-contact-hint { white-space: normal; }
+}
+
+/* =============================================================
+   1.9.4 — results table without a sideways scrollbar.
+   The fixed 820px minimum forced a scrollbar whenever the results
+   card was narrower. The table now fits its card; the recommendation
+   badges wrap. Below 760px of CARD width (a container query: the
+   card shares its row with a sidebar at some window sizes, so the
+   window width alone cannot decide) each URL becomes a labelled block.
+   ============================================================= */
+#drspeed-aias-app #cu-result-url-list { container: drspeed-aias-results / inline-size; overflow-x: visible; }
+#drspeed-aias-app .cu-url-table td.cu-san { white-space: normal; }
+#drspeed-aias-app .cu-url-table .cu-san-token { display: inline-block; margin: 0 2px 3px 0; }
+
+@container drspeed-aias-results (max-width: 760px) {
+    #drspeed-aias-app .cu-url-table { table-layout: auto; }
+    #drspeed-aias-app .cu-url-table thead { display: none; }
+    #drspeed-aias-app .cu-url-table,
+    #drspeed-aias-app .cu-url-table tbody,
+    #drspeed-aias-app .cu-url-table tr { display: block; width: 100%; }
+    #drspeed-aias-app .cu-url-table tr { box-sizing: border-box; padding: 10px 14px 10px 16px; border-bottom: 1px solid #e6ebef; }
+    #drspeed-aias-app .cu-url-table td {
+        display: block;
+        position: relative;
+        box-sizing: border-box;
+        width: auto;
+        min-height: 22px;
+        padding: 4px 0 4px calc(30% + 10px);
+        border: 0;
+        overflow: visible;
+    }
+    #drspeed-aias-app .cu-url-table td::before {
+        content: attr(data-label);
+        position: absolute;
+        top: 6px;
+        left: 0;
+        width: 30%;
+        color: #536276;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+    }
+    /* The row number and URL read as the block's heading. */
+    #drspeed-aias-app .cu-url-table td:first-child { display: none; }
+    #drspeed-aias-app .cu-url-table td.cu-url-cell { padding-left: 0; padding-bottom: 8px; }
+    #drspeed-aias-app .cu-url-table td.cu-url-cell::before { display: none; }
+}
+
+/* 1.9.4 — the Sync / Push / Download buttons clipped their labels in a narrow
+   recommendations card: labels may wrap, and the buttons wrap onto a second row. */
+#drspeed-aias-app .cu-step4-action-row { flex-wrap: wrap; }
+#drspeed-aias-app .cu-step4-action-row .button { flex: 1 1 150px; max-width: none; white-space: normal; line-height: 1.25; text-align: center; }
+@media (max-width: 1280px) {
+    #drspeed-aias-app .cu-recommendations-card { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 782px) {
+    /* The summary drops under the title without the indent, which did not fit next to the scan ID. */
+    #drspeed-aias-app .cu-completion-heading p { left: 0; flex: 1 1 100%; min-width: 0; max-width: 100%; margin-left: 0; box-sizing: border-box; }
+    .cu-admin-page .cu-history-status { white-space: normal; }
 }
