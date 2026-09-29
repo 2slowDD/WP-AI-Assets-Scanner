@@ -29,6 +29,7 @@ WordPress.org review of 1.9.3 found two problems.
   - the scan summary kept a desktop `left: 10%` nudge on phones;
   - long history status badges did not wrap.
 - Follow-up in the same 1.9.4 (operator report, around 1400px and below): the results headers overflowed into each other; the "?" help marker sat on the next column's text and "Extra Time ?" was clipped. Headers now wrap with the marker inline. Narrow results and history cards no longer spend a full row per value: the values sit side by side in a compact labelled grid. The audit gained 1366/1352/1200/1100px widths, a cell-spill check, and a tooltip check that opens every help marker by keyboard focus (56 of 56 pass). The admin stylesheet's cache key moved to 1.9.4.1 so browsers that cached the first 1.9.4 files fetch the fix; the plugin version stays 1.9.4.
+- Second follow-up (operator report, 1226px): the scan summary collided with the Scan ID. A desktop `position: relative; left: 10%` nudge on the summary moved its text but not its layout box, so no overflow or sibling check could see it; it is now a margin and the text wraps. Narrow result cards flow their values at natural width instead of fixed grid tracks (which left "Extra Time" alone on a second row). The audit gained 1226px and a text-collision check that compares the drawn boxes of every text run on the page; it flags the old build at 1200 and 1226 and passes the fix (60 of 60). Stylesheet cache key 1.9.4.2; plugin still 1.9.4.
 - `ResponsiveLayoutTest` pins these causes.
 
 ### Migration

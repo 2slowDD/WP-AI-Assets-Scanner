@@ -50,7 +50,12 @@ final class ResponsiveLayoutTest extends TestCase {
 
     public function test_narrow_cards_use_a_compact_grid_not_one_value_per_row(): void {
         $css = $this->css();
-        $this->assertStringContainsString( 'grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));', $css );
+        $this->assertMatchesRegularExpression( '/\.cu-url-table tr \{\s*display: flex;\s*flex-wrap: wrap;/', $css );
         $this->assertStringContainsString( 'grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));', $css );
+    }
+
+    public function test_the_scan_summary_is_not_nudged_under_the_scan_id(): void {
+        // `left: 10%` slid the summary under the Scan ID on narrower cards (operator report, 1226px).
+        $this->assertDoesNotMatchRegularExpression( '/\.cu-completion-heading p \{[^}]*left:\s*\d+%/', $this->css() );
     }
 }

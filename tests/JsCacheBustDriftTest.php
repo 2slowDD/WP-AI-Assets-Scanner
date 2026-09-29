@@ -115,6 +115,9 @@ final class JsCacheBustDriftTest extends TestCase {
 		// 1.9.4.1 (plugin still 1.9.4) — results headers wrap with the "?" inline; compact
 		// labelled grid for narrow results and history cards; history actions span the row.
 		'1.9.4.1' => '2beff0c1107e10d7d5d511ead976c823110f95d250b4eb07f106a091c36730a2',
+		// 1.9.4.2 (plugin still 1.9.4) — scan summary no longer nudged under the Scan ID;
+		// narrow result cards flow their values at natural width.
+		'1.9.4.2' => 'de50b3bb8db95799b9906f33f13b650fa292fd1d42ee49dfe4ed95d97f3a441f',
 	);
 
 	/**

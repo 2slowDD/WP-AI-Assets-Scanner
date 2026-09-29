@@ -14,7 +14,7 @@ const { chromium } = require('playwright');
 const OUT = process.argv[2] || '.';
 const BASE = process.env.AUDIT_BASE || 'http://localhost:8088';
 const RESULT = process.env.AUDIT_RESULT ? require('fs').readFileSync(process.env.AUDIT_RESULT, 'utf8') : null;
-const widths = [1920, 1440, 1366, 1352, 1280, 1200, 1100, 1024, 900, 782, 600, 480, 390, 360];
+const widths = [1920, 1440, 1366, 1352, 1280, 1226, 1200, 1100, 1024, 900, 782, 600, 480, 390, 360];
 const pages = ['drspeed-aias', 'drspeed-aias-settings', 'drspeed-aias-history'].concat(RESULT ? ['STEP4'] : []);
 (async () => {
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
@@ -55,7 +55,37 @@ const pages = ['drspeed-aias', 'drspeed-aias-settings', 'drspeed-aias-history'].
           if (el.matches('th, td, .cu-th-inner') && cs.overflowX === 'visible' && el.scrollWidth > el.clientWidth + 1) offenders.push('SPILL ' + el.tagName.toLowerCase() + ' "' + el.textContent.trim().slice(0, 30) + '" ' + el.scrollWidth + '>' + el.clientWidth);
           if (/(auto|scroll)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 1) scrollers.push((el.id ? '#' + el.id : '.' + [...el.classList].join('.')) + ' ' + el.scrollWidth + '>' + el.clientWidth);
         }
-        return { docOverflow, offenders: offenders.slice(0, 6), scrollers };
+        // Collisions: visible neighbours in a flex or grid row that overlap on screen.
+        for (const c of root.querySelectorAll('*')) {
+          const ccs = getComputedStyle(c);
+          if (!/(flex|grid)/.test(ccs.display) || c.children.length < 2 || c.children.length > 16) continue;
+          const kids = [...c.children].filter((k) => { const kc = getComputedStyle(k); const kr = k.getBoundingClientRect(); return kr.width > 0 && kr.height > 0 && kc.visibility !== 'hidden' && kc.position !== 'absolute' && kc.position !== 'fixed' && !k.matches('.screen-reader-text'); });
+          for (let i = 0; i < kids.length; i++) for (let j = i + 1; j < kids.length; j++) {
+            const a = kids[i].getBoundingClientRect(), b = kids[j].getBoundingClientRect();
+            const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left), oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+            if (ox > 2 && oy > 2) offenders.push('COLLIDE ' + (kids[i].id ? '#' + kids[i].id : kids[i].tagName.toLowerCase() + '.' + [...kids[i].classList].join('.')) + ' x ' + (kids[j].id ? '#' + kids[j].id : kids[j].tagName.toLowerCase() + '.' + [...kids[j].classList].join('.')));
+          }
+        }
+        // Text collisions: compare the drawn boxes of text runs (Range rects), which also
+        // catches content moved by relative positioning, transforms or negative margins.
+        const runs = [];
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (n) => n.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const host = n.parentElement;
+          if (!host || host.closest('.screen-reader-text, .cu-help-box, [hidden], script, style, template')) continue;
+          const hcs = getComputedStyle(host);
+          if (hcs.visibility === 'hidden' || hcs.display === 'none' || +hcs.opacity === 0) continue;
+          const range = document.createRange(); range.selectNodeContents(n);
+          for (const r of range.getClientRects()) if (r.width > 1 && r.height > 1) runs.push({ r, host, text: n.textContent.trim().slice(0, 18) });
+        }
+        const seen = new Set();
+        for (let i = 0; i < runs.length; i++) for (let j = i + 1; j < runs.length; j++) {
+          if (runs[i].host === runs[j].host) continue;
+          const a = runs[i].r, b = runs[j].r;
+          const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left), oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+          if (ox > 2 && oy > 3) { const k = runs[i].text + '|' + runs[j].text; if (!seen.has(k)) { seen.add(k); offenders.push('TEXT-COLLIDE "' + runs[i].text + '" x "' + runs[j].text + '"'); } }
+        }
+        return { docOverflow, offenders: offenders.slice(0, 8), scrollers };
       });
       // Tooltips: open each help marker by keyboard focus, as a user would, and check its box.
       const helps = await p.$$('.cu-wrap .cu-help');
