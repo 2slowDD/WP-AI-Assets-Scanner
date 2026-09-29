@@ -1,14 +1,14 @@
 <?php
 // tests/ScannerAjaxSuffixHookTest.php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\ScannerAjax;
-use CUScanner\Scanner\PluginDetector;
+use DrSpeedAIAS\Admin\ScannerAjax;
+use DrSpeedAIAS\Scanner\PluginDetector;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
 /**
- * AC-10 — `cu_scanner_suffix_suggested_unresolved`, the probe-side half of the spec §6
+ * AC-10 — `drspeed_aias_suffix_suggested_unresolved`, the probe-side half of the spec §6
  * telemetry. The probe response hands the browser a bypass suffix for EVERY URL on a
  * host, but it only ever resolves ONE of them ($url1). Every other URL therefore leaves
  * the probe with a suffix that will be appended to an unresolved URL — the exact pairing
@@ -28,7 +28,7 @@ use WP_Mock\Tools\TestCase;
  * registers an expectation that never runs — the real WP_Mock implementation is what
  * executes, routing to WP_Mock::onAction(). Payload assertions therefore go through
  * expectAction()/onAction()->with(), which SubmitJobPayloadTest already uses for this
- * hook's sibling, cu_scanner_target_bypass_missing.
+ * hook's sibling, drspeed_aias_target_bypass_missing.
  *
  * What that mechanism does and does not check: it matches on a string projection of the
  * payload (WP_Mock\Hook::safe_offset), concatenating key.value in ITERATION ORDER — so key
@@ -40,7 +40,7 @@ use WP_Mock\Tools\TestCase;
  */
 class ScannerAjaxSuffixHookTest extends TestCase {
 
-    private const HOOK = 'cu_scanner_suffix_suggested_unresolved';
+    private const HOOK = 'drspeed_aias_suffix_suggested_unresolved';
 
     public function setUp(): void {
         parent::setUp();

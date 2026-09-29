@@ -9,7 +9,7 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "CUScanner\\Tests\\": "tests/"
+            "DrSpeedAIAS\\Tests\\": "tests/"
         }
     },
     "scripts": {

@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\Strategies\AbstractOptimizerBypass;
+use DrSpeedAIAS\Scanner\Strategies\AbstractOptimizerBypass;
 use ReflectionClass;
 use ReflectionMethod;
 

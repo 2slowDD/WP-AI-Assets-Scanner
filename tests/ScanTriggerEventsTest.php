@@ -1,8 +1,8 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\EventEmitter;
-use CUScanner\Scanner\PluginDetector;
+use DrSpeedAIAS\Scanner\EventEmitter;
+use DrSpeedAIAS\Scanner\PluginDetector;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -28,17 +28,17 @@ class ScanTriggerEventsTest extends TestCase {
         // it back via update_option. We capture the written queue.
         $self = $this;
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_pending_events', [] )
+            ->with( 'drspeed_aias_pending_events', [] )
             ->andReturnUsing( fn() => $self->queued );
         WP_Mock::userFunction( 'update_option' )
             ->andReturnUsing( function ( $key, $value ) use ( $self ) {
-                if ( $key === 'aias_pending_events' ) {
+                if ( $key === 'drspeed_aias_pending_events' ) {
                     $self->queued = $value;
                 }
                 return true;
             } );
         WP_Mock::userFunction( 'wp_next_scheduled' )
-            ->with( 'aias_event_emitter_flush' )
+            ->with( 'drspeed_aias_event_emitter_flush' )
             ->andReturn( false );
         WP_Mock::userFunction( 'wp_schedule_single_event' )
             ->andReturn( true );

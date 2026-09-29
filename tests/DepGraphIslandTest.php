@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\CU_DepGraph_Island;
+use DrSpeedAIAS\Scanner\CU_DepGraph_Island;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 

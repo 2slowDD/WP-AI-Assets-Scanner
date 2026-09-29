@@ -1,8 +1,8 @@
 <?php
 // tests/PluginDetectorTest.php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\PluginDetector;
+use DrSpeedAIAS\Scanner\PluginDetector;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -10,10 +10,10 @@ class PluginDetectorTest extends TestCase {
     public function setUp(): void {
         parent::setUp();
         WP_Mock::setUp();
-        // detect()'s Code Unloader branch reads cu_scanner_omit_cu_bypass via Settings.
+        // detect()'s Code Unloader branch reads drspeed_aias_omit_cu_bypass via Settings.
         // Returning the default ('' = opt-out off) preserves the behaviour every
         // assertion in this class was written against. Without it the three
-        // CU-active tests die on "undefined function CUScanner\get_option()" when
+        // CU-active tests die on "undefined function DrSpeedAIAS\get_option()" when
         // this file runs in isolation; in a full-suite run an earlier test file
         // happens to define the namespaced function first, which masked it.
         WP_Mock::userFunction( 'get_option' )->andReturnUsing( fn( $k, $default = false ) => $default );
@@ -122,8 +122,8 @@ class PluginDetectorTest extends TestCase {
             ->with( 'wordfence/wordfence.php' )->andReturn( true );
         WP_Mock::userFunction( 'is_plugin_active' )->andReturn( false );
         WP_Mock::userFunction( 'admin_url' )
-            ->with( 'admin.php?page=cu-scanner-settings' )
-            ->andReturn( 'http://example.com/wp-admin/admin.php?page=cu-scanner-settings' );
+            ->with( 'admin.php?page=drspeed-aias-settings' )
+            ->andReturn( 'http://example.com/wp-admin/admin.php?page=drspeed-aias-settings' );
 
         $result = ( new PluginDetector() )->detect();
         $this->assertArrayHasKey( 'Wordfence', $result['security_warn'] );
@@ -136,8 +136,8 @@ class PluginDetectorTest extends TestCase {
             ->with( 'wordfence-login-security/wordfence-login-security.php' )->andReturn( true );
         WP_Mock::userFunction( 'is_plugin_active' )->andReturn( false );
         WP_Mock::userFunction( 'admin_url' )
-            ->with( 'admin.php?page=cu-scanner-settings' )
-            ->andReturn( 'http://example.com/wp-admin/admin.php?page=cu-scanner-settings' );
+            ->with( 'admin.php?page=drspeed-aias-settings' )
+            ->andReturn( 'http://example.com/wp-admin/admin.php?page=drspeed-aias-settings' );
 
         $result = ( new PluginDetector() )->detect();
         $this->assertArrayHasKey( 'Wordfence Login Security', $result['security_warn'] );
@@ -148,8 +148,8 @@ class PluginDetectorTest extends TestCase {
             ->with( 'cloudflare/cloudflare.php' )->andReturn( true );
         WP_Mock::userFunction( 'is_plugin_active' )->andReturn( false );
         WP_Mock::userFunction( 'admin_url' )
-            ->with( 'admin.php?page=cu-scanner-settings' )
-            ->andReturn( 'http://example.com/wp-admin/admin.php?page=cu-scanner-settings' );
+            ->with( 'admin.php?page=drspeed-aias-settings' )
+            ->andReturn( 'http://example.com/wp-admin/admin.php?page=drspeed-aias-settings' );
 
         $result = ( new PluginDetector() )->detect();
         $this->assertArrayHasKey( 'Cloudflare', $result['security_warn'] );

@@ -1,6 +1,6 @@
 <?php
 use PHPUnit\Framework\TestCase;
-use CUScanner\Api\RailwayClient;
+use DrSpeedAIAS\Api\RailwayClient;
 
 class Test_Railway_Client_Job_Token extends TestCase {
 

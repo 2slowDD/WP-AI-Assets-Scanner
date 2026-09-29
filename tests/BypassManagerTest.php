@@ -1,8 +1,8 @@
 <?php
 // tests/BypassManagerTest.php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\BypassManager;
+use DrSpeedAIAS\Scanner\BypassManager;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -16,12 +16,12 @@ class BypassManagerTest extends TestCase {
 
     public function test_create_token_uses_option_storage_not_transient(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_active_tokens', [] )
+            ->with( 'drspeed_aias_active_tokens', [] )
             ->andReturn( [] );
         $captured = null;
         WP_Mock::userFunction( 'update_option' )
             ->andReturnUsing( function ( $key, $value, $autoload = null ) use ( &$captured ) {
-                if ( $key === 'cu_scanner_active_tokens' ) {
+                if ( $key === 'drspeed_aias_active_tokens' ) {
                     $captured = [ 'value' => $value, 'autoload' => $autoload ];
                 }
                 return true;
@@ -38,7 +38,7 @@ class BypassManagerTest extends TestCase {
 
     public function test_create_token_is_csprng_hex(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_active_tokens', [] )
+            ->with( 'drspeed_aias_active_tokens', [] )
             ->andReturn( [] );
         WP_Mock::userFunction( 'update_option' )->andReturn( true );
 
@@ -56,7 +56,7 @@ class BypassManagerTest extends TestCase {
         $captured = null;
         WP_Mock::userFunction( 'update_option' )
             ->andReturnUsing( function ( $key, $value ) use ( &$captured ) {
-                if ( $key === 'cu_scanner_active_tokens' ) {
+                if ( $key === 'drspeed_aias_active_tokens' ) {
                     $captured = $value;
                 }
                 return true;
@@ -76,7 +76,7 @@ class BypassManagerTest extends TestCase {
     public function test_expired_token_rejected(): void {
         $stored = [ 'tok-old' => time() - 10 ];  // already expired
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_active_tokens', [] )
+            ->with( 'drspeed_aias_active_tokens', [] )
             ->andReturn( $stored );
         WP_Mock::userFunction( 'update_option' )->withAnyArgs();  // GC may run
         WP_Mock::userFunction( 'set_transient' )->never();
@@ -91,7 +91,7 @@ class BypassManagerTest extends TestCase {
         // Pre-migration: flat list of token strings. Validity must return false.
         $stored = [ 'tok-legacy-1', 'tok-legacy-2' ];
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_active_tokens', [] )
+            ->with( 'drspeed_aias_active_tokens', [] )
             ->andReturn( $stored );
         WP_Mock::userFunction( 'update_option' )->withAnyArgs();
         WP_Mock::userFunction( 'set_transient' )->never();
@@ -112,11 +112,11 @@ class BypassManagerTest extends TestCase {
         // backed storage (autoload=false), the token must remain valid.
         $stored = [];
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_active_tokens', [] )
+            ->with( 'drspeed_aias_active_tokens', [] )
             ->andReturnUsing( function () use ( &$stored ) { return $stored; } );
         WP_Mock::userFunction( 'update_option' )
             ->andReturnUsing( function ( $key, $value, $autoload = null ) use ( &$stored ) {
-                if ( $key === 'cu_scanner_active_tokens' ) {
+                if ( $key === 'drspeed_aias_active_tokens' ) {
                     $stored = $value;
                 }
                 return true;
@@ -143,12 +143,12 @@ class BypassManagerTest extends TestCase {
             'tok-valid'   => time() + 100,
         ];
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_active_tokens', [] )
+            ->with( 'drspeed_aias_active_tokens', [] )
             ->andReturn( $stored );
         $written = null;
         WP_Mock::userFunction( 'update_option' )
             ->andReturnUsing( function ( $key, $value ) use ( &$written ) {
-                if ( $key === 'cu_scanner_active_tokens' ) {
+                if ( $key === 'drspeed_aias_active_tokens' ) {
                     $written = $value;
                 }
                 return true;

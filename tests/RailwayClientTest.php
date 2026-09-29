@@ -1,8 +1,8 @@
 <?php
 // tests/RailwayClientTest.php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Api\RailwayClient;
+use DrSpeedAIAS\Api\RailwayClient;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -74,7 +74,7 @@ class RailwayClientTest extends TestCase {
     }
 
     /**
-     * FU-AAS-VERSION-IN-SCAN-LOG — AC-A1. The REAL submit_job posts plugin_version = AIAS_VERSION
+     * FU-AAS-VERSION-IN-SCAN-LOG — AC-A1. The REAL submit_job posts plugin_version = DRSPEED_AIAS_VERSION
      * in the JSON body. Assert the CONSTANT: tests/bootstrap.php defines it as '1.0.0' and
      * VersionLockstepTest pins that shadow — a literal here would be a lockstep assertion built on a fixture.
      */
@@ -106,7 +106,7 @@ class RailwayClientTest extends TestCase {
         $body = json_decode( (string) $captured['args']['body'], true );
         $this->assertIsArray( $body );
         $this->assertArrayHasKey( 'plugin_version', $body );
-        $this->assertSame( AIAS_VERSION, $body['plugin_version'] );
+        $this->assertSame( DRSPEED_AIAS_VERSION, $body['plugin_version'] );
         $this->assertSame( 'tok-abc', $body['job_token'] );
         $this->assertSame( $payload['pages'], $body['pages'] );
         $this->assertSame( 'Bearer tok-abc', $captured['args']['headers']['Authorization'] );

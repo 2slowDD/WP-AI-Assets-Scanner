@@ -1,8 +1,8 @@
 <?php
 // tests/PageDiscoveryTest.php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\PageDiscovery;
+use DrSpeedAIAS\Scanner\PageDiscovery;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 

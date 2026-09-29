@@ -1,8 +1,8 @@
 <?php
 // tests/SettingsAjaxSaveTest.php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\SettingsAjax;
+use DrSpeedAIAS\Admin\SettingsAjax;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -38,7 +38,7 @@ final class SettingsAjaxSaveTest extends TestCase {
     /** @var array<int,array{0:string,1:mixed}> Every update_option() call, in order. */
     private array $writes = [];
 
-    /** What get_option( 'cu_scanner_api_key' ) returns: '' = no key saved yet. */
+    /** What get_option( 'drspeed_aias_api_key' ) returns: '' = no key saved yet. */
     private string $stored_key = '';
 
     public function setUp(): void {
@@ -58,7 +58,7 @@ final class SettingsAjaxSaveTest extends TestCase {
     /** Nonce, capability, sanitizers, domain resolution, and the option recorder. */
     private function mock_common(): void {
         WP_Mock::userFunction( 'check_ajax_referer' )
-            ->with( 'cu_scanner_settings_nonce', 'nonce' )->once()->andReturn( 1 );
+            ->with( 'drspeed_aias_settings_nonce', 'nonce' )->once()->andReturn( 1 );
         WP_Mock::userFunction( 'current_user_can' )
             ->with( 'manage_options' )->andReturn( true );
         WP_Mock::userFunction( 'wp_unslash' )->andReturnUsing( fn( $v ) => $v );
@@ -72,7 +72,7 @@ final class SettingsAjaxSaveTest extends TestCase {
                 return true;
             } );
         WP_Mock::userFunction( 'get_option' )
-            ->andReturnUsing( fn( $name, $default = false ) => 'cu_scanner_api_key' === $name ? $this->stored_key : $default );
+            ->andReturnUsing( fn( $name, $default = false ) => 'drspeed_aias_api_key' === $name ? $this->stored_key : $default );
         WP_Mock::userFunction( 'wp_send_json_success' )
             ->andReturnUsing( function ( $data = null ) {
                 throw new SettingsAjaxJsonSent( 'success', $data );
@@ -105,7 +105,7 @@ final class SettingsAjaxSaveTest extends TestCase {
     private function api_key_writes(): array {
         $vals = [];
         foreach ( $this->writes as [ $name, $value ] ) {
-            if ( 'cu_scanner_api_key' === $name ) {
+            if ( 'drspeed_aias_api_key' === $name ) {
                 $vals[] = $value;
             }
         }
@@ -113,7 +113,7 @@ final class SettingsAjaxSaveTest extends TestCase {
     }
 
     // ---------------------------------------------------------------------
-    // Loss paths — nothing may reach cu_scanner_api_key unless auth succeeded.
+    // Loss paths — nothing may reach drspeed_aias_api_key unless auth succeeded.
     // ---------------------------------------------------------------------
 
     public function test_rejected_key_is_never_committed(): void {
@@ -205,7 +205,7 @@ final class SettingsAjaxSaveTest extends TestCase {
         $sent = $this->run_handler();
 
         $this->assertSame( [ 'cusk_NEWKEY_111111' ], $this->api_key_writes(), 'a valid new key was not committed exactly once' );
-        $this->assertContains( [ 'aias_railway_url', self::RAILWAY_URL ], $this->writes );
+        $this->assertContains( [ 'drspeed_aias_railway_url', self::RAILWAY_URL ], $this->writes );
         $this->assertSame( 'success', $sent->kind );
         $this->assertSame( 42, $sent->payload['credits'] );
         $this->assertSame( self::RAILWAY_URL, $sent->payload['railway_url'] );
@@ -240,7 +240,7 @@ final class SettingsAjaxSaveTest extends TestCase {
 
         $sent = $this->run_handler();
 
-        $this->assertContains( [ 'cu_scanner_omit_cu_bypass', '1' ], $this->writes );
+        $this->assertContains( [ 'drspeed_aias_omit_cu_bypass', '1' ], $this->writes );
         $this->assertSame( [], $this->api_key_writes() );
         $this->assertSame( 'error', $sent->kind );
     }
@@ -258,7 +258,7 @@ final class SettingsAjaxSaveTest extends TestCase {
         $sent = $this->run_handler();
 
         $this->assertSame( [ 'cusk_NEWKEY_111111' ], $this->api_key_writes(), 'authenticated key was not committed when railway_url was absent' );
-        $this->assertNotContains( 'aias_railway_url', array_column( $this->writes, 0 ) );
+        $this->assertNotContains( 'drspeed_aias_railway_url', array_column( $this->writes, 0 ) );
         $this->assertSame( 'success', $sent->kind );
         $this->assertSame( 5, $sent->payload['credits'] );
         $this->assertSame( '', $sent->payload['railway_url'] );
@@ -277,7 +277,7 @@ final class SettingsAjaxSaveTest extends TestCase {
         $sent = $this->run_handler();
 
         $this->assertSame( [ 'cusk_NEWKEY_111111' ], $this->api_key_writes() );
-        $this->assertNotContains( 'aias_railway_url', array_column( $this->writes, 0 ) );
+        $this->assertNotContains( 'drspeed_aias_railway_url', array_column( $this->writes, 0 ) );
         $this->assertSame( 'success', $sent->kind );
         $this->assertSame( '', $sent->payload['railway_url'] );
     }
@@ -331,7 +331,7 @@ final class SettingsAjaxSaveTest extends TestCase {
             'the authenticated key must still be committed when the railway_url is rejected'
         );
         $this->assertNotContains(
-            'aias_railway_url',
+            'drspeed_aias_railway_url',
             array_column( $this->writes, 0 ),
             'a host outside the allowlist must never be stored'
         );

@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\OptimizerState;
+use DrSpeedAIAS\Scanner\OptimizerState;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -13,7 +13,7 @@ class OptimizerStateTest extends TestCase {
         $captured = null;
         WP_Mock::userFunction( 'update_option' )
             ->andReturnUsing( function ( $key, $value, $autoload ) use ( &$captured ) {
-                if ( $key === 'aias_optimizer_state' ) {
+                if ( $key === 'drspeed_aias_optimizer_state' ) {
                     $captured = [ 'value' => $value, 'autoload' => $autoload ];
                 }
                 return true;
@@ -45,7 +45,7 @@ class OptimizerStateTest extends TestCase {
             'snapshots'  => [ 'sg_optimizer' => [ 'siteground_optimizer_optimize_css' => 1 ] ],
         ];
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_optimizer_state', null )
+            ->with( 'drspeed_aias_optimizer_state', null )
             ->andReturn( $payload );
 
         $loaded = OptimizerState::load();
@@ -54,7 +54,7 @@ class OptimizerStateTest extends TestCase {
 
     public function test_load_returns_null_when_missing(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_optimizer_state', null )
+            ->with( 'drspeed_aias_optimizer_state', null )
             ->andReturn( null );
 
         $this->assertNull( OptimizerState::load() );
@@ -62,7 +62,7 @@ class OptimizerStateTest extends TestCase {
 
     public function test_load_returns_null_when_value_is_not_array(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_optimizer_state', null )
+            ->with( 'drspeed_aias_optimizer_state', null )
             ->andReturn( 'corrupted' );
 
         $this->assertNull( OptimizerState::load() );
@@ -70,7 +70,7 @@ class OptimizerStateTest extends TestCase {
 
     public function test_clear_calls_delete_option(): void {
         WP_Mock::userFunction( 'delete_option' )
-            ->with( 'aias_optimizer_state' )
+            ->with( 'drspeed_aias_optimizer_state' )
             ->once();
 
         OptimizerState::clear();

@@ -1,8 +1,8 @@
 <?php
 // tests/ExportHistoryAjaxTest.php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Admin\ScannerAjax;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -12,7 +12,7 @@ class ExportHistoryAjaxTest extends TestCase {
 
     public function test_export_history_missing_cap_calls_wp_die_403(): void {
         WP_Mock::userFunction( 'check_ajax_referer' )
-            ->with( 'cu_scanner_nonce', 'nonce' )->andReturn( 1 );
+            ->with( 'drspeed_aias_nonce', 'nonce' )->andReturn( 1 );
         WP_Mock::userFunction( 'current_user_can' )
             ->with( 'manage_options' )->andReturn( false );
         WP_Mock::userFunction( 'wp_die' )
@@ -27,11 +27,11 @@ class ExportHistoryAjaxTest extends TestCase {
 
     public function test_export_history_empty_returns_plain_text_no_download(): void {
         WP_Mock::userFunction( 'check_ajax_referer' )
-            ->with( 'cu_scanner_nonce', 'nonce' )->andReturn( 1 );
+            ->with( 'drspeed_aias_nonce', 'nonce' )->andReturn( 1 );
         WP_Mock::userFunction( 'current_user_can' )
             ->with( 'manage_options' )->andReturn( true );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )->andReturn( [] );
+            ->with( 'drspeed_aias_history', [] )->andReturn( [] );
         WP_Mock::userFunction( 'wp_die' )
             ->with( 'No history to export', '', [ 'response' => 200 ] )->once()
             ->andThrow( new \Exception( 'empty' ) );
@@ -157,11 +157,11 @@ class ExportHistoryAjaxTest extends TestCase {
 
     public function test_export_history_streams_csv_when_zip_unavailable(): void {
         WP_Mock::userFunction( 'check_ajax_referer' )
-            ->with( 'cu_scanner_nonce', 'nonce' )->andReturn( 1 );
+            ->with( 'drspeed_aias_nonce', 'nonce' )->andReturn( 1 );
         WP_Mock::userFunction( 'current_user_can' )
             ->with( 'manage_options' )->andReturn( true );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [ [
                 'job_id' => 'job-a', 'domain' => 'example.com',
                 'page_count' => 1, 'credits_used' => 0,
@@ -188,11 +188,11 @@ class ExportHistoryAjaxTest extends TestCase {
             $this->markTestSkipped( 'ZipArchive unavailable in test env' );
         }
         WP_Mock::userFunction( 'check_ajax_referer' )
-            ->with( 'cu_scanner_nonce', 'nonce' )->andReturn( 1 );
+            ->with( 'drspeed_aias_nonce', 'nonce' )->andReturn( 1 );
         WP_Mock::userFunction( 'current_user_can' )
             ->with( 'manage_options' )->andReturn( true );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [
                 [
                     'job_id' => 'job-a', 'domain' => 'a.com',
@@ -208,9 +208,9 @@ class ExportHistoryAjaxTest extends TestCase {
                 ],
             ] );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_json_job-a', '' )->andReturn( '{"a":1}' );
+            ->with( 'drspeed_aias_json_job-a', '' )->andReturn( '{"a":1}' );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_json_job-b', '' )->andReturn( '{"b":2}' );
+            ->with( 'drspeed_aias_json_job-b', '' )->andReturn( '{"b":2}' );
         WP_Mock::userFunction( 'wp_tempnam' )
             ->andReturnUsing( function () {
                 return tempnam( sys_get_temp_dir(), 'cu-hist-' );
@@ -220,7 +220,7 @@ class ExportHistoryAjaxTest extends TestCase {
                 return json_encode( $data, $flags );
             } );
 
-        $subject = new class extends \CUScanner\Admin\ScannerAjax {
+        $subject = new class extends \DrSpeedAIAS\Admin\ScannerAjax {
             public ?string $captured_tmp = null;
             protected function terminate(): void { throw new \RuntimeException( 'terminated' ); }
             protected function stream_zip( string $tmp ): void {
@@ -263,7 +263,7 @@ class ExportHistoryAjaxTest extends TestCase {
         WP_Mock::userFunction( 'check_ajax_referer' )->andReturn( 1 );
         WP_Mock::userFunction( 'current_user_can' )->andReturn( true );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [ [
                 'job_id' => 'job-a', 'domain' => 'a.com',
                 'page_count' => 1, 'credits_used' => 0,
@@ -277,7 +277,7 @@ class ExportHistoryAjaxTest extends TestCase {
         WP_Mock::userFunction( 'wp_tempnam' )->andReturn( $fake_dir );
         WP_Mock::userFunction( 'wp_delete_file' )->andReturnUsing( function ( $p ) { @unlink( $p ); } );
 
-        $subject = new class extends \CUScanner\Admin\ScannerAjax {
+        $subject = new class extends \DrSpeedAIAS\Admin\ScannerAjax {
             public bool $zip_stream_called = false;
             protected function terminate(): void { throw new \RuntimeException( 'terminated' ); }
             protected function stream_zip( string $tmp ): void {
@@ -310,7 +310,7 @@ class ExportHistoryAjaxTest extends TestCase {
         WP_Mock::userFunction( 'check_ajax_referer' )->andReturn( 1 );
         WP_Mock::userFunction( 'current_user_can' )->andReturn( true );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [
                 [
                     'job_id' => 'job-have', 'domain' => 'a.com',
@@ -326,9 +326,9 @@ class ExportHistoryAjaxTest extends TestCase {
                 ],
             ] );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_json_job-have', '' )->andReturn( '{"x":1}' );
+            ->with( 'drspeed_aias_json_job-have', '' )->andReturn( '{"x":1}' );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_json_job-missing', '' )->andReturn( '' );
+            ->with( 'drspeed_aias_json_job-missing', '' )->andReturn( '' );
         WP_Mock::userFunction( 'wp_tempnam' )
             ->andReturnUsing( function () {
                 return tempnam( sys_get_temp_dir(), 'cu-hist-' );
@@ -338,7 +338,7 @@ class ExportHistoryAjaxTest extends TestCase {
                 return json_encode( $data, $flags );
             } );
 
-        $subject = new class extends \CUScanner\Admin\ScannerAjax {
+        $subject = new class extends \DrSpeedAIAS\Admin\ScannerAjax {
             public ?string $captured = null;
             protected function terminate(): void { throw new \RuntimeException( 'terminated' ); }
             protected function stream_zip( string $tmp ): void {
@@ -364,7 +364,7 @@ class ExportHistoryAjaxTest extends TestCase {
     }
 }
 
-class ForcedCsvScannerAjax extends \CUScanner\Admin\ScannerAjax {
+class ForcedCsvScannerAjax extends \DrSpeedAIAS\Admin\ScannerAjax {
     protected function zip_available(): bool { return false; }
     protected function terminate(): void { throw new \RuntimeException( 'terminated' ); }
     protected function emit_csv_headers( string $filename ): void {} // no-op in test

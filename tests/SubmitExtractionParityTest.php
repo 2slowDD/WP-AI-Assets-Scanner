@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Admin\ScannerAjax;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -25,8 +25,8 @@ class SubmitExtractionParityTest extends TestCase {
         parent::setUp();
         WP_Mock::setUp();
         // Plugin constant the payload builder embeds; not defined by bootstrap.php.
-        if ( ! defined( 'AIAS_WPSERVICE_BASE' ) ) {
-            define( 'AIAS_WPSERVICE_BASE', 'https://wpservice.pro' );
+        if ( ! defined( 'DRSPEED_AIAS_WPSERVICE_BASE' ) ) {
+            define( 'DRSPEED_AIAS_WPSERVICE_BASE', 'https://wpservice.pro' );
         }
     }
     public function tearDown(): void { WP_Mock::tearDown(); parent::tearDown(); }
@@ -44,7 +44,7 @@ class SubmitExtractionParityTest extends TestCase {
             function ( string $name, $default = '' ) {
                 // get_scanner_secret() returns the stored value when non-empty,
                 // avoiding random_bytes(); everything else takes its default.
-                if ( 'cu_scanner_secret' === $name ) {
+                if ( 'drspeed_aias_secret' === $name ) {
                     return 'test-scanner-secret';
                 }
                 return $default;

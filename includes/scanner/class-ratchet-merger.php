@@ -1,5 +1,5 @@
 <?php
-namespace CUScanner\Scanner;
+namespace DrSpeedAIAS\Scanner;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -481,7 +481,7 @@ class RatchetMerger {
     private function url_to_pattern( string $url ): string {
         // Delegates to the single shared normalizer. Kept as a thin private method so
         // existing call sites and the class's own API are unchanged.
-        return \CUScanner\Scanner\UrlPattern::from_url( $url );
+        return \DrSpeedAIAS\Scanner\UrlPattern::from_url( $url );
     }
 
     /**

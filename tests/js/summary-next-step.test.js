@@ -55,7 +55,7 @@ function testNoRulesStaysSilent() {
 // 4. Re-scan state: Push is deliberately disabled, so only Sync may be named.
 function testSyncOnlyNamesSyncOnly() {
   const h = createHarness();
-  h.sandbox.window.localStorage.setItem('cu_scanner_requeue_job1', '1');
+  h.sandbox.window.localStorage.setItem('drspeed_aias_requeue_job1', '1');
   h.sandbox.window.__cuTest.restoreStep4({
     jobId: 'job1', safeCount: 0, aggCount: 49, canPush: true, externalOnly: false,
     bannerData: {}, urlsScanned: 5, pages: [], scanId: 'scan1', hasActiveCuRules: true

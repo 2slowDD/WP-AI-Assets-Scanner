@@ -1,15 +1,15 @@
 <?php if ( ! defined( 'ABSPATH' ) ) exit; ?>
-<div class="wrap cu-admin-page" id="cu-scanner-settings">
+<div class="wrap cu-admin-page" id="drspeed-aias-settings">
 <h1 class="screen-reader-text">AI Assets Scanner settings</h1>
 <h2 class="screen-reader-text cu-admin-notice-anchor">AI Assets Scanner notices</h2>
 <div class="cu-wrap">
 
     <div class="cu-header">
         <img class="cu-header-logo"
-             src="<?php echo esc_url( AIAS_URL . 'admin/images/dr-speed-ai-assets-scanner-logo.png' ); ?>"
+             src="<?php echo esc_url( DRSPEED_AIAS_URL . 'admin/images/dr-speed-ai-assets-scanner-logo.png' ); ?>"
              alt="AI Assets Scanner" />
         <div class="cu-header-text">
-            <h2>AI Assets Scanner <small class="cu-header-version">v<?php echo esc_html( AIAS_VERSION ); ?></small></h2>
+            <h2>AI Assets Scanner <small class="cu-header-version">v<?php echo esc_html( DRSPEED_AIAS_VERSION ); ?></small></h2>
             <span class="cu-step-label">Settings</span>
         </div>
         <svg class="cu-header-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" width="36" height="36">
@@ -25,7 +25,7 @@
     <main class="cu-settings-grid">
         <?php
         // phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Template file included within a class method; variables are local to method scope, not global.
-        $settings  = new CUScanner\Settings();
+        $settings  = new DrSpeedAIAS\Settings();
         $api_key   = $settings->get_api_key();
         $buy_url   = $settings->get_buy_credits_url( $api_key );
         $len       = mb_strlen( $api_key );
@@ -38,7 +38,7 @@
         $omit_cu_bypass = $settings->get_omit_cu_bypass();
         // phpcs:enable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound
         ?>
-        <form id="cu-scanner-settings-form" class="cu-settings-form">
+        <form id="drspeed-aias-settings-form" class="cu-settings-form">
             <section class="cu-settings-card cu-settings-card--account" aria-labelledby="cu-settings-account-title">
                 <div class="cu-settings-card-heading">
                     <span class="cu-settings-icon" aria-hidden="true">&#9673;</span>
@@ -47,31 +47,31 @@
                 <?php
                 // A saved key is changed only through "Replace API key" below, which accepts
                 // paid keys only; SettingsAjax::save_settings() enforces the same rule.
-                $aias_has_key = '' !== $api_key && ! $settings->is_pending_free_key( $api_key );
+                $drspeed_aias_has_key = '' !== $api_key && ! $settings->is_pending_free_key( $api_key );
                 ?>
                 <div class="cu-settings-field">
                     <label for="cu_api_key">API key</label>
                     <input type="text" id="cu_api_key" name="api_key"
                            value="<?php echo esc_attr( $masked ); ?>"
-                           <?php if ( $is_masked || $aias_has_key ) : ?>data-masked="1"<?php endif; ?>
-                           <?php if ( $aias_has_key ) : ?>readonly<?php endif; ?>
+                           <?php if ( $is_masked || $drspeed_aias_has_key ) : ?>data-masked="1"<?php endif; ?>
+                           <?php if ( $drspeed_aias_has_key ) : ?>readonly<?php endif; ?>
                            autocomplete="off" class="regular-text" placeholder="cusk_..." />
                     <p class="description">Get your API key from <a href="https://wpservice.pro" target="_blank" rel="noopener">wpservice.pro</a>.</p>
                     <?php if ( $settings->is_pending_free_key( $api_key ) ) : ?>
                         <p class="cu-inline-state cu-inline-state--pending"><?php esc_html_e( 'Free API key activation is pending. The plugin retries about once an hour.', 'dr-speed-ai-assets-scanner' ); ?></p>
                     <?php endif; ?>
                     <?php
-                    $aias_unusable = $settings->get_free_key_unusable();
-                    if ( '' !== $aias_unusable && ( '' === $api_key || $settings->is_free_key( $api_key ) ) ) :
+                    $drspeed_aias_unusable = $settings->get_free_key_unusable();
+                    if ( '' !== $drspeed_aias_unusable && ( '' === $api_key || $settings->is_free_key( $api_key ) ) ) :
                         ?>
                         <p class="cu-inline-state cu-inline-state--pending" id="cu-free-key-unusable">
-                            <?php echo esc_html( \CUScanner\Admin\SettingsAjax::unusable_free_key_message( $aias_unusable ) ); ?>
+                            <?php echo esc_html( \DrSpeedAIAS\Admin\SettingsAjax::unusable_free_key_message( $drspeed_aias_unusable ) ); ?>
                             <?php if ( '' !== $api_key ) : ?>
                                 <?php esc_html_e( 'Use Replace API key below.', 'dr-speed-ai-assets-scanner' ); ?>
                             <?php endif; ?>
                         </p>
                     <?php endif; ?>
-                    <?php if ( $aias_has_key ) : ?>
+                    <?php if ( $drspeed_aias_has_key ) : ?>
                         <p class="cu-replace-key">
                             <button type="button" id="cu-replace-key-open" class="button cu-replace-key-btn"
                                     data-confirm="<?php echo esc_attr__( "Replace your API key?\n\nYour current key will be removed from this site. Credits on it are NOT transferred to the new key; they stay with the current key's account.\n\nOnly a paid API key from wpservice.pro can be used as the replacement.", 'dr-speed-ai-assets-scanner' ); ?>">
@@ -92,36 +92,36 @@
                     <?php endif; ?>
                 </div>
                 <?php
-                $aias_welcome = get_transient( \CUScanner\FreeKeyBootstrap::WELCOME_TRANSIENT );
-                if ( is_array( $aias_welcome ) ) :
-                    delete_transient( \CUScanner\FreeKeyBootstrap::WELCOME_TRANSIENT );
+                $drspeed_aias_welcome = get_transient( \DrSpeedAIAS\FreeKeyBootstrap::WELCOME_TRANSIENT );
+                if ( is_array( $drspeed_aias_welcome ) ) :
+                    delete_transient( \DrSpeedAIAS\FreeKeyBootstrap::WELCOME_TRANSIENT );
                     ?>
                     <div class="notice notice-success inline" id="cu-free-key-welcome">
                         <p>
                             <?php
-                            if ( ! empty( $aias_welcome['restored'] ) ) {
+                            if ( ! empty( $drspeed_aias_welcome['restored'] ) ) {
                                 printf(
                                     /* translators: 1: the restored free API key, 2: its remaining credits. */
                                     esc_html__( 'Welcome back. This site\'s existing free key %1$s was restored with %2$d credits.', 'dr-speed-ai-assets-scanner' ),
-                                    '<code>' . esc_html( (string) ( $aias_welcome['key'] ?? '' ) ) . '</code>',
-                                    (int) ( $aias_welcome['balance'] ?? 0 )
+                                    '<code>' . esc_html( (string) ( $drspeed_aias_welcome['key'] ?? '' ) ) . '</code>',
+                                    (int) ( $drspeed_aias_welcome['balance'] ?? 0 )
                                 );
-                                if ( (int) ( $aias_welcome['balance'] ?? 0 ) < 1 ) {
+                                if ( (int) ( $drspeed_aias_welcome['balance'] ?? 0 ) < 1 ) {
                                     echo ' ' . esc_html__( 'No free credits are left on it; use Buy credits to keep scanning.', 'dr-speed-ai-assets-scanner' );
                                 }
                             } else {
                                 printf(
                                     /* translators: 1: the new free API key, 2: its starter credits. */
                                     esc_html__( 'Free API key %1$s created with %2$d starter credits.', 'dr-speed-ai-assets-scanner' ),
-                                    '<code>' . esc_html( (string) ( $aias_welcome['key'] ?? '' ) ) . '</code>',
-                                    (int) ( $aias_welcome['balance'] ?? 0 )
+                                    '<code>' . esc_html( (string) ( $drspeed_aias_welcome['key'] ?? '' ) ) . '</code>',
+                                    (int) ( $drspeed_aias_welcome['balance'] ?? 0 )
                                 );
                             }
                             ?>
                         </p>
                     </div>
                 <?php endif; ?>
-                <?php if ( \CUScanner\FreeKeyBootstrap::can_request( $settings ) ) : ?>
+                <?php if ( \DrSpeedAIAS\FreeKeyBootstrap::can_request( $settings ) ) : ?>
                     <div class="cu-settings-field cu-free-key-optin" id="cu-free-key-optin">
                         <span class="cu-settings-label"><?php esc_html_e( 'Validate your key', 'dr-speed-ai-assets-scanner' ); ?></span>
                         <p class="description">
@@ -166,9 +166,9 @@
                     <?php endif; ?>
                 </div>
                 <div class="cu-settings-field">
-                    <label for="cu-scanner-secret">Scanner secret</label>
+                    <label for="drspeed-aias-secret">Scanner secret</label>
                     <div class="cu-secret-row">
-                        <input type="text" id="cu-scanner-secret" value="<?php echo esc_attr( $scanner_secret ); ?>" readonly class="regular-text cu-mono-input" />
+                        <input type="text" id="drspeed-aias-secret" value="<?php echo esc_attr( $scanner_secret ); ?>" readonly class="regular-text cu-mono-input" />
                         <button type="button" id="cu-copy-secret" class="button">Copy</button>
                         <button type="button" id="cu-regenerate-secret" class="button">Regenerate</button>
                     </div>
@@ -190,7 +190,7 @@
                 </div>
             </section>
 
-            <?php wp_nonce_field( 'cu_scanner_settings_nonce', 'nonce' ); ?>
+            <?php wp_nonce_field( 'drspeed_aias_settings_nonce', 'nonce' ); ?>
             <div class="cu-settings-savebar">
                 <div><strong>Save scanner settings</strong><span>Changes apply to future scans.</span></div>
                 <button type="submit" class="button button-primary">Save settings</button>
@@ -205,15 +205,15 @@
             </div>
         <?php
         // phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Template file included within a class method; variables are local to method scope, not global.
-        $cdn_registry     = \CUScanner\Cdn\Detector::default_registry();
-        $detected_cdn     = ( new \CUScanner\Cdn\Detector() )->detect();
-        $acknowledged_cdn = ( new \CUScanner\Settings() )->get_acknowledged_cdn();
+        $cdn_registry     = \DrSpeedAIAS\Cdn\Detector::default_registry();
+        $detected_cdn     = ( new \DrSpeedAIAS\Cdn\Detector() )->detect();
+        $acknowledged_cdn = ( new \DrSpeedAIAS\Settings() )->get_acknowledged_cdn();
 
         $detected_adapter = null;
         if ( null !== $detected_cdn ) {
-            foreach ( $cdn_registry->all() as $aias_cdn_adapter ) {
-                if ( $aias_cdn_adapter->name() === $detected_cdn ) {
-                    $detected_adapter = $aias_cdn_adapter;
+            foreach ( $cdn_registry->all() as $drspeed_aias_cdn_adapter ) {
+                if ( $drspeed_aias_cdn_adapter->name() === $detected_cdn ) {
+                    $detected_adapter = $drspeed_aias_cdn_adapter;
                     break;
                 }
             }
@@ -265,27 +265,27 @@
                 <label for="cu-cdn-select"><strong>My CDN:</strong></label>
                 <select id="cu-cdn-select" style="margin-left:8px">
                     <option value="">— Select CDN —</option>
-                    <?php foreach ( $cdn_registry->all() as $aias_cdn_adapter ) : ?>
-                        <option value="<?php echo esc_attr( $aias_cdn_adapter->name() ); ?>">
-                            <?php echo esc_html( ucfirst( $aias_cdn_adapter->name() ) ); ?>
+                    <?php foreach ( $cdn_registry->all() as $drspeed_aias_cdn_adapter ) : ?>
+                        <option value="<?php echo esc_attr( $drspeed_aias_cdn_adapter->name() ); ?>">
+                            <?php echo esc_html( ucfirst( $drspeed_aias_cdn_adapter->name() ) ); ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
             </p>
 
-            <?php foreach ( $cdn_registry->all() as $aias_cdn_adapter ) : ?>
-                <div id="cu-cdn-instructions-<?php echo esc_attr( $aias_cdn_adapter->name() ); ?>"
+            <?php foreach ( $cdn_registry->all() as $drspeed_aias_cdn_adapter ) : ?>
+                <div id="cu-cdn-instructions-<?php echo esc_attr( $drspeed_aias_cdn_adapter->name() ); ?>"
                      class="cu-cdn-instructions-block"
                      style="display:none">
                     <?php
                     // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- plugin-authored HTML; secret escaped via esc_html() inside instructionsHtml().
-                    echo $aias_cdn_adapter->instructionsHtml( $scanner_secret );
+                    echo $drspeed_aias_cdn_adapter->instructionsHtml( $scanner_secret );
                     ?>
                     <p style="margin-top:16px">
                         <button type="button"
-                                id="cu-ack-cdn-<?php echo esc_attr( $aias_cdn_adapter->name() ); ?>"
+                                id="cu-ack-cdn-<?php echo esc_attr( $drspeed_aias_cdn_adapter->name() ); ?>"
                                 class="button button-primary cu-ack-cdn-manual"
-                                data-cdn="<?php echo esc_attr( $aias_cdn_adapter->name() ); ?>">
+                                data-cdn="<?php echo esc_attr( $drspeed_aias_cdn_adapter->name() ); ?>">
                             I&rsquo;ve configured this exemption
                         </button>
                     </p>

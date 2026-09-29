@@ -4,6 +4,26 @@ All notable changes to AI Assets Scanner are documented here.
 
 ---
 
+## 1.9.4 — 2026-09-29
+
+WordPress.org review of 1.9.3 found two problems.
+
+### Fixed
+- **Fatal error on a front-end scan request.** With a valid `cu_scan_token`, `BypassHandler` calls `PluginDetector::detect_typed()`, which called `is_plugin_active()` without loading `wp-admin/includes/plugin.php`. WordPress 7.x loads that file on every request (connectors), which hid the bug on current sites; on 6.x it was `Call to undefined function is_plugin_active()`. Reproduced on clean WordPress 6.2.6 and 6.5.5 with WP_DEBUG. `PluginDetector::load_plugin_api()` now loads it; `detect()`, `detect_typed()`, `active_security_warn_ids()` and `RulePusher::can_push()` call it. `AdminOnlyFunctionGuardTest` fails if any function calls an admin-only plugin helper without it.
+- Warnings found on the clean install: the menu badge read `job_id` and the history page read display fields without defaults on an incomplete history record.
+- `.notice.notice-error` in the admin stylesheet recoloured every error notice on the plugin's screens; scoped to `.cu-wrap`.
+
+### Changed
+- **One prefix for every global name.** The review rejected `cu` as too short and counted about 100 names across `cu_scanner_`, `CUScanner\`, `cuScanner…` and `aias_`. Now: namespace `DrSpeedAIAS\`, constants `DRSPEED_AIAS_`, options, transients, hooks, cron events and AJAX actions `drspeed_aias_`, script handles and page slugs `drspeed-aias`, localized JS objects `drspeedAias…`, the plugin's own REST namespace `drspeed-aias/v1`, and the debug constant `DRSPEED_AIAS_DEBUG` (was `CU_SCANNER_DEBUG`).
+- Kept unchanged because other systems depend on them: the `cu_scan_token` URL parameter and `x-cu-scanner` header (scanning worker), `id="cu-dep-graph"` (read by the worker from scanned pages), the wpservice.pro API paths `/cu-scanner/v1/…`, and the Buy-link parameters `cu_free_key`, `cu_domain`, `cu_claim_token`.
+- Removed `includes/lib-fields-hash.php`: an unprefixed global function wrapped in `function_exists()`, never called by this plugin.
+- `includes/debug.php` no longer wraps its function in `function_exists()`.
+
+### Migration
+- `Migrations` m2 (DB version 2) moves this plugin's options (fixed names from `includes/names.php` and per-scan prefixes) and pending cron events to the new names, in place, keeping values and autoload. It never matches the wpservice.pro service plugin's `cu_scanner_` options: one fixed SELECT over both old prefixes, then an explicit allow-list. Runs before m1, so older sites get both. Verified live on WordPress 6.2 and 6.5: key, secret, worker URL, history, scan JSON and a queued watchdog event moved; the service plugin's options were untouched.
+- `uninstall.php` reads the same `includes/names.php` and deletes both the new and the old names.
+- `AjaxActionParityTest`: every AJAX action the admin JS sends has a handler (caught a missed `wp_ajax_aias_dismiss_banner` during the rename).
+
 ## 1.9.3 — 2026-09-28
 
 ### Fixed

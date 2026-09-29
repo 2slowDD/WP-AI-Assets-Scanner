@@ -1,6 +1,6 @@
 <?php
 use PHPUnit\Framework\TestCase;
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Admin\ScannerAjax;
 
 final class ScannerAjaxThrottleTest extends TestCase {
 

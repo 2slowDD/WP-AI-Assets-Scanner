@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\SnapshotManager;
+use DrSpeedAIAS\Scanner\SnapshotManager;
 use WP_Mock\Tools\TestCase;
 
 // ---------------------------------------------------------------------------
@@ -255,7 +255,7 @@ class SnapshotManagerTest extends TestCase {
             }
         };
 
-        $manager = new \CUScanner\Scanner\SnapshotManager( $failing_repo::class );
+        $manager = new \DrSpeedAIAS\Scanner\SnapshotManager( $failing_repo::class );
         $result  = $manager->snapshot();
 
         $this->assertInstanceOf( \WP_Error::class, $result );
@@ -287,7 +287,7 @@ class SnapshotManagerTest extends TestCase {
             [ 'id' => 11, 'group_id' => 1, 'url_pattern' => '/b/', 'match_type' => 'exact', 'asset_handle' => 'h2', 'asset_type' => 'css', 'device_type' => 'all', 'label' => null, 'source_label' => '', 'condition_type' => null, 'condition_value' => null, 'condition_invert' => 0 ],
         ];
 
-        $manager = new \CUScanner\Scanner\SnapshotManager( $failing_repo::class );
+        $manager = new \DrSpeedAIAS\Scanner\SnapshotManager( $failing_repo::class );
         $result  = $manager->snapshot();
 
         // snapshot() must return WP_Error
@@ -485,7 +485,7 @@ class SnapshotManagerTest extends TestCase {
             [ 'id' => 11, 'group_id' => 2, 'url_pattern' => 'https://example.com/', 'match_type' => 'exact', 'asset_handle' => 'my-script', 'asset_type' => 'js', 'device_type' => 'all', 'label' => null, 'source_label' => 'AA Scanner', 'condition_type' => null, 'condition_value' => null, 'condition_invert' => 0 ],
         ];
 
-        $manager = new \CUScanner\Scanner\SnapshotManager( $dup_repo::class );
+        $manager = new \DrSpeedAIAS\Scanner\SnapshotManager( $dup_repo::class );
         $result  = $manager->snapshot();
 
         // Must succeed (true), not return a WP_Error

@@ -1,5 +1,5 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
 use PHPUnit\Framework\TestCase;
 use WP_Mock;
@@ -38,7 +38,7 @@ class HistoryRenderTest extends TestCase {
 	/** The harness: seed the option the view reads, include the view, capture its output. */
 	private function render( array $history ): string {
 		WP_Mock::userFunction( 'get_option' )->andReturnUsing(
-			fn( $k, $default = false ) => 'cu_scanner_history' === $k ? $history : $default
+			fn( $k, $default = false ) => 'drspeed_aias_history' === $k ? $history : $default
 		);
 		ob_start();
 		include dirname( __DIR__ ) . '/admin/views/history-page.php';

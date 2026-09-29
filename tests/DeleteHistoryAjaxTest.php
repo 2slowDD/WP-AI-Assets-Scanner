@@ -1,8 +1,8 @@
 <?php
 // tests/DeleteHistoryAjaxTest.php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Admin\ScannerAjax;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -12,20 +12,20 @@ class DeleteHistoryAjaxTest extends TestCase {
 
     public function test_delete_history_happy_path_delegates_to_scan_history_and_sets_transient_and_succeeds(): void {
         WP_Mock::userFunction( 'check_ajax_referer' )
-            ->with( 'cu_scanner_nonce', 'nonce' )->once()->andReturn( 1 );
+            ->with( 'drspeed_aias_nonce', 'nonce' )->once()->andReturn( 1 );
         WP_Mock::userFunction( 'current_user_can' )
             ->with( 'manage_options' )->andReturn( true );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [
                 [ 'job_id' => 'job-a' ],
                 [ 'job_id' => 'job-b' ],
             ] );
-        WP_Mock::userFunction( 'delete_option' )->with( 'cu_scanner_json_job-a' )->once();
-        WP_Mock::userFunction( 'delete_option' )->with( 'cu_scanner_json_job-b' )->once();
-        WP_Mock::userFunction( 'delete_option' )->with( 'cu_scanner_history' )->once();
+        WP_Mock::userFunction( 'delete_option' )->with( 'drspeed_aias_json_job-a' )->once();
+        WP_Mock::userFunction( 'delete_option' )->with( 'drspeed_aias_json_job-b' )->once();
+        WP_Mock::userFunction( 'delete_option' )->with( 'drspeed_aias_history' )->once();
         WP_Mock::userFunction( 'set_transient' )
-            ->with( 'cu_scanner_history_deleted_notice', 2, 30 )->once();
+            ->with( 'drspeed_aias_history_deleted_notice', 2, 30 )->once();
         WP_Mock::userFunction( 'wp_send_json_success' )
             ->with( [ 'deleted' => 2 ] )->once()
             ->andThrow( new \Exception( 'sent' ) );
@@ -38,7 +38,7 @@ class DeleteHistoryAjaxTest extends TestCase {
 
     public function test_delete_history_missing_cap_returns_403(): void {
         WP_Mock::userFunction( 'check_ajax_referer' )
-            ->with( 'cu_scanner_nonce', 'nonce' )->andReturn( 1 );
+            ->with( 'drspeed_aias_nonce', 'nonce' )->andReturn( 1 );
         WP_Mock::userFunction( 'current_user_can' )
             ->with( 'manage_options' )->andReturn( false );
         WP_Mock::userFunction( 'wp_send_json_error' )

@@ -21,7 +21,7 @@ function add_action( $tag, $cb, $priority = 10, $accepted_args = 1 ) { return tr
 
 require __DIR__ . '/../includes/class-broken-banner.php';
 
-function aias_assert( $cond, $msg ) {
+function drspeed_aias_assert( $cond, $msg ) {
     if ( ! $cond ) { throw new RuntimeException( 'FAIL: ' . $msg ); }
 }
 
@@ -34,29 +34,29 @@ $keys = [
 
 // AC-1: every key yields a non-empty remediation with no embedded HTML.
 foreach ( $keys as $k ) {
-    $r = AIAS_Broken_Banner::reason_remediation( $k );
-    aias_assert( is_string( $r ) && $r !== '', "remediation non-empty for $k" );
-    aias_assert( strpos( $r, '<' ) === false, "remediation plain-text (no HTML) for $k" );
+    $r = DRSPEED_AIAS_Broken_Banner::reason_remediation( $k );
+    drspeed_aias_assert( is_string( $r ) && $r !== '', "remediation non-empty for $k" );
+    drspeed_aias_assert( strpos( $r, '<' ) === false, "remediation plain-text (no HTML) for $k" );
 }
 // Rate delegation: substantive, mentions rate-limiting behavior.
-aias_assert( stripos( AIAS_Broken_Banner::reason_remediation( 'tier1_http_rate_limit' ), 'rate' ) !== false, 'rate clause delegated' );
+drspeed_aias_assert( stripos( DRSPEED_AIAS_Broken_Banner::reason_remediation( 'tier1_http_rate_limit' ), 'rate' ) !== false, 'rate clause delegated' );
 // Unknown key falls back to its category clause (bot default), still non-empty plain text.
-$unk = AIAS_Broken_Banner::reason_remediation( 'tier9_never_seen' );
-aias_assert( $unk !== '' && strpos( $unk, '<' ) === false, 'unknown-key fallback plain text' );
+$unk = DRSPEED_AIAS_Broken_Banner::reason_remediation( 'tier9_never_seen' );
+drspeed_aias_assert( $unk !== '' && strpos( $unk, '<' ) === false, 'unknown-key fallback plain text' );
 
 // export_copy_map shape (spec §3.1).
-$map = AIAS_Broken_Banner::export_copy_map();
+$map = DRSPEED_AIAS_Broken_Banner::export_copy_map();
 foreach ( [ 'phrases', 'remediation', 'categories' ] as $sect ) {
-    aias_assert( count( $map[ $sect ] ) === 12, "$sect has 12 keys" );
+    drspeed_aias_assert( count( $map[ $sect ] ) === 12, "$sect has 12 keys" );
     foreach ( $keys as $k ) {
-        aias_assert( array_key_exists( $k, $map[ $sect ] ), "$sect covers $k" );
-        aias_assert( strpos( (string) $map[ $sect ][ $k ], '<' ) === false, "$sect/$k no HTML" );
+        drspeed_aias_assert( array_key_exists( $k, $map[ $sect ] ), "$sect covers $k" );
+        drspeed_aias_assert( strpos( (string) $map[ $sect ][ $k ], '<' ) === false, "$sect/$k no HTML" );
     }
 }
-aias_assert( strpos( $map['settings_url'], 'cu-cloudflare-waf-bypass' ) !== false, 'settings_url anchors exemption section' );
+drspeed_aias_assert( strpos( $map['settings_url'], 'cu-cloudflare-waf-bypass' ) !== false, 'settings_url anchors exemption section' );
 $expected_link_keys = [ 'tier2_cf_challenge', 'tier2_rocket_loader_stub', 'tier1_http_rate_limit', 'tier2_waf_challenge', 'tier2_unknown_challenge' ];
-aias_assert( $map['settings_link_keys'] === $expected_link_keys, 'settings_link_keys exact' );
+drspeed_aias_assert( $map['settings_link_keys'] === $expected_link_keys, 'settings_link_keys exact' );
 // Phrases must be UNescaped source text (M1): the CF phrase contains no &quot;/&amp; artifacts.
-aias_assert( strpos( $map['phrases']['tier2_cf_challenge'], '&' ) === false, 'phrases unescaped plain text' );
+drspeed_aias_assert( strpos( $map['phrases']['tier2_cf_challenge'], '&' ) === false, 'phrases unescaped plain text' );
 
 echo "broken-banner-copy-map-test ... ok\n";

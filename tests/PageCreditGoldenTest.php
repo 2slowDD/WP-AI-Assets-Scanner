@@ -1,5 +1,5 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
 use PHPUnit\Framework\TestCase;
 use WP_Mock;
@@ -42,14 +42,14 @@ class PageCreditGoldenTest extends TestCase {
 	public function test_page_credit_is_byte_identical_to_the_golden_snapshot(
 		array $page, ?array $tally, ?string $terminal_source, int $expected
 	): void {
-		$this->assertSame( $expected, \AIAS_Scan_Status::page_credit( $page, $tally, $terminal_source ) );
+		$this->assertSame( $expected, \DRSPEED_AIAS_Scan_Status::page_credit( $page, $tally, $terminal_source ) );
 	}
 
 	/** The user_cancel early-return sits above the zero-value block. Pin it explicitly. */
 	public function test_user_cancel_still_bypasses_the_zero_value_rule(): void {
 		$this->assertSame(
 			1,
-			\AIAS_Scan_Status::page_credit(
+			\DRSPEED_AIAS_Scan_Status::page_credit(
 				[ 'status' => 'done', 'url' => 'https://s.com/x' ],
 				[ 'safe' => 0, 'aggressive' => 0 ],
 				'user_cancel'
@@ -60,7 +60,7 @@ class PageCreditGoldenTest extends TestCase {
 
 	/** page_credit must take exactly 3 params: an already-count param was NOT added. */
 	public function test_page_credit_signature_is_unchanged(): void {
-		$m = new \ReflectionMethod( \AIAS_Scan_Status::class, 'page_credit' );
+		$m = new \ReflectionMethod( \DRSPEED_AIAS_Scan_Status::class, 'page_credit' );
 		$this->assertSame( 3, $m->getNumberOfParameters() );
 		$this->assertSame( [ 'page', 'tally', 'terminal_source' ],
 			array_map( fn( $p ) => $p->getName(), $m->getParameters() ) );
@@ -75,10 +75,10 @@ class PageCreditGoldenTest extends TestCase {
 		$pages   = [ [ 'status' => 'done', 'url' => 'https://s.com/a' ] ];
 		$by_page = [ 0 => [ 'safe' => 1, 'aggressive' => 2, 'needed' => 0 ] ];
 
-		$rows = \AIAS_Scan_Status::build_pages( $pages, $by_page, false, null );
+		$rows = \DRSPEED_AIAS_Scan_Status::build_pages( $pages, $by_page, false, null );
 
 		$this->assertSame(
-			\AIAS_Scan_Status::page_credit( $pages[0], $by_page[0], null ),
+			\DRSPEED_AIAS_Scan_Status::page_credit( $pages[0], $by_page[0], null ),
 			$rows[0]['credits'],
 			'the Credits column must remain page_credit() output, not a duplicate-aware figure'
 		);

@@ -1,10 +1,10 @@
 <?php
-namespace CUScanner\Scanner;
+namespace DrSpeedAIAS\Scanner;
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 class BypassManager {
-    private const TOKEN_LIST_OPTION = 'cu_scanner_active_tokens';
+    private const TOKEN_LIST_OPTION = 'drspeed_aias_active_tokens';
     private const TOKEN_TTL         = 3600; // 1 hour
 
     public function create_token(): string {

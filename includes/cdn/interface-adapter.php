@@ -1,5 +1,5 @@
 <?php
-namespace CUScanner\Cdn;
+namespace DrSpeedAIAS\Cdn;
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 

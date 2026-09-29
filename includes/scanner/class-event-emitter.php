@@ -1,25 +1,25 @@
 <?php
-namespace CUScanner\Scanner;
+namespace DrSpeedAIAS\Scanner;
 
 defined( 'ABSPATH' ) || exit;
 
 /**
  * Local FIFO queue + debounced flush for cu_scanner_events records.
  *
- * Stores events in `aias_pending_events` option (autoload=false). Flush is
+ * Stores events in `drspeed_aias_pending_events` option (autoload=false). Flush is
  * scheduled via wp_schedule_single_event; on HTTP failure, the failed batch
  * is re-queued and flush is rescheduled with a 5-minute backoff.
  *
  * Cap is 1000 events. On overflow, the oldest 100 are dropped and a single
  * `event_queue_overflow` security event is added — rate-limited to one per
- * 60 seconds via the `aias_event_overflow_warned` transient.
+ * 60 seconds via the `drspeed_aias_event_overflow_warned` transient.
  */
 class EventEmitter {
-    private const QUEUE_OPTION   = 'aias_pending_events';
-    private const FLUSH_HOOK     = 'aias_event_emitter_flush';
+    private const QUEUE_OPTION   = 'drspeed_aias_pending_events';
+    private const FLUSH_HOOK     = 'drspeed_aias_event_emitter_flush';
     private const MAX_QUEUE      = 1000;
     private const DROP_BATCH     = 100;
-    private const OVERFLOW_TRANS = 'aias_event_overflow_warned';
+    private const OVERFLOW_TRANS = 'drspeed_aias_event_overflow_warned';
     private const FLUSH_DEBOUNCE = 1;
     private const BACKOFF_SECS   = 300;
     private const BATCH_SIZE     = 100;
@@ -123,12 +123,12 @@ class EventEmitter {
             return self::$client_for_testing;
         }
         // Try the project's existing WpserviceClient construction path.
-        if ( class_exists( '\\CUScanner\\Settings' ) && class_exists( '\\CUScanner\\Api\\WpserviceClient' ) ) {
-            $settings = new \CUScanner\Settings();
+        if ( class_exists( '\\DrSpeedAIAS\\Settings' ) && class_exists( '\\DrSpeedAIAS\\Api\\WpserviceClient' ) ) {
+            $settings = new \DrSpeedAIAS\Settings();
             $api_key  = $settings->get_api_key();
             if ( ! empty( $api_key ) ) {
-                $base_url = defined( 'AIAS_WPSERVICE_BASE' ) ? AIAS_WPSERVICE_BASE : ( defined( 'AIAS_WPSERVICE_URL' ) ? AIAS_WPSERVICE_URL : '' );
-                return new \CUScanner\Api\WpserviceClient( $base_url, $api_key );
+                $base_url = defined( 'DRSPEED_AIAS_WPSERVICE_BASE' ) ? DRSPEED_AIAS_WPSERVICE_BASE : ( defined( 'DRSPEED_AIAS_WPSERVICE_URL' ) ? DRSPEED_AIAS_WPSERVICE_URL : '' );
+                return new \DrSpeedAIAS\Api\WpserviceClient( $base_url, $api_key );
             }
         }
         return null;
@@ -136,5 +136,5 @@ class EventEmitter {
 }
 
 if ( function_exists( 'add_action' ) ) {
-    add_action( 'aias_event_emitter_flush', [ \CUScanner\Scanner\EventEmitter::class, 'flush' ] );
+    add_action( 'drspeed_aias_event_emitter_flush', [ \DrSpeedAIAS\Scanner\EventEmitter::class, 'flush' ] );
 }

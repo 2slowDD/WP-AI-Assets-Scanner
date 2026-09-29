@@ -6,10 +6,10 @@ const vm = require('vm');
 // F1 — the scanner-secret Regenerate button (admin/views/settings-page.php #cu-regenerate-secret).
 //
 // This drives the REAL admin/js/settings.js through the click handler: confirm() gating, the
-// FormData POST shape (action + nonce, matching the nonce cu_scanner_fetch_balance already
+// FormData POST shape (action + nonce, matching the nonce drspeed_aias_fetch_balance already
 // sends), the disable-while-in-flight state, reload() on success, and re-enable + alert() on a
 // server-reported failure or a transport rejection. A source-text pin ("the file contains
-// 'cu_scanner_regenerate_secret'") would catch deletion only — it would stay green if the action
+// 'drspeed_aias_regenerate_secret'") would catch deletion only — it would stay green if the action
 // string were sent under the wrong key, or the nonce were left off entirely.
 //
 // WHY THIS FILE STANDS ALONE (same reasoning as tests/js/settings-fetch-failure.test.js): the
@@ -35,14 +35,14 @@ function makeEl(id) {
   };
 }
 
-// `regenerateFetchImpl` decides how the cu_scanner_regenerate_secret POST settles. The
+// `regenerateFetchImpl` decides how the drspeed_aias_regenerate_secret POST settles. The
 // auto-firing balance refresh (refresh.click() on load) is answered separately so it never
 // interferes with the assertions under test.
 function harness(regenerateFetchImpl) {
   const ids = [
-    'cu-scanner-settings-form', 'cu-settings-message', 'cu-credit-balance',
+    'drspeed-aias-settings-form', 'cu-settings-message', 'cu-credit-balance',
     'cu-refresh-balance', 'cu_api_key', 'cu-balance-card',
-    'cu-scanner-secret', 'cu-copy-secret', 'cu-regenerate-secret',
+    'drspeed-aias-secret', 'cu-copy-secret', 'cu-regenerate-secret',
   ];
   const els = {};
   ids.forEach((id) => { els[id] = makeEl(id); });
@@ -53,7 +53,7 @@ function harness(regenerateFetchImpl) {
   const sandbox = {
     console,
     setTimeout, clearTimeout, parseInt, isNaN, Promise,
-    cuScannerSettings: { ajaxUrl: '/wp-admin/admin-ajax.php', nonce: 'nonce-1' },
+    drspeedAiasSettings: { ajaxUrl: '/wp-admin/admin-ajax.php', nonce: 'nonce-1' },
     navigator: { clipboard: { writeText: () => Promise.resolve() } },
     confirm: () => true,
     _alerts: [],
@@ -64,7 +64,7 @@ function harness(regenerateFetchImpl) {
       const call = { url, opts };
       fetchCalls.push(call);
       const action = opts.body.get('action');
-      if (action === 'cu_scanner_regenerate_secret') {
+      if (action === 'drspeed_aias_regenerate_secret') {
         return regenerateFetchImpl(opts);
       }
       // Auto-fired balance refresh — benign, unrelated to what this file tests.
@@ -113,7 +113,7 @@ async function run() {
     btn.click();
     await flush();
 
-    const regenerateCalls = h.fetchCalls.filter((c) => c.opts.body.get('action') === 'cu_scanner_regenerate_secret');
+    const regenerateCalls = h.fetchCalls.filter((c) => c.opts.body.get('action') === 'drspeed_aias_regenerate_secret');
     assert.strictEqual(regenerateCalls.length, 0, 'cancelling the confirm dialog must not POST');
     assert.strictEqual(btn.disabled, false, 'a cancelled confirm must leave the button enabled');
     console.log('OK confirm=false sends no request');
@@ -130,16 +130,16 @@ async function run() {
     btn.click();
     await flush();
 
-    const regenerateCalls = h.fetchCalls.filter((c) => c.opts.body.get('action') === 'cu_scanner_regenerate_secret');
+    const regenerateCalls = h.fetchCalls.filter((c) => c.opts.body.get('action') === 'drspeed_aias_regenerate_secret');
     assert.strictEqual(regenerateCalls.length, 1, 'confirming must POST exactly one regenerate request');
     assert.strictEqual(regenerateCalls[0].opts.body.get('nonce'), 'nonce-1',
-      'the regenerate request must carry the same settings nonce cu_scanner_fetch_balance sends');
+      'the regenerate request must carry the same settings nonce drspeed_aias_fetch_balance sends');
     assert.strictEqual(btn.disabled, true, 'the button must be disabled while the request is in flight');
 
     // Let the in-flight request settle so it does not leak into the next scenario.
     resolveFetch({ ok: true, status: 200, json: () => Promise.resolve({ success: true, data: { secret: 'abc' } }) });
     await flush();
-    console.log('OK confirm=true POSTs action=cu_scanner_regenerate_secret with the settings nonce, and disables the button');
+    console.log('OK confirm=true POSTs action=drspeed_aias_regenerate_secret with the settings nonce, and disables the button');
   }
 
   // --- 3. Success reloads the page -------------------------------------------------

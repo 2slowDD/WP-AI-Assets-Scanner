@@ -1,14 +1,14 @@
 <?php
-namespace CUScanner\Scanner;
+namespace DrSpeedAIAS\Scanner;
 
-use CUScanner\Api\HttpException;
+use DrSpeedAIAS\Api\HttpException;
 
 defined( 'ABSPATH' ) || exit;
 
 class Outbox {
-    public const OPTION_KEY   = 'cu_scanner_outbox';
-    public const LOCK_KEY     = 'cu_scanner_outbox_lock';
-    public const CRON_HOOK    = 'cu_scanner_outbox_replay';
+    public const OPTION_KEY   = 'drspeed_aias_outbox';
+    public const LOCK_KEY     = 'drspeed_aias_outbox_lock';
+    public const CRON_HOOK    = 'drspeed_aias_outbox_replay';
 
     public const BASE_BACKOFF = 30;
     public const MAX_BACKOFF  = 3600;
@@ -45,7 +45,7 @@ class Outbox {
         // initial half-state so the outbox owns the reference and releases it on the first dispatch
         // pass. Discarding it (old AC-O-10) orphaned a still-'reserved' token when the original
         // release was skipped/raced during an outage -> outbox 409'd against its own reservation.
-        $pending = get_transient( 'cu_scanner_pending_token_' . $user_id );
+        $pending = get_transient( 'drspeed_aias_pending_token_' . $user_id );
         $now     = time();
         $entry   = [
             'intent'          => $intent,
@@ -58,7 +58,7 @@ class Outbox {
         ];
         self::save( $entry );
         // Still delete the transient so handle_failure() can't also act on the same token.
-        delete_transient( 'cu_scanner_pending_token_' . $user_id );
+        delete_transient( 'drspeed_aias_pending_token_' . $user_id );
         self::schedule( $now );
         return true;
     }
@@ -234,7 +234,7 @@ class Outbox {
                 self::call( $deps, 'side_effects', [ $result, $intent, $detector_typed, $bypass_token, $railway_url, $token, $user_id, $payload['pages'] ?? [] ] );
             } catch ( \Throwable $e ) {
                 // §10.6 safety net: worker job already created + charged -> keep it pollable, do NOT release.
-                set_transient( 'cu_scanner_job_' . $user_id, [
+                set_transient( 'drspeed_aias_job_' . $user_id, [
                     'job_id'       => $result['job_id'] ?? '',
                     'job_token'    => $token,
                     'bypass_token' => $bypass_token,
@@ -267,29 +267,29 @@ class Outbox {
         }
         switch ( $name ) {
             case 'clear_bypass':
-                ( new \CUScanner\Scanner\BypassManager() )->delete_all_tokens();
+                ( new \DrSpeedAIAS\Scanner\BypassManager() )->delete_all_tokens();
                 return null;
             case 'resolve_endpoint':
-                $s = new \CUScanner\Settings();
-                return ( new \CUScanner\Admin\ScannerAjax() )->ensure_railway_url( $s, $s->get_api_key() );
+                $s = new \DrSpeedAIAS\Settings();
+                return ( new \DrSpeedAIAS\Admin\ScannerAjax() )->ensure_railway_url( $s, $s->get_api_key() );
             case 'reserve':
-                $ak = ( new \CUScanner\Settings() )->get_api_key();
-                return ( new \CUScanner\Api\WpserviceClient( AIAS_WPSERVICE_URL, $ak ) )
+                $ak = ( new \DrSpeedAIAS\Settings() )->get_api_key();
+                return ( new \DrSpeedAIAS\Api\WpserviceClient( DRSPEED_AIAS_WPSERVICE_URL, $ak ) )
                     ->reserve_job( (int) $args[0], (int) $args[1] )['job_token'];
             case 'submit':
-                $ak = ( new \CUScanner\Settings() )->get_api_key();
-                return ( new \CUScanner\Api\RailwayClient( (string) $args[0], $ak ) )->submit_job( $args[1] );
+                $ak = ( new \DrSpeedAIAS\Settings() )->get_api_key();
+                return ( new \DrSpeedAIAS\Api\RailwayClient( (string) $args[0], $ak ) )->submit_job( $args[1] );
             case 'release':
-                $ak = ( new \CUScanner\Settings() )->get_api_key();
-                ( new \CUScanner\Api\WpserviceClient( AIAS_WPSERVICE_URL, $ak ) )->release_credits( (string) $args[0] );
+                $ak = ( new \DrSpeedAIAS\Settings() )->get_api_key();
+                ( new \DrSpeedAIAS\Api\WpserviceClient( DRSPEED_AIAS_WPSERVICE_URL, $ak ) )->release_credits( (string) $args[0] );
                 return null;
             case 'build_payload':
-                return ( new \CUScanner\Admin\ScannerAjax() )->build_submit_payload( $args[0] );
+                return ( new \DrSpeedAIAS\Admin\ScannerAjax() )->build_submit_payload( $args[0] );
             case 'consent_payload':
-                return ( new \CUScanner\Admin\ScannerAjax() )->class_c_consent_payload( $args[0], (string) $args[1] );
+                return ( new \DrSpeedAIAS\Admin\ScannerAjax() )->class_c_consent_payload( $args[0], (string) $args[1] );
             case 'side_effects':
                 // $args: 0=result, 1=intent, 2=detector_typed, 3=bypass_token, 4=railway_url, 5=job_token, 6=user_id, 7=pages_sent
-                return ( new \CUScanner\Admin\ScannerAjax() )->perform_submit_side_effects(
+                return ( new \DrSpeedAIAS\Admin\ScannerAjax() )->perform_submit_side_effects(
                     $args[0], $args[1], $args[2], (string) $args[3], (string) $args[4], (string) $args[5], (int) $args[6], (array) ( $args[7] ?? [] )
                 );
         }
@@ -360,7 +360,7 @@ class Outbox {
         if ( $entry && ( $entry['status'] ?? '' ) === 'failed' ) {
             return [ 'state' => 'failed', 'message' => (string) ( $entry['last_error'] ?? '' ) ];
         }
-        $job = get_transient( 'cu_scanner_job_' . $user_id );
+        $job = get_transient( 'drspeed_aias_job_' . $user_id );
         if ( is_array( $job ) && ! empty( $job['job_id'] ) ) {
             return [
                 'state'       => 'dispatched',
@@ -373,7 +373,7 @@ class Outbox {
     }
 
     /**
-     * Cron entry point (CRON_HOOK = 'cu_scanner_outbox_replay').
+     * Cron entry point (CRON_HOOK = 'drspeed_aias_outbox_replay').
      *
      * Delegates to dispatch() which internally guards against not-yet-due entries.
      */

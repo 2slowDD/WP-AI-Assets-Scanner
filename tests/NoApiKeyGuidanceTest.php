@@ -1,9 +1,9 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\ScannerAjax;
-use CUScanner\Api\HttpException;
-use CUScanner\Settings;
+use DrSpeedAIAS\Admin\ScannerAjax;
+use DrSpeedAIAS\Api\HttpException;
+use DrSpeedAIAS\Settings;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -29,7 +29,7 @@ final class NoApiKeyGuidanceTest extends TestCase {
     }
 
     private function settings_with_key( string $key ): Settings {
-        WP_Mock::userFunction( 'get_option' )->with( 'cu_scanner_api_key', '' )->andReturn( $key );
+        WP_Mock::userFunction( 'get_option' )->with( 'drspeed_aias_api_key', '' )->andReturn( $key );
         return new Settings();
     }
 
@@ -40,7 +40,7 @@ final class NoApiKeyGuidanceTest extends TestCase {
         $this->assertSame( 'no_api_key', $error['error'] );
         $this->assertFalse( $error['retryable'], 'must not be queued for retry: nothing changes until the admin acts' );
         $this->assertStringContainsString( 'Validate your key', $error['message'] );
-        $this->assertStringEndsWith( 'page=cu-scanner-settings#cu-free-key-optin', $error['settings_url'] );
+        $this->assertStringEndsWith( 'page=drspeed-aias-settings#cu-free-key-optin', $error['settings_url'] );
     }
 
     public function test_pending_free_key_also_stops_the_scan(): void {
@@ -60,7 +60,7 @@ final class NoApiKeyGuidanceTest extends TestCase {
             $this->assertIsArray( $error, "HTTP {$code} must map to key guidance" );
             $this->assertSame( 'invalid_api_key', $error['error'] );
             $this->assertStringContainsString( $msg, $error['message'] );
-            $this->assertStringContainsString( 'page=cu-scanner-settings', $error['settings_url'] );
+            $this->assertStringContainsString( 'page=drspeed-aias-settings', $error['settings_url'] );
         }
     }
 
@@ -88,7 +88,7 @@ final class NoApiKeyGuidanceTest extends TestCase {
         $js      = (string) file_get_contents( $root . '/admin/js/scanner.js' );
 
         $this->assertStringContainsString( 'id="cu-no-api-key-notice"', $scanner );
-        $this->assertStringContainsString( 'page=cu-scanner-settings#cu-free-key-optin', $scanner );
+        $this->assertStringContainsString( 'page=drspeed-aias-settings#cu-free-key-optin', $scanner );
         $this->assertStringContainsString( 'id="cu-free-key-optin"', $page, 'the link target must exist' );
         $this->assertStringContainsString(
             'FreeKeyBootstrap::can_request( $settings )',

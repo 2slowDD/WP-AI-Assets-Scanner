@@ -1,10 +1,10 @@
 <?php
-namespace CUScanner\Scanner;
+namespace DrSpeedAIAS\Scanner;
 
 defined( 'ABSPATH' ) || exit;
 
 class LastPushSyncUndo {
-    private const OPTION = 'aias_last_push_sync_undo';
+    private const OPTION = 'drspeed_aias_last_push_sync_undo';
 
     public function store_from_summary( string $operation, string $job_id, array $summary ): void {
         $rule_ids = $this->positive_ints( $summary['created_rule_ids'] ?? array() );
@@ -55,7 +55,7 @@ class LastPushSyncUndo {
         $manifest = $this->manifest();
 
         if ( null === $manifest ) {
-            return new \WP_Error( 'aias_no_undo_manifest', 'No push/sync operation is available to undo.' );
+            return new \WP_Error( 'drspeed_aias_no_undo_manifest', 'No push/sync operation is available to undo.' );
         }
 
         $deleted = 0;
@@ -70,7 +70,7 @@ class LastPushSyncUndo {
             }
 
             if ( false === $repo::delete_rule( $rule_id ) ) {
-                return new \WP_Error( 'aias_rule_delete_failed', 'Undo could not remove a Code Unloader rule. Please retry after checking Code Unloader.' );
+                return new \WP_Error( 'drspeed_aias_rule_delete_failed', 'Undo could not remove a Code Unloader rule. Please retry after checking Code Unloader.' );
             }
 
             $deleted++;
@@ -80,7 +80,7 @@ class LastPushSyncUndo {
 
         foreach ( $manifest['created_group_ids'] as $group_id ) {
             if ( false === $repo::update_group( (int) $group_id, array( 'enabled' => 0 ) ) ) {
-                return new \WP_Error( 'aias_group_disable_failed', 'Undo removed rules but could not disable a newly created Code Unloader group. Please retry after checking Code Unloader.' );
+                return new \WP_Error( 'drspeed_aias_group_disable_failed', 'Undo removed rules but could not disable a newly created Code Unloader group. Please retry after checking Code Unloader.' );
             }
 
             $disabled++;

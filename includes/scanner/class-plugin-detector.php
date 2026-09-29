@@ -1,5 +1,5 @@
 <?php
-namespace CUScanner\Scanner;
+namespace DrSpeedAIAS\Scanner;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -409,7 +409,7 @@ class PluginDetector {
 
         foreach ( self::SECURITY_WARN as $file => [ $label, $reason, $anchor ] ) {
             if ( is_plugin_active( $file ) ) {
-                $base = admin_url( 'admin.php?page=cu-scanner-settings' );
+                $base = admin_url( 'admin.php?page=drspeed-aias-settings' );
                 $result['security_warn'][ $label ] = [
                     'reason'       => $reason,
                     'settings_url' => $anchor ? $base . '#' . $anchor : $base,
@@ -429,7 +429,7 @@ class PluginDetector {
 
         // Code Unloader: flag as missing, auto-bypass if >= 1.3.9, soft-block if older.
         //
-        // The operator can opt out of the bypass entirely (cu_scanner_omit_cu_bypass).
+        // The operator can opt out of the bypass entirely (drspeed_aias_omit_cu_bypass).
         // When they have, Code Unloader is left alone whatever its version: no `nowpcu`
         // suffix, no auto-bypass notice (the label drives it, so gating here keeps the
         // UI from announcing a bypass that is not applied), and no upgrade soft-block —
@@ -439,11 +439,11 @@ class PluginDetector {
         // `cu_missing` is deliberately still set: it describes installation, not bypass,
         // and other surfaces depend on it.
         //
-        // NB \CUScanner\Settings is fully qualified on purpose — this file is in
-        // namespace CUScanner\Scanner and does not import it.
+        // NB \DrSpeedAIAS\Settings is fully qualified on purpose — this file is in
+        // namespace DrSpeedAIAS\Scanner and does not import it.
         if ( ! is_plugin_active( self::CU_PLUGIN ) ) {
             $result['cu_missing'] = true;
-        } elseif ( ! ( new \CUScanner\Settings() )->get_omit_cu_bypass() ) {
+        } elseif ( ! ( new \DrSpeedAIAS\Settings() )->get_omit_cu_bypass() ) {
             $data    = get_plugin_data( \WP_PLUGIN_DIR . '/' . self::CU_PLUGIN );
             $version = $data['Version'] ?? '0';
             if ( version_compare( $version, self::CU_MIN_VERSION, '>=' ) ) {
@@ -579,7 +579,7 @@ class PluginDetector {
     /**
      * FU-ANTIBLOCK-STACK-NAMES — CANONICAL stack id -> display-name map (single
      * source; drift-guard: tests/stack-display-names-test.php pins coverage +
-     * exact strings). Localized to JS as cuReasonCopy.stack_names in
+     * exact strings). Localized to JS as drspeedAiasReasonCopy.stack_names in
      * Admin_Pages::enqueue_assets() for TWO scanner.js consumers: the
      * external-probe modal (buildSecurityStackBlock) over SECURITY_STACKS ids,
      * and the same-site dialog's CDN leg (showLocalStackDialog) over
@@ -1181,7 +1181,7 @@ class PluginDetector {
     public static function __test_attach_resolution( string $url, array $r ): array { return self::attach_resolution( $url, $r ); }
 
     /**
-     * Emit a debug-mode resolution log line (CU_SCANNER_DEBUG-gated). Fires on BOTH
+     * Emit a debug-mode resolution log line (DRSPEED_AIAS_DEBUG-gated). Fires on BOTH
      * return paths of probe_target_stack() — the cache miss below and every cache-hit
      * return — so all five values resolution_source can take are visible in the log.
      *
@@ -1199,7 +1199,7 @@ class PluginDetector {
      * spent. Deliberate, and out of scope for the §4 cache split (spec §8).
      */
     private static function debug_log_resolution( array $r ): void {
-        if ( ! aias_debug_enabled() ) {
+        if ( ! drspeed_aias_debug_enabled() ) {
             return;
         }
         // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- intentional server-side debug log; never rendered to browser.
@@ -1220,7 +1220,7 @@ class PluginDetector {
      * includes scheme + port to avoid collision (spec §5.3 + d-review M5).
      */
     private static function build_cache_key( string $scheme, string $host, string $port ): string {
-        return 'cu_scanner_target_stack_v' . self::SIGNATURE_SCHEMA_VERSION . '_' . md5( $scheme . '://' . $host . ':' . $port );
+        return 'drspeed_aias_target_stack_v' . self::SIGNATURE_SCHEMA_VERSION . '_' . md5( $scheme . '://' . $host . ':' . $port );
     }
     /** @internal test seam */
     public static function __test_build_cache_key( string $scheme, string $host, string $port ): string {
@@ -1249,7 +1249,7 @@ class PluginDetector {
 
         $normalised = "{$scheme}://{$host}:{$port}{$path}" . ( $query === '' ? '' : "?{$query}" );
 
-        return 'cu_scanner_url_res_v' . self::SIGNATURE_SCHEMA_VERSION . '_' . md5( $normalised );
+        return 'drspeed_aias_url_res_v' . self::SIGNATURE_SCHEMA_VERSION . '_' . md5( $normalised );
     }
     /** @internal test seam */
     public static function __test_build_url_resolution_key( string $url ): string {

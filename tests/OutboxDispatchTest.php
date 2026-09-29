@@ -1,8 +1,8 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\Outbox;
-use CUScanner\Api\HttpException;
+use DrSpeedAIAS\Scanner\Outbox;
+use DrSpeedAIAS\Api\HttpException;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -194,7 +194,7 @@ class OutboxDispatchTest extends TestCase {
 
         $captured = null;
         WP_Mock::userFunction( 'set_transient' )
-            ->with( 'cu_scanner_job_7', \WP_Mock\Functions::type( 'array' ), 7200 )
+            ->with( 'drspeed_aias_job_7', \WP_Mock\Functions::type( 'array' ), 7200 )
             ->once()
             ->andReturnUsing( function ( $k, $v, $ttl ) use ( &$captured ) { $captured = $v; return true; } );
 
@@ -279,7 +279,7 @@ class OutboxDispatchTest extends TestCase {
         $reserved = false;
         $deps = [
             'clear_bypass'     => fn() => null,
-            'release'          => function () { throw new \CUScanner\Api\HttpException( 'HTTP 409: token_already_used', 409 ); },
+            'release'          => function () { throw new \DrSpeedAIAS\Api\HttpException( 'HTTP 409: token_already_used', 409 ); },
             'build_payload'    => fn( $i ) => [ [ 'pages' => [] ], [], 'BT' ],
             'consent_payload'  => fn( $dt, $c ) => null,
             'reserve'          => function ( $p, $et ) use ( &$reserved ) { $reserved = true; return 'NEWTOK'; },

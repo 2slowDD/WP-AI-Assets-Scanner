@@ -1,8 +1,8 @@
 <?php
 // tests/PluginDetectorOmitCuBypassTest.php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\PluginDetector;
+use DrSpeedAIAS\Scanner\PluginDetector;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -29,7 +29,7 @@ class PluginDetectorOmitCuBypassTest extends TestCase {
 	/**
 	 * @param string   $cu_version  Version get_plugin_data() reports for Code Unloader.
 	 * @param bool     $cu_active   Whether Code Unloader is installed + active.
-	 * @param string   $omit        Stored value of cu_scanner_omit_cu_bypass.
+	 * @param string   $omit        Stored value of drspeed_aias_omit_cu_bypass.
 	 * @param string[] $also_active Other plugin files to report active.
 	 */
 	private function detect_with( string $cu_version, bool $cu_active, string $omit, array $also_active = [] ): array {
@@ -44,7 +44,7 @@ class PluginDetectorOmitCuBypassTest extends TestCase {
 		WP_Mock::userFunction( 'get_plugin_data' )->andReturn( [ 'Version' => $cu_version ] );
 		WP_Mock::userFunction( 'get_option' )->andReturnUsing(
 			function ( $k, $default = false ) use ( $omit ) {
-				return ( 'cu_scanner_omit_cu_bypass' === $k ) ? $omit : $default;
+				return ( 'drspeed_aias_omit_cu_bypass' === $k ) ? $omit : $default;
 			}
 		);
 		WP_Mock::userFunction( 'wp_parse_url' )

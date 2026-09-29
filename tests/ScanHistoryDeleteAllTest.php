@@ -1,8 +1,8 @@
 <?php
 // tests/ScanHistoryDeleteAllTest.php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\ScanHistory;
+use DrSpeedAIAS\ScanHistory;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -12,10 +12,10 @@ class ScanHistoryDeleteAllTest extends TestCase {
 
     public function test_delete_all_with_empty_history_returns_zero(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [] );
         WP_Mock::userFunction( 'delete_option' )
-            ->with( 'cu_scanner_history' )
+            ->with( 'drspeed_aias_history' )
             ->once();
         $count = ( new ScanHistory() )->delete_all();
         $this->assertSame( 0, $count );
@@ -29,16 +29,16 @@ class ScanHistoryDeleteAllTest extends TestCase {
             [ 'job_id' => 'job-c' ],
         ];
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( $existing );
         WP_Mock::userFunction( 'delete_option' )
-            ->with( 'cu_scanner_json_job-a' )->once();
+            ->with( 'drspeed_aias_json_job-a' )->once();
         WP_Mock::userFunction( 'delete_option' )
-            ->with( 'cu_scanner_json_job-b' )->once();
+            ->with( 'drspeed_aias_json_job-b' )->once();
         WP_Mock::userFunction( 'delete_option' )
-            ->with( 'cu_scanner_json_job-c' )->once();
+            ->with( 'drspeed_aias_json_job-c' )->once();
         WP_Mock::userFunction( 'delete_option' )
-            ->with( 'cu_scanner_history' )->once();
+            ->with( 'drspeed_aias_history' )->once();
 
         $count = ( new ScanHistory() )->delete_all();
         $this->assertSame( 3, $count );
@@ -51,12 +51,12 @@ class ScanHistoryDeleteAllTest extends TestCase {
             [ /* malformed: no job_id */ ],
         ];
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( $existing );
         WP_Mock::userFunction( 'delete_option' )
-            ->with( 'cu_scanner_json_job-a' )->once();
+            ->with( 'drspeed_aias_json_job-a' )->once();
         WP_Mock::userFunction( 'delete_option' )
-            ->with( 'cu_scanner_history' )->once();
+            ->with( 'drspeed_aias_history' )->once();
 
         $count = ( new ScanHistory() )->delete_all();
         $this->assertSame( 2, $count );

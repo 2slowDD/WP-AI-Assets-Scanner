@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Admin\ScannerAjax;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -9,7 +9,7 @@ use WP_Mock\Tools\TestCase;
  * FU-NEW-2 Phase 5 — submit_job payload construction per spec §4.2 rule.
  *
  * Covers Tasks 5.1 + 5.2 (per-URL bypass_suffixes), 5.3 + 5.4 (target_stack_summary),
- * and 5.5 (cu_scanner_target_bypass_missing event on fallback).
+ * and 5.5 (drspeed_aias_target_bypass_missing event on fallback).
  */
 class SubmitJobPayloadTest extends TestCase {
 
@@ -69,7 +69,7 @@ class SubmitJobPayloadTest extends TestCase {
 
     /**
      * AC-N2-12 — external URL missing from target_bypass map defaults to []
-     * (NOT host-leaked), AND fires cu_scanner_target_bypass_missing action.
+     * (NOT host-leaked), AND fires drspeed_aias_target_bypass_missing action.
      */
     public function test_external_missing_from_map_defaults_to_empty() {
         WP_Mock::userFunction( 'do_action' )->andReturn( null );
@@ -92,7 +92,7 @@ class SubmitJobPayloadTest extends TestCase {
     }
 
     /**
-     * AC-N2-12 — fallback fires action hook cu_scanner_target_bypass_missing
+     * AC-N2-12 — fallback fires action hook drspeed_aias_target_bypass_missing
      * with payload { url, host } for the missing external URL.
      *
      * WP_Mock::expectAction() asserts the action is fired with the exact args.
@@ -101,7 +101,7 @@ class SubmitJobPayloadTest extends TestCase {
      */
     public function test_target_bypass_missing_event_fires_on_fallback() {
         WP_Mock::expectAction(
-            'cu_scanner_target_bypass_missing',
+            'drspeed_aias_target_bypass_missing',
             [ 'url' => 'https://strange.com/', 'host' => 'strange.com' ]
         );
 

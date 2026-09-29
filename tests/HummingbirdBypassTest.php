@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\Strategies\HummingbirdBypass;
+use DrSpeedAIAS\Scanner\Strategies\HummingbirdBypass;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -91,7 +91,7 @@ class HummingbirdBypassTest extends TestCase {
     }
 
     public function test_factory_returns_hummingbird_strategy(): void {
-        $strategy = \CUScanner\Scanner\StrategyFactory::for_method( 'hummingbird' );
+        $strategy = \DrSpeedAIAS\Scanner\StrategyFactory::for_method( 'hummingbird' );
         $this->assertInstanceOf( HummingbirdBypass::class, $strategy );
         $this->assertSame( 'hummingbird', $strategy->slug() );
     }

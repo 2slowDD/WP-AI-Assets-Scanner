@@ -6,10 +6,10 @@
  * exemption flow is known to vary or is undocumented. The adapter emits a
  * conditional instruction rather than imperative steps.
  *
- * @package CUScanner\Cdn
+ * @package DrSpeedAIAS\Cdn
  */
 
-namespace CUScanner\Cdn;
+namespace DrSpeedAIAS\Cdn;
 
 defined( 'ABSPATH' ) || exit;
 

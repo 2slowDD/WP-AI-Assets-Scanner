@@ -1,5 +1,5 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
 use PHPUnit\Framework\TestCase;
 
@@ -79,11 +79,11 @@ class ScannerPageMarkupTest extends TestCase {
 
 		$this->assertIsString( $settings );
 		$this->assertIsString( $history );
-		$this->assertStringContainsString( 'id="cu-scanner-settings"', $settings );
+		$this->assertStringContainsString( 'id="drspeed-aias-settings"', $settings );
 		$this->assertStringContainsString( 'class="cu-settings-grid"', $settings );
 		$this->assertStringContainsString( 'cu-settings-card--account', $settings );
 		$this->assertStringContainsString( 'cu-settings-card--environment', $settings );
-		$this->assertStringContainsString( 'id="cu-scanner-history"', $history );
+		$this->assertStringContainsString( 'id="drspeed-aias-history"', $history );
 		$this->assertStringContainsString( 'class="cu-history-summary"', $history );
 		$this->assertStringContainsString( 'class="cu-history-table-card"', $history );
 	}

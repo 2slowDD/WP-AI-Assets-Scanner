@@ -1,8 +1,8 @@
 <?php
 // tests/RegenerateSecretAjaxTest.php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\SettingsAjax;
+use DrSpeedAIAS\Admin\SettingsAjax;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -12,7 +12,7 @@ final class RegenerateSecretAjaxTest extends TestCase {
 
     public function test_regenerate_secret_rejects_without_capability_before_any_state_change(): void {
         WP_Mock::userFunction( 'check_ajax_referer' )
-            ->with( 'cu_scanner_settings_nonce', 'nonce' )->once()->andReturn( 1 );
+            ->with( 'drspeed_aias_settings_nonce', 'nonce' )->once()->andReturn( 1 );
         WP_Mock::userFunction( 'current_user_can' )
             ->with( 'manage_options' )->andReturn( false );
         WP_Mock::userFunction( 'wp_send_json_error' )
@@ -29,14 +29,14 @@ final class RegenerateSecretAjaxTest extends TestCase {
 
     public function test_regenerate_secret_checks_nonce_cap_and_stores_new_value(): void {
         WP_Mock::userFunction( 'check_ajax_referer' )
-            ->with( 'cu_scanner_settings_nonce', 'nonce' )->once()->andReturn( 1 );
+            ->with( 'drspeed_aias_settings_nonce', 'nonce' )->once()->andReturn( 1 );
         WP_Mock::userFunction( 'current_user_can' )
             ->with( 'manage_options' )->andReturn( true );
 
         $captured = null;
         WP_Mock::userFunction( 'update_option' )
             ->with(
-                'cu_scanner_secret',
+                'drspeed_aias_secret',
                 \Mockery::on( function ( $val ) use ( &$captured ) {
                     $captured = $val;
                     return is_string( $val ) && 1 === preg_match( '/^[a-f0-9]{32}$/', $val );
@@ -59,7 +59,7 @@ final class RegenerateSecretAjaxTest extends TestCase {
         try {
             ( new SettingsAjax() )->regenerate_secret();
         } finally {
-            $this->assertNotNull( $captured, 'update_option( cu_scanner_secret, ... ) was never called' );
+            $this->assertNotNull( $captured, 'update_option( drspeed_aias_secret, ... ) was never called' );
             $this->assertSame( $captured, $sent['secret'] ?? null, 'the value sent to the client must match the value stored' );
         }
     }

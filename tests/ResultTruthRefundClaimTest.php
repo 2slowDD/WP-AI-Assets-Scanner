@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Admin\ScannerAjax;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -141,15 +141,15 @@ class ResultTruthRefundClaimTest extends TestCase {
 		// Options store: seed the history row do_build_result will update.
 		WP_Mock::userFunction( 'get_option' )->andReturnUsing(
 			function ( $k, $default = false ) use ( $omit_cu_bypass ) {
-				if ( 'aias_railway_url' === $k ) { return 'https://cu-scanner-railway-production.up.railway.app'; }
-				if ( 'cu_scanner_api_key' === $k )     { return 'api-key-123'; }
+				if ( 'drspeed_aias_railway_url' === $k ) { return 'https://cu-scanner-railway-production.up.railway.app'; }
+				if ( 'drspeed_aias_api_key' === $k )     { return 'api-key-123'; }
 				// P17: seed the REAL option Settings::get_omit_cu_bypass() reads. Nothing is
 				// passed into do_build_result() — the production config lookup executes, so a
 				// wrong option name or a dropped read makes the cu_rules_active tests go red.
-				if ( 'cu_scanner_omit_cu_bypass' === $k ) { return $omit_cu_bypass ? '1' : ''; }
-				if ( 'cu_scanner_history' === $k ) {
+				if ( 'drspeed_aias_omit_cu_bypass' === $k ) { return $omit_cu_bypass ? '1' : ''; }
+				if ( 'drspeed_aias_history' === $k ) {
 					foreach ( array_reverse( $this->option_writes ) as $w ) {
-						if ( 'cu_scanner_history' === $w[0] ) { return $w[1]; }
+						if ( 'drspeed_aias_history' === $w[0] ) { return $w[1]; }
 					}
 					return [ [
 						'job_id' => 'job-xyz', 'domain' => 's.com', 'page_count' => 1,
@@ -207,7 +207,7 @@ class ResultTruthRefundClaimTest extends TestCase {
 	/** The history row as it stands after the last write. */
 	private function final_history_record(): array {
 		foreach ( array_reverse( $this->option_writes ) as $w ) {
-			if ( 'cu_scanner_history' === $w[0] ) { return $w[1][0]; }
+			if ( 'drspeed_aias_history' === $w[0] ) { return $w[1][0]; }
 		}
 		return [];
 	}
@@ -280,7 +280,7 @@ class ResultTruthRefundClaimTest extends TestCase {
 	// ─────────────────────────────────────────────────────────────────────────────
 	// AC-4 — the same field NAMES on every payload writer.
 	//
-	// The live return and the aias_last_result option are writers 1 and 2; scanner.js
+	// The live return and the drspeed_aias_last_result option are writers 1 and 2; scanner.js
 	// and menu-badge.js are 3 and 4 and are covered by tests/js/result-truth-display
 	// .test.js. The hazard is real and already in-tree: `aggressive_count` on the wire
 	// vs `agg_count` on the persistence side. These assert the new fields do NOT
@@ -290,7 +290,7 @@ class ResultTruthRefundClaimTest extends TestCase {
 	/** The option value as last persisted by do_build_result(). */
 	private function persisted_last_result(): array {
 		foreach ( array_reverse( $this->option_writes ) as $w ) {
-			if ( 'aias_last_result' === $w[0] ) { return $w[1]; }
+			if ( 'drspeed_aias_last_result' === $w[0] ) { return $w[1]; }
 		}
 		return [];
 	}
@@ -367,7 +367,7 @@ class ResultTruthRefundClaimTest extends TestCase {
 	 *
 	 * This is the bug class this whole section exists for, caught live: A1 first shipped the
 	 * field on the live return ONLY, so a BACKGROUND-completed scan — rebuilt from
-	 * aias_last_result via get_badge_state() — would have rendered the Step-4 screen with no
+	 * drspeed_aias_last_result via get_badge_state() — would have rendered the Step-4 screen with no
 	 * keeplist note at all. Driven through the REAL do_build_result(), so it fails for the
 	 * real mistake rather than for a hand-built double.
 	 */
@@ -387,7 +387,7 @@ class ResultTruthRefundClaimTest extends TestCase {
 			'rows'    => [ [ 'label' => 'Cloudflare Turnstile', 'count' => 1, 'category' => 'protection' ] ],
 		];
 		$this->assertArrayHasKey( 'kept_protection_summary', $out, 'writer 1 — the live return' );
-		$this->assertArrayHasKey( 'kept_protection_summary', $persisted, 'writer 2 — the aias_last_result option' );
+		$this->assertArrayHasKey( 'kept_protection_summary', $persisted, 'writer 2 — the drspeed_aias_last_result option' );
 		$this->assertSame( $expected, $out['kept_protection_summary'] );
 		$this->assertSame( $expected, $persisted['kept_protection_summary'] );
 		$this->assertSame(
@@ -501,7 +501,7 @@ class ResultTruthRefundClaimTest extends TestCase {
 		$this->assertSame( 5, $payload['aggressive_count'] );
 		$this->assertFalse( $payload['pages'][0]['all_already'] );
 		$option = null;
-		foreach ( $this->option_writes as $w ) { if ( 'aias_last_result' === $w[0] ) { $option = $w[1]; } }
+		foreach ( $this->option_writes as $w ) { if ( 'drspeed_aias_last_result' === $w[0] ) { $option = $w[1]; } }
 		$this->assertSame( [ 'safe' => 0, 'aggressive' => 3 ], $option['already_present'], 'same answer on the persisted writer' );
 		$this->assertSame( [], $this->refund_posts, 'fail-closed: not every rule of the page is present' );
 	}

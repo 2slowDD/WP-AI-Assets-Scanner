@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\SettingsAjax;
+use DrSpeedAIAS\Admin\SettingsAjax;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -30,7 +30,7 @@ final class ReplaceKeyTest extends TestCase {
         $this->writes = [];
         $_POST        = [];
 
-        WP_Mock::userFunction( 'check_ajax_referer' )->with( 'cu_scanner_settings_nonce', 'nonce' )->andReturn( 1 );
+        WP_Mock::userFunction( 'check_ajax_referer' )->with( 'drspeed_aias_settings_nonce', 'nonce' )->andReturn( 1 );
         WP_Mock::userFunction( 'current_user_can' )->with( 'manage_options' )->andReturn( true );
         WP_Mock::userFunction( 'wp_unslash' )->andReturnUsing( fn( $v ) => $v );
         WP_Mock::userFunction( 'sanitize_text_field' )->andReturnUsing( fn( $v ) => $v );
@@ -38,7 +38,7 @@ final class ReplaceKeyTest extends TestCase {
         WP_Mock::userFunction( 'get_home_url' )->andReturn( 'https://site.test' );
         WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( fn( $url, $c = -1 ) => parse_url( $url, $c ) );
         WP_Mock::userFunction( 'get_option' )
-            ->andReturnUsing( fn( $name, $default = false ) => 'cu_scanner_api_key' === $name ? self::CURRENT_KEY : $default );
+            ->andReturnUsing( fn( $name, $default = false ) => 'drspeed_aias_api_key' === $name ? self::CURRENT_KEY : $default );
         WP_Mock::userFunction( 'update_option' )->andReturnUsing( function ( $name, $value = null ) {
             $this->writes[] = [ $name, $value ];
             return true;
@@ -84,7 +84,7 @@ final class ReplaceKeyTest extends TestCase {
     private function key_writes(): array {
         return array_values( array_map(
             fn( $w ) => $w[1],
-            array_filter( $this->writes, fn( $w ) => 'cu_scanner_api_key' === $w[0] )
+            array_filter( $this->writes, fn( $w ) => 'drspeed_aias_api_key' === $w[0] )
         ) );
     }
 
@@ -97,7 +97,7 @@ final class ReplaceKeyTest extends TestCase {
         $this->assertSame( 'success', $sent->kind );
         $this->assertSame( 250, $sent->payload['credits'], 'the credits that come with the new key are shown' );
         $this->assertSame( [ self::PAID_KEY ], $this->key_writes() );
-        $this->assertContains( [ 'aias_railway_url', self::RAILWAY_URL ], $this->writes );
+        $this->assertContains( [ 'drspeed_aias_railway_url', self::RAILWAY_URL ], $this->writes );
     }
 
     public function test_free_key_is_refused_before_any_request(): void {

@@ -127,7 +127,7 @@ function runChipAbsentVariants() {
   console.log('OK no chip on []/null/string/number/object/array-like/boolean (' + cases.length + ' shapes)');
 }
 
-// A row restored from pre-A2c storage (aias_last_result / localStorage cu_scanner_result)
+// A row restored from pre-A2c storage (drspeed_aias_last_result / localStorage drspeed_aias_result)
 // carries NO kept_protection key at all — not even an empty array. Must not throw.
 function runLegacyRowGuard() {
   let html;
@@ -279,7 +279,7 @@ function runR20CountChip() {
 
 // ---------------------------------------------------------------------------------------
 // FU-KEPT-BADGE-HOVER-INFO — the chip's hover tooltip names THIS ROW's kept assets from
-// p.kept_breakdown (producer-derived in AIAS_Scan_Status::build_pages(), same composite
+// p.kept_breakdown (producer-derived in DRSPEED_AIAS_Scan_Status::build_pages(), same composite
 // unit as kept_count). R19 line held: labels are worker strings and reach the DOM ONLY via
 // the title PROPERTY (post-render pass), which never parses as HTML — a hostile label must
 // land in .title verbatim-inert and never in the markup.

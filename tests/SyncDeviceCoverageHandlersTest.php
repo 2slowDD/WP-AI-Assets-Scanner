@@ -1,8 +1,8 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\ScannerAjax;
-use CUScanner\Scanner\CuJsonBuilder;
+use DrSpeedAIAS\Admin\ScannerAjax;
+use DrSpeedAIAS\Scanner\CuJsonBuilder;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -75,7 +75,7 @@ class SyncDeviceCoverageHandlersTest extends TestCase {
     }
 
     private function stub( array $json, string $job = 'job-1' ): void {
-        $this->options[ 'cu_scanner_json_' . $job ] = json_encode( $json );
+        $this->options[ 'drspeed_aias_json_' . $job ] = json_encode( $json );
         $_POST['job_id'] = $job;
         WP_Mock::userFunction( 'check_ajax_referer' )->andReturn( true );
         WP_Mock::userFunction( 'current_user_can' )->with( 'manage_options' )->andReturn( true );
@@ -167,7 +167,7 @@ class SyncDeviceCoverageHandlersTest extends TestCase {
         $inserted = $this->captured['created_rule_ids'];
         $this->assertCount( 1, $inserted );
 
-        $manifest = $this->options['aias_last_push_sync_undo'] ?? null;
+        $manifest = $this->options['drspeed_aias_last_push_sync_undo'] ?? null;
         $this->assertSame( $inserted, $manifest['rule_ids'] ?? null, 'the manifest holds exactly the inserted id' );
 
         $this->captured = null;

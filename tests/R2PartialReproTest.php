@@ -9,10 +9,10 @@
 //     recorded credits_used = 13 (History "Partial — 13 credits charged") vs the 3 charged.
 // Fix: do_build_result now calls ScannerAjax::filter_real_pages() to drop the placeholders
 // before building, so a partial builds from exactly the pages that ran.
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\CuJsonBuilder;
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Scanner\CuJsonBuilder;
+use DrSpeedAIAS\Admin\ScannerAjax;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -89,7 +89,7 @@ class R2PartialReproTest extends TestCase {
             // cut-off — marked done by the worker but zero assets captured
             [ 'url' => 'https://x/cut',  'status' => 'done', 'assets' => [] ],
         ];
-        $rows = \AIAS_Scan_Status::build_pages( $pages, [], true ); // is_partial = true
+        $rows = \DRSPEED_AIAS_Scan_Status::build_pages( $pages, [], true ); // is_partial = true
         $this->assertNotSame( 'cancelled', $rows[0]['status_class'], 'genuine page must not be relabeled' );
         $this->assertSame( 'cancelled', $rows[1]['status_class'], 'cut-off page must be Cancelled' );
         $this->assertSame( 0, $rows[1]['credits'], 'cut-off page must not be billed' );
@@ -98,7 +98,7 @@ class R2PartialReproTest extends TestCase {
     public function test_build_pages_complete_scan_does_not_relabel_empty_page(): void {
         // On a COMPLETE scan a 0-asset page is genuinely empty — keep classify's result, not "Cancelled".
         $pages = [ [ 'url' => 'https://x/empty', 'status' => 'done', 'assets' => [] ] ];
-        $rows  = \AIAS_Scan_Status::build_pages( $pages, [], false ); // is_partial = false
+        $rows  = \DRSPEED_AIAS_Scan_Status::build_pages( $pages, [], false ); // is_partial = false
         $this->assertNotSame( 'cancelled', $rows[0]['status_class'] );
     }
 }

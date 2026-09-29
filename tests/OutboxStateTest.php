@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\Outbox;
+use DrSpeedAIAS\Scanner\Outbox;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -14,7 +14,7 @@ class OutboxStateTest extends TestCase {
 
     public function test_state_dispatched_when_option_gone_and_job_transient_present(): void {
         WP_Mock::userFunction( 'get_option' )->andReturn( false ); // no outbox entry
-        WP_Mock::userFunction( 'get_transient' )->with( 'cu_scanner_job_3' )
+        WP_Mock::userFunction( 'get_transient' )->with( 'drspeed_aias_job_3' )
             ->andReturn( [ 'job_id' => 'J', 'job_token' => 'T', 'railway_url' => 'R' ] );
         $s = Outbox::outbox_state_for_user( 3 );
         $this->assertSame( 'dispatched', $s['state'] );
@@ -54,7 +54,7 @@ class OutboxStateTest extends TestCase {
 
     public function test_state_dispatched_when_job_transient_missing_optional_fields(): void {
         WP_Mock::userFunction( 'get_option' )->andReturn( false );
-        WP_Mock::userFunction( 'get_transient' )->with( 'cu_scanner_job_7' )
+        WP_Mock::userFunction( 'get_transient' )->with( 'drspeed_aias_job_7' )
             ->andReturn( [ 'job_id' => 'X' ] ); // job_token + railway_url absent
         $s = Outbox::outbox_state_for_user( 7 );
         $this->assertSame( 'dispatched', $s['state'] );

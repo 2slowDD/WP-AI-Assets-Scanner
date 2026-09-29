@@ -1,8 +1,8 @@
 <?php
 // tests/RatchetMergerTest.php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\RatchetMerger;
+use DrSpeedAIAS\Scanner\RatchetMerger;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -631,7 +631,7 @@ class RatchetMergerTest extends TestCase {
             'mobile'  => [ 'loaded' => true, 'coverage' => 0.0, 'bucket' => 'aggressive' ],
         ];
 
-        $builder = new \CUScanner\Scanner\CuJsonBuilder();
+        $builder = new \DrSpeedAIAS\Scanner\CuJsonBuilder();
 
         foreach ( $corpus as $label => $url ) {
             $built = $builder->build( [
@@ -644,7 +644,7 @@ class RatchetMergerTest extends TestCase {
             );
 
             $cujson_pattern = $built['rules'][0]['url_pattern'];
-            $shared_pattern = \CUScanner\Scanner\UrlPattern::from_url( $url );
+            $shared_pattern = \DrSpeedAIAS\Scanner\UrlPattern::from_url( $url );
 
             $this->assertSame(
                 $cujson_pattern,

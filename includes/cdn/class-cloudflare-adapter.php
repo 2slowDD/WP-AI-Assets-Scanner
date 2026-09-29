@@ -2,10 +2,10 @@
 /**
  * Cloudflare CDN adapter — rate-limit exemption via WAF custom rule.
  *
- * @package CUScanner\Cdn
+ * @package DrSpeedAIAS\Cdn
  */
 
-namespace CUScanner\Cdn;
+namespace DrSpeedAIAS\Cdn;
 
 defined( 'ABSPATH' ) || exit;
 

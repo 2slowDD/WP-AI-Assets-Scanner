@@ -1,5 +1,5 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
 if ( ! defined( 'ABSPATH' ) ) define( 'ABSPATH', __DIR__ . '/' );
 
@@ -25,7 +25,7 @@ class MultiOptimizerCompositionTest extends TestCase {
                 'flying-press/flying-press.php',
             ], true ) );
 
-        $detector = new \CUScanner\Scanner\PluginDetector();
+        $detector = new \DrSpeedAIAS\Scanner\PluginDetector();
         $entries  = $detector->detect_typed();
 
         // FlyingPress is class A post-reclass — no class C entries from these two plugins.
@@ -33,7 +33,7 @@ class MultiOptimizerCompositionTest extends TestCase {
         $this->assertCount( 0, $class_c, 'FlyingPress reclassed C -> A; no class C entries expected' );
         $this->assertSame( 'A', $entries['flying-press/flying-press.php']['class'] );
 
-        $bypass_suffixes = \CUScanner\Scanner\PluginDetector::build_bypass_suffixes( $entries );
+        $bypass_suffixes = \DrSpeedAIAS\Scanner\PluginDetector::build_bypass_suffixes( $entries );
         sort( $bypass_suffixes );
         $this->assertSame( [ 'no_optimize', 'nowprocket' ], $bypass_suffixes,
             'WP Rocket + FlyingPress both class A; both contribute bypass suffixes' );
@@ -47,7 +47,7 @@ class MultiOptimizerCompositionTest extends TestCase {
                 'flying-press/flying-press.php',
             ], true ) );
 
-        $orchestrator = \CUScanner\Scanner\OptimizerBypassOrchestrator::build_default_orchestrator();
+        $orchestrator = \DrSpeedAIAS\Scanner\OptimizerBypassOrchestrator::build_default_orchestrator();
 
         $rp = new \ReflectionClass( $orchestrator );
         $prop = $rp->getProperty( 'strategies' );
@@ -72,8 +72,8 @@ class MultiOptimizerCompositionTest extends TestCase {
             'optimizer_restored',
         ];
         $sources = [
-            AIAS_DIR . 'admin/class-scanner-ajax.php',
-            AIAS_DIR . 'includes/scanner/class-optimizer-bypass-orchestrator.php',
+            DRSPEED_AIAS_DIR . 'admin/class-scanner-ajax.php',
+            DRSPEED_AIAS_DIR . 'includes/scanner/class-optimizer-bypass-orchestrator.php',
         ];
         $haystacks = '';
         foreach ( $sources as $path ) {

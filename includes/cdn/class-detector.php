@@ -1,10 +1,10 @@
 <?php
-namespace CUScanner\Cdn;
+namespace DrSpeedAIAS\Cdn;
 
 defined( 'ABSPATH' ) || exit;
 
 final class Detector {
-    private const CACHE_KEY = 'cu_scanner_cdn_detected';
+    private const CACHE_KEY = 'drspeed_aias_cdn_detected';
     private const TTL_HIT   = 43200; // 12h
     private const TTL_MISS  = 1800;  // 30m (re-probe sooner on unknown)
 

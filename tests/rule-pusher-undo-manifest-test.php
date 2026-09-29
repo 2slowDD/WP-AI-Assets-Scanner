@@ -12,23 +12,23 @@ namespace {
     }
 
     if ( ! function_exists( 'get_option' ) ) {
-        $GLOBALS['aias_test_options'] = array();
+        $GLOBALS['drspeed_aias_test_options'] = array();
 
         function get_option( string $name, $default = false ) {
-            return $GLOBALS['aias_test_options'][ $name ] ?? $default;
+            return $GLOBALS['drspeed_aias_test_options'][ $name ] ?? $default;
         }
     }
 
     if ( ! function_exists( 'update_option' ) ) {
         function update_option( string $name, $value, bool $autoload = null ): bool {
-            $GLOBALS['aias_test_options'][ $name ] = $value;
+            $GLOBALS['drspeed_aias_test_options'][ $name ] = $value;
             return true;
         }
     }
 
     if ( ! function_exists( 'delete_option' ) ) {
         function delete_option( string $name ): bool {
-            unset( $GLOBALS['aias_test_options'][ $name ] );
+            unset( $GLOBALS['drspeed_aias_test_options'][ $name ] );
             return true;
         }
     }
@@ -58,7 +58,7 @@ namespace {
     }
 }
 
-namespace CUScanner\Scanner {
+namespace DrSpeedAIAS\Scanner {
     class SnapshotManager {
         public function __construct( private string $repo ) {}
         public function has_active_rules(): bool { return false; }
@@ -78,8 +78,8 @@ namespace {
     require_once __DIR__ . '/../includes/scanner/class-rule-pusher.php';
     require_once __DIR__ . '/../includes/scanner/class-last-push-sync-undo.php';
 
-    use CUScanner\Scanner\LastPushSyncUndo;
-    use CUScanner\Scanner\RulePusher;
+    use DrSpeedAIAS\Scanner\LastPushSyncUndo;
+    use DrSpeedAIAS\Scanner\RulePusher;
 
     class FakeRuleRepository {
         private static array $groups = [];

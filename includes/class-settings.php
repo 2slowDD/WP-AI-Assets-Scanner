@@ -1,5 +1,5 @@
 <?php
-namespace CUScanner;
+namespace DrSpeedAIAS;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -22,21 +22,21 @@ class Settings {
     );
 
     public function get_api_key(): string {
-        return (string) get_option( 'cu_scanner_api_key', '' );
+        return (string) get_option( 'drspeed_aias_api_key', '' );
     }
 
     public function set_api_key( string $key ): void {
-        update_option( 'cu_scanner_api_key', $key );
+        update_option( 'drspeed_aias_api_key', $key );
     }
 
     public function get_paid_key_claim_token(): string {
-        $token = (string) get_option( 'cu_scanner_paid_key_claim_token', '' );
+        $token = (string) get_option( 'drspeed_aias_paid_key_claim_token', '' );
         if ( preg_match( '/^[a-f0-9]{64}$/', $token ) ) {
             return $token;
         }
 
         $token = bin2hex( random_bytes( 32 ) );
-        update_option( 'cu_scanner_paid_key_claim_token', $token, false );
+        update_option( 'drspeed_aias_paid_key_claim_token', $token, false );
         return $token;
     }
 
@@ -54,11 +54,11 @@ class Settings {
 
     public function set_pending_free_key(): void {
         $this->set_api_key( 'cusk_Freekey_?' );
-        update_option( 'cu_scanner_free_key_pending', '1', false );
+        update_option( 'drspeed_aias_free_key_pending', '1', false );
     }
 
     public function clear_pending_free_key(): void {
-        delete_option( 'cu_scanner_free_key_pending' );
+        delete_option( 'drspeed_aias_free_key_pending' );
     }
 
     /**
@@ -67,21 +67,21 @@ class Settings {
      * 'revoked'. '' when there is nothing to report.
      */
     public function get_free_key_unusable(): string {
-        $status = (string) get_option( 'aias_free_key_unusable', '' );
+        $status = (string) get_option( 'drspeed_aias_free_key_unusable', '' );
         return in_array( $status, [ 'converted', 'revoked' ], true ) ? $status : '';
     }
 
     public function set_free_key_unusable( string $status ): void {
-        update_option( 'aias_free_key_unusable', $status, false );
+        update_option( 'drspeed_aias_free_key_unusable', $status, false );
     }
 
     public function clear_free_key_unusable(): void {
-        delete_option( 'aias_free_key_unusable' );
+        delete_option( 'drspeed_aias_free_key_unusable' );
     }
 
     public function get_buy_credits_url( ?string $api_key = null ): string {
         $api_key = $api_key ?? $this->get_api_key();
-        $base    = ( defined( 'AIAS_WPSERVICE_BASE' ) ? AIAS_WPSERVICE_BASE : 'https://wpservice.pro' )
+        $base    = ( defined( 'DRSPEED_AIAS_WPSERVICE_BASE' ) ? DRSPEED_AIAS_WPSERVICE_BASE : 'https://wpservice.pro' )
             . '/our-products/dr-speed-ai-assets-scanner/';
 
         if ( ! $this->is_free_key( $api_key ) ) {
@@ -105,7 +105,7 @@ class Settings {
      * worker URL. An empty value here is refilled from /auth on the next scan.
      */
     public function get_railway_url(): string {
-        return (string) get_option( 'aias_railway_url', '' );
+        return (string) get_option( 'drspeed_aias_railway_url', '' );
     }
 
     /**
@@ -115,7 +115,7 @@ class Settings {
         if ( ! self::is_safe_railway_url( $url ) ) {
             throw new \RuntimeException( 'Refused to store Railway URL: must be HTTPS and on the host allowlist.' );
         }
-        update_option( 'aias_railway_url', $url );
+        update_option( 'drspeed_aias_railway_url', $url );
     }
 
     /**
@@ -164,13 +164,13 @@ class Settings {
 
     public function set_http_auth( string $username, string $password ): void {
         update_option(
-            'cu_scanner_http_auth',
+            'drspeed_aias_http_auth',
             self::encrypt_http_auth( array( 'username' => $username, 'password' => $password ) )
         );
     }
 
     public function get_http_auth(): ?array {
-        $stored = (string) get_option( 'cu_scanner_http_auth', '' );
+        $stored = (string) get_option( 'drspeed_aias_http_auth', '' );
         if ( '' === $stored ) return null;
 
         // v2 AEAD format — decrypt with sodium. If sodium isn't available on
@@ -187,13 +187,13 @@ class Settings {
         // the call still returns the decoded value.
         $decoded = self::decrypt_http_auth_legacy( $stored );
         if ( null !== $decoded && self::sodium_available() ) {
-            update_option( 'cu_scanner_http_auth', self::encrypt_http_auth_v2( $decoded ) );
+            update_option( 'drspeed_aias_http_auth', self::encrypt_http_auth_v2( $decoded ) );
         }
         return $decoded;
     }
 
     public function clear_http_auth(): void {
-        delete_option( 'cu_scanner_http_auth' );
+        delete_option( 'drspeed_aias_http_auth' );
     }
 
     /**
@@ -292,11 +292,11 @@ class Settings {
     }
 
     public function get_acknowledged_cdn(): string {
-        return (string) get_option( 'cu_scanner_cdn_exemption_ack', '' );
+        return (string) get_option( 'drspeed_aias_cdn_exemption_ack', '' );
     }
 
     public function set_acknowledged_cdn( string $name ): void {
-        update_option( 'cu_scanner_cdn_exemption_ack', $name );
+        update_option( 'drspeed_aias_cdn_exemption_ack', $name );
     }
 
     /**
@@ -306,15 +306,15 @@ class Settings {
      * until the box is ticked. Read by PluginDetector::detect().
      */
     public function get_omit_cu_bypass(): bool {
-        return '' !== (string) get_option( 'cu_scanner_omit_cu_bypass', '' );
+        return '' !== (string) get_option( 'drspeed_aias_omit_cu_bypass', '' );
     }
 
     public function set_omit_cu_bypass( bool $on ): void {
-        update_option( 'cu_scanner_omit_cu_bypass', $on ? '1' : '' );
+        update_option( 'drspeed_aias_omit_cu_bypass', $on ? '1' : '' );
     }
 
     public function get_scanner_secret(): string {
-        $secret = (string) get_option( 'cu_scanner_secret', '' );
+        $secret = (string) get_option( 'drspeed_aias_secret', '' );
         if ( ! $secret ) {
             $secret = $this->regenerate_scanner_secret();
         }
@@ -328,7 +328,7 @@ class Settings {
      */
     public function regenerate_scanner_secret(): string {
         $secret = bin2hex( random_bytes( 16 ) );
-        update_option( 'cu_scanner_secret', $secret, false );
+        update_option( 'drspeed_aias_secret', $secret, false );
         return $secret;
     }
 }

@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Api\HttpException;
+use DrSpeedAIAS\Api\HttpException;
 use WP_Mock\Tools\TestCase;
 
 class HttpExceptionTest extends TestCase {

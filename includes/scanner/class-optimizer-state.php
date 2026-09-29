@@ -1,5 +1,5 @@
 <?php
-namespace CUScanner\Scanner;
+namespace DrSpeedAIAS\Scanner;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -14,7 +14,7 @@ defined( 'ABSPATH' ) || exit;
  * Spec §4.6.2.
  */
 class OptimizerState {
-    public const OPTION = 'aias_optimizer_state';
+    public const OPTION = 'drspeed_aias_optimizer_state';
 
     /**
      * @param string               $scan_id      12-16 hex chars

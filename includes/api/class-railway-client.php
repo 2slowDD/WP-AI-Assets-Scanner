@@ -1,9 +1,9 @@
 <?php
-namespace CUScanner\Api;
+namespace DrSpeedAIAS\Api;
 
 defined( 'ABSPATH' ) || exit;
 
-use CUScanner\Settings;
+use DrSpeedAIAS\Settings;
 
 class RailwayClient {
     /**
@@ -28,7 +28,7 @@ class RailwayClient {
         // routes; set HERE (not in build_submit_payload) so the interactive submit AND the outbox
         // replay both carry it, and a replay reports the build that actually replayed. The worker
         // treats a missing or malformed value as absent — never a rejection.
-        $payload['plugin_version'] = defined( 'AIAS_VERSION' ) ? AIAS_VERSION : '';
+        $payload['plugin_version'] = defined( 'DRSPEED_AIAS_VERSION' ) ? DRSPEED_AIAS_VERSION : '';
         $response = wp_remote_post( $this->railway_url . '/jobs', [
             'headers' => [
                 'Content-Type'  => 'application/json',

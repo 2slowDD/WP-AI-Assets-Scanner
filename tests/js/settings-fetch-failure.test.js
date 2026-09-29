@@ -43,7 +43,7 @@ function makeEl(id) {
 // reject-at-json (the real FU-N shape) and success.
 function harness(fetchImpl) {
   const ids = [
-    'cu-scanner-settings-form', 'cu-settings-message', 'cu-credit-balance',
+    'drspeed-aias-settings-form', 'cu-settings-message', 'cu-credit-balance',
     'cu-refresh-balance', 'cu_api_key', 'cu-balance-card',
     // Present so the THIRD fetch chain (postAckCdn) is reachable — without this element
     // settings.js never wires it, and its .catch() would be untested and therefore decorative.
@@ -56,7 +56,7 @@ function harness(fetchImpl) {
   const sandbox = {
     console,
     setTimeout, clearTimeout, parseInt, isNaN, Promise,
-    cuScannerSettings: { ajaxUrl: '/wp-admin/admin-ajax.php', nonce: 'nonce-1' },
+    drspeedAiasSettings: { ajaxUrl: '/wp-admin/admin-ajax.php', nonce: 'nonce-1' },
     navigator: { clipboard: { writeText: () => Promise.resolve() } },
     fetch: fetchImpl,
     FormData: class {
@@ -104,7 +104,7 @@ async function run() {
     assert.strictEqual(h.els['cu-credit-balance'].textContent, '—',
       'a rejected balance fetch must not leave the spinner hanging');
 
-    h.els['cu-scanner-settings-form'].fire('submit');
+    h.els['drspeed-aias-settings-form'].fire('submit');
     await flush();
     const msg = h.els['cu-settings-message'];
     assert.ok(msg.textContent.length > 0,
@@ -121,7 +121,7 @@ async function run() {
     assert.strictEqual(h.els['cu-credit-balance'].textContent, '—',
       'a rejected transport must clear the spinner too');
 
-    h.els['cu-scanner-settings-form'].fire('submit');
+    h.els['drspeed-aias-settings-form'].fire('submit');
     await flush();
     assert.ok(h.els['cu-settings-message'].textContent.length > 0,
       'a transport failure must be reported');
@@ -139,7 +139,7 @@ async function run() {
     assert.strictEqual(h.els['cu-credit-balance'].textContent, '7',
       'the balance refresh must still render on success');
 
-    h.els['cu-scanner-settings-form'].fire('submit');
+    h.els['drspeed-aias-settings-form'].fire('submit');
     await flush();
     const msg = h.els['cu-settings-message'];
     assert.ok(/Settings saved/.test(msg.textContent), 'the success copy must survive the fix');
@@ -154,7 +154,7 @@ async function run() {
       json: () => Promise.resolve({ success: false, data: 'Invalid API key' }),
     }));
     await flush();
-    h.els['cu-scanner-settings-form'].fire('submit');
+    h.els['drspeed-aias-settings-form'].fire('submit');
     await flush();
     assert.ok(/Invalid API key/.test(h.els['cu-settings-message'].textContent),
       'a wp_send_json_error message must still reach the user verbatim');

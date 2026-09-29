@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Admin\ScannerAjax;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -9,10 +9,10 @@ use WP_Mock\Tools\TestCase;
  * et_requested — the Step-4 "Needs Extra Time" note stays off on a page that just had Extra
  * Time (operator 2026-09-14). A new serialized wire field, so per P17 both halves run through
  * the REAL production paths, never an injected row shape:
- *   (a) producer: perform_submit_side_effects() persists cu_scanner_et_urls_<job_id> from the
+ *   (a) producer: perform_submit_side_effects() persists drspeed_aias_et_urls_<job_id> from the
  *       pages actually sent (extra_time truthy only), TTL 7200; nothing when no page asked.
  *   (b) consumer: do_build_result() stamps every page row's et_requested from that transient,
- *       on BOTH the live return and the persisted aias_last_result option.
+ *       on BOTH the live return and the persisted drspeed_aias_last_result option.
  *   (a+b) round trip: the producer's write is what the consumer reads — no hand-seeded key.
  * Only the Railway HTTP boundary and WP storage are stubbed (array-backed).
  */
@@ -83,8 +83,8 @@ class EtRequestedStampTest extends TestCase {
             'status' => 'complete', 'total' => count( $worker_pages ), 'completed' => count( $worker_pages ), 'pages' => $worker_pages, 'flags' => [],
         ] ) );
         WP_Mock::userFunction( 'get_option' )->andReturnUsing( function ( $k, $default = false ) {
-            if ( 'aias_railway_url' === $k ) { return 'https://cu-scanner-railway-production.up.railway.app'; }
-            if ( 'cu_scanner_api_key' === $k )     { return 'api-key-123'; }
+            if ( 'drspeed_aias_railway_url' === $k ) { return 'https://cu-scanner-railway-production.up.railway.app'; }
+            if ( 'drspeed_aias_api_key' === $k )     { return 'api-key-123'; }
             return array_key_exists( $k, $this->options ) ? $this->options[ $k ] : $default;
         } );
         WP_Mock::userFunction( 'update_option' )->andReturnUsing( function ( $k, $v ) { $this->options[ $k ] = $v; return true; } );
@@ -136,9 +136,9 @@ class EtRequestedStampTest extends TestCase {
         $this->stub_wp( [] );
         $this->submit( 'job-sub', [ $this->sent_page( self::URL_A, true, [ 'nowprocket' ] ), $this->sent_page( self::URL_B, false ) ], [ self::URL_A ] );
 
-        $this->assertArrayHasKey( 'cu_scanner_et_urls_job-sub', $this->transients, 'the ET URL set is persisted under the job id' );
-        $this->assertSame( [ self::URL_A => true ], $this->transients['cu_scanner_et_urls_job-sub'], 'only the page sent WITH Extra Time, keyed by its final scan URL' );
-        $this->assertSame( 7200, $this->ttls['cu_scanner_et_urls_job-sub'], 'TTL matches the job + bypass-map transients' );
+        $this->assertArrayHasKey( 'drspeed_aias_et_urls_job-sub', $this->transients, 'the ET URL set is persisted under the job id' );
+        $this->assertSame( [ self::URL_A => true ], $this->transients['drspeed_aias_et_urls_job-sub'], 'only the page sent WITH Extra Time, keyed by its final scan URL' );
+        $this->assertSame( 7200, $this->ttls['drspeed_aias_et_urls_job-sub'], 'TTL matches the job + bypass-map transients' );
     }
 
     public function test_submit_with_no_extra_time_page_stores_no_et_set(): void {
@@ -146,22 +146,22 @@ class EtRequestedStampTest extends TestCase {
         $this->submit( 'job-plain', [ $this->sent_page( self::URL_A, false, [ 'nowprocket' ] ), $this->sent_page( self::URL_B, false ) ], [] );
 
         // Non-vacuity: the side-effect runner reached the transient block (bypass map written).
-        $this->assertArrayHasKey( 'cu_scanner_bypass_map_job-plain', $this->transients, 'fixture sanity: the submit side effects ran to the transient block' );
-        $this->assertArrayNotHasKey( 'cu_scanner_et_urls_job-plain', $this->transients, 'fail-closed: no ET page => no ET URL set stored' );
+        $this->assertArrayHasKey( 'drspeed_aias_bypass_map_job-plain', $this->transients, 'fixture sanity: the submit side effects ran to the transient block' );
+        $this->assertArrayNotHasKey( 'drspeed_aias_et_urls_job-plain', $this->transients, 'fail-closed: no ET page => no ET URL set stored' );
     }
 
     // ------------------------------------------------------------------ (b) consumer
     public function test_build_result_stamps_et_requested_on_both_writers(): void {
         // The ET page sits in the MIDDLE so a row/raw index misalignment cannot pass.
-        $this->transients['cu_scanner_et_urls_job-b1'] = [ self::URL_A => true ];
+        $this->transients['drspeed_aias_et_urls_job-b1'] = [ self::URL_A => true ];
         $this->stub_wp( [ $this->worker_page( self::URL_B ), $this->worker_page( self::URL_A ), $this->worker_page( self::URL_C ) ] );
 
         $payload = ( new ScannerAjax() )->do_build_result( 'job-b1', 'tok' );
 
         $expected = [ self::URL_B => false, self::URL_A => true, self::URL_C => false ];
         $this->assertSame( $expected, $this->et_by_url( $payload['pages'], 'live payload' ) );
-        $this->assertArrayHasKey( 'aias_last_result', $this->options, 'do_build_result persisted the restore payload' );
-        $this->assertSame( $expected, $this->et_by_url( $this->options['aias_last_result']['pages'], 'aias_last_result option' ) );
+        $this->assertArrayHasKey( 'drspeed_aias_last_result', $this->options, 'do_build_result persisted the restore payload' );
+        $this->assertSame( $expected, $this->et_by_url( $this->options['drspeed_aias_last_result']['pages'], 'drspeed_aias_last_result option' ) );
     }
 
     public function test_build_result_without_the_transient_stamps_every_row_false(): void {
@@ -171,7 +171,7 @@ class EtRequestedStampTest extends TestCase {
 
         $expected = [ self::URL_A => false, self::URL_B => false ];
         $this->assertSame( $expected, $this->et_by_url( $payload['pages'], 'live payload' ) );
-        $this->assertSame( $expected, $this->et_by_url( $this->options['aias_last_result']['pages'], 'aias_last_result option' ) );
+        $this->assertSame( $expected, $this->et_by_url( $this->options['drspeed_aias_last_result']['pages'], 'drspeed_aias_last_result option' ) );
     }
 
     // ------------------------------------------------------------------ (a+b) round trip
@@ -183,6 +183,6 @@ class EtRequestedStampTest extends TestCase {
 
         $expected = [ self::URL_B => false, self::URL_A => true ];
         $this->assertSame( $expected, $this->et_by_url( $payload['pages'], 'live payload' ) );
-        $this->assertSame( $expected, $this->et_by_url( $this->options['aias_last_result']['pages'], 'aias_last_result option' ) );
+        $this->assertSame( $expected, $this->et_by_url( $this->options['drspeed_aias_last_result']['pages'], 'drspeed_aias_last_result option' ) );
     }
 }

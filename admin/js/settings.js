@@ -2,7 +2,7 @@
     'use strict';
 
     document.addEventListener('DOMContentLoaded', function () {
-        const form    = document.getElementById('cu-scanner-settings-form');
+        const form    = document.getElementById('drspeed-aias-settings-form');
         const msg     = document.getElementById('cu-settings-message');
         const balance = document.getElementById('cu-credit-balance');
         const refresh = document.getElementById('cu-refresh-balance');
@@ -32,12 +32,12 @@
         form.addEventListener('submit', function (e) {
             e.preventDefault();
             const data = new FormData(form);
-            data.append('action', 'cu_scanner_save_settings');
+            data.append('action', 'drspeed_aias_save_settings');
             if (apiKeyInput && apiKeyInput.dataset.masked) {
                 data.delete('api_key');
                 data.append('keep_api_key', '1');
             }
-            fetch(cuScannerSettings.ajaxUrl, { method: 'POST', body: data })
+            fetch(drspeedAiasSettings.ajaxUrl, { method: 'POST', body: data })
                 .then(r => r.json())
                 .then(res => {
                     if (res.success) {
@@ -60,9 +60,9 @@
         refresh.addEventListener('click', function () {
             balance.textContent = '…';
             const data = new FormData();
-            data.append('action', 'cu_scanner_fetch_balance');
-            data.append('nonce', cuScannerSettings.nonce);
-            fetch(cuScannerSettings.ajaxUrl, { method: 'POST', body: data })
+            data.append('action', 'drspeed_aias_fetch_balance');
+            data.append('nonce', drspeedAiasSettings.nonce);
+            fetch(drspeedAiasSettings.ajaxUrl, { method: 'POST', body: data })
                 .then(r => r.json())
                 .then(res => {
                     setBalance(res.success ? res.data.balance : '—');
@@ -99,9 +99,9 @@
             freeKeyBtn.addEventListener('click', function () {
                 freeKeyBtn.disabled = true;
                 const data = new FormData();
-                data.append('action', 'cu_scanner_request_free_key');
-                data.append('nonce', cuScannerSettings.nonce);
-                fetch(cuScannerSettings.ajaxUrl, { method: 'POST', body: data })
+                data.append('action', 'drspeed_aias_request_free_key');
+                data.append('nonce', drspeedAiasSettings.nonce);
+                fetch(drspeedAiasSettings.ajaxUrl, { method: 'POST', body: data })
                     .then(r => r.json())
                     .then(res => {
                         if (res.success) {
@@ -147,10 +147,10 @@
                 }
                 replaceSubmit.disabled = true;
                 const data = new FormData();
-                data.append('action', 'cu_scanner_replace_key');
-                data.append('nonce', cuScannerSettings.nonce);
+                data.append('action', 'drspeed_aias_replace_key');
+                data.append('nonce', drspeedAiasSettings.nonce);
                 data.append('new_api_key', key);
-                fetch(cuScannerSettings.ajaxUrl, { method: 'POST', body: data })
+                fetch(drspeedAiasSettings.ajaxUrl, { method: 'POST', body: data })
                     .then(r => r.json())
                     .then(res => {
                         if (res.success) {
@@ -172,7 +172,7 @@
         const copyBtn = document.getElementById('cu-copy-secret');
         if (copyBtn) {
             copyBtn.addEventListener('click', function () {
-                const secretInput = document.getElementById('cu-scanner-secret');
+                const secretInput = document.getElementById('drspeed-aias-secret');
                 if (!secretInput) return;
                 navigator.clipboard.writeText(secretInput.value).then(function () {
                     const orig = copyBtn.textContent;
@@ -190,9 +190,9 @@
                 }
                 regenerateBtn.disabled = true;
                 const data = new FormData();
-                data.append('action', 'cu_scanner_regenerate_secret');
-                data.append('nonce', cuScannerSettings.nonce);
-                fetch(cuScannerSettings.ajaxUrl, { method: 'POST', body: data })
+                data.append('action', 'drspeed_aias_regenerate_secret');
+                data.append('nonce', drspeedAiasSettings.nonce);
+                fetch(drspeedAiasSettings.ajaxUrl, { method: 'POST', body: data })
                     .then(r => r.json())
                     .then(res => {
                         if (res.success) {
@@ -237,12 +237,12 @@
         function postAckCdn(cdnName, onSuccess) {
             if (!cdnName) return;
             const nonceField = form.querySelector('[name="nonce"]');
-            const nonceVal   = nonceField ? nonceField.value : cuScannerSettings.nonce;
+            const nonceVal   = nonceField ? nonceField.value : drspeedAiasSettings.nonce;
             const data = new FormData();
-            data.append('action', 'cu_scanner_ack_cdn');
+            data.append('action', 'drspeed_aias_ack_cdn');
             data.append('nonce',  nonceVal);
             data.append('cdn',    cdnName);
-            fetch(cuScannerSettings.ajaxUrl, { method: 'POST', body: data })
+            fetch(drspeedAiasSettings.ajaxUrl, { method: 'POST', body: data })
                 .then(function (r) { return r.json(); })
                 .then(function (res) {
                     if (res.success && typeof onSuccess === 'function') {

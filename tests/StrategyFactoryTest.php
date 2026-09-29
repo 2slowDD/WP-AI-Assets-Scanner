@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\StrategyFactory;
+use DrSpeedAIAS\Scanner\StrategyFactory;
 
 class StrategyFactoryTest extends \PHPUnit\Framework\TestCase {
 

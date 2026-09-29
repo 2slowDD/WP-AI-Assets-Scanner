@@ -5,7 +5,7 @@ defined( 'ABSPATH' ) || exit;
  * Pure per-URL scan-status helper for the Step-4 results table.
  * Owns the status class/label and the credit rule. No WP/DB deps → unit-testable.
  */
-class AIAS_Scan_Status {
+class DRSPEED_AIAS_Scan_Status {
 
 	/**
 	 * @param array $page One Railway page: { url, status, broken_devices?[] }.
@@ -49,18 +49,18 @@ class AIAS_Scan_Status {
 
 		$bot_reason = null;
 		foreach ( $affected as $reason ) {
-			if ( 'bot' === AIAS_Broken_Banner::reason_category( $reason ) ) { $bot_reason = $reason; break; }
+			if ( 'bot' === DRSPEED_AIAS_Broken_Banner::reason_category( $reason ) ) { $bot_reason = $reason; break; }
 		}
 
 		if ( null !== $bot_reason ) {
 			return [
 				'class'   => 'blocked',
-				'label'   => sprintf( /* translators: %s reason */ __( 'Blocked: %s', 'dr-speed-ai-assets-scanner' ), AIAS_Broken_Banner::reason_phrase( $bot_reason ) ),
+				'label'   => sprintf( /* translators: %s reason */ __( 'Blocked: %s', 'dr-speed-ai-assets-scanner' ), DRSPEED_AIAS_Broken_Banner::reason_phrase( $bot_reason ) ),
 				'credits' => $credits,
 			];
 		}
 		if ( 'error' === $status ) {
-			$first = $affected ? AIAS_Broken_Banner::reason_phrase( (string) reset( $affected ) ) : '';
+			$first = $affected ? DRSPEED_AIAS_Broken_Banner::reason_phrase( (string) reset( $affected ) ) : '';
 			return [
 				'class'   => 'error',
 				'label'   => $first
@@ -74,7 +74,7 @@ class AIAS_Scan_Status {
 			$device = (string) array_key_first( $affected );
 			return [
 				'class'   => 'partial',
-				'label'   => sprintf( /* translators: 1 device, 2 reason */ __( '%1$s failed: %2$s', 'dr-speed-ai-assets-scanner' ), ucfirst( $device ), AIAS_Broken_Banner::reason_phrase( $affected[ $device ] ) ),
+				'label'   => sprintf( /* translators: 1 device, 2 reason */ __( '%1$s failed: %2$s', 'dr-speed-ai-assets-scanner' ), ucfirst( $device ), DRSPEED_AIAS_Broken_Banner::reason_phrase( $affected[ $device ] ) ),
 				'credits' => $credits,
 			];
 		}
@@ -186,7 +186,7 @@ class AIAS_Scan_Status {
 				// "optimizer detected" note. $page['bypass_suffixes'] is stamped onto
 				// BOTH internal and external rows by do_build_result() (class-scanner-ajax.php)
 				// before this method runs, read back from the submit-time per-URL map
-				// (cu_scanner_bypass_map_<job_id> transient) keyed by the final scan URL —
+				// (drspeed_aias_bypass_map_<job_id> transient) keyed by the final scan URL —
 				// static suffix strings, not user input. Still defensive-validated here since
 				// $page is otherwise built from untrusted Railway response data.
 				'bypass_suffixes' => is_array( $page['bypass_suffixes'] ?? null )

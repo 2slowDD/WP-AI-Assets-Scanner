@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Api;
+namespace DrSpeedAIAS\Api;
 
-use CUScanner\DomainNormalizer;
+use DrSpeedAIAS\DomainNormalizer;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -23,7 +23,7 @@ class WpserviceClient {
         return $this->post( '/cu-scanner/v1/free-key/register', [
             'domain'          => $this->domain(),
             'current_api_key' => $current_api_key,
-            'plugin_version'  => defined( 'AIAS_VERSION' ) ? AIAS_VERSION : '',
+            'plugin_version'  => defined( 'DRSPEED_AIAS_VERSION' ) ? DRSPEED_AIAS_VERSION : '',
         ] );
     }
 
@@ -32,7 +32,7 @@ class WpserviceClient {
             'domain'          => $this->domain(),
             'current_api_key' => $current_api_key,
             'claim_token'     => $claim_token,
-            'plugin_version'  => defined( 'AIAS_VERSION' ) ? AIAS_VERSION : '',
+            'plugin_version'  => defined( 'DRSPEED_AIAS_VERSION' ) ? DRSPEED_AIAS_VERSION : '',
         ] );
     }
 

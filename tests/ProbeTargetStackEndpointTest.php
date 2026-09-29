@@ -1,12 +1,12 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Admin\ScannerAjax;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
 /**
- * FU-NEW-2 Phase 4 — cu_scanner_probe_target_stack AJAX endpoint tests.
+ * FU-NEW-2 Phase 4 — drspeed_aias_probe_target_stack AJAX endpoint tests.
  * Spec §6.1 + §6.1.1 + AC-N2-Auth + AC-N2-SSRF.
  */
 class ProbeTargetStackEndpointTest extends TestCase {

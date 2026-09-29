@@ -1,8 +1,8 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
 use PHPUnit\Framework\TestCase;
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Admin\ScannerAjax;
 
 /**
  * AC-1 (non-negativity) · AC-2 (predicate soundness) · AC-3 (per-page emission)
@@ -16,7 +16,7 @@ class ResultTruthAttributionTest extends TestCase {
 	public function setUp(): void {
 		\WP_Mock::setUp();
 		// attribute_already_present() runs the REAL UrlPattern::from_url() and the REAL
-		// AIAS_Scan_Status::classify(); both reach WP functions. Stubbing the boundary,
+		// DRSPEED_AIAS_Scan_Status::classify(); both reach WP functions. Stubbing the boundary,
 		// not the units under test.
 		\WP_Mock::userFunction( 'wp_parse_url' )
 			->andReturnUsing( fn( $url, $component = -1 ) => parse_url( $url, $component ) );

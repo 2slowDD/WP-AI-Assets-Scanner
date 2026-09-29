@@ -30,7 +30,7 @@
  * signal — do not add it.
  */
 
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
 use PHPUnit\Framework\TestCase;
 

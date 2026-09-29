@@ -35,7 +35,7 @@ function notesIn(h) {
   return h.summaryHost.children.filter(function (c) { return c && c.id === 'cu-kept-protection-note'; });
 }
 
-// Stands up a harness whose cu_scanner_build_result response carries `kept`, then drives
+// Stands up a harness whose drspeed_aias_build_result response carries `kept`, then drives
 // handleStatusUpdate('complete') -> buildResult() -> post() -> the two live writers.
 function liveScanWith(kept) {
   const data = {
@@ -48,7 +48,7 @@ function liveScanWith(kept) {
   const h = createHarness({
     fetch: function (url, opts) {
       const action = opts && opts.body ? opts.body.get('action') : null;
-      const body = action === 'cu_scanner_build_result'
+      const body = action === 'drspeed_aias_build_result'
         ? { success: true, data: data }
         : { success: true, data: {} };
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
@@ -76,8 +76,8 @@ async function run() {
     assert.strictEqual(liveNotes[0].className, 'cu-kept-protection', 'note carries the styling class');
 
     // Literal #2 — whatever the SHIPPED persist writer actually wrote. Not hand-built.
-    const persisted = live.sandbox.localStorage.getItem('cu_scanner_result');
-    assert.ok(persisted, 'the live scan persisted a cu_scanner_result entry');
+    const persisted = live.sandbox.localStorage.getItem('drspeed_aias_result');
+    assert.ok(persisted, 'the live scan persisted a drspeed_aias_result entry');
     const parsed = JSON.parse(persisted);
     assert.deepStrictEqual(
       parsed.kept_protection_summary, { count: 1, vendors: ['Cloudflare Turnstile'] },
@@ -86,7 +86,7 @@ async function run() {
 
     // Literal #3 — reload. The restore IIFE runs at load time inside createHarness and
     // rebuilds Step 4 from exactly the bytes the persist writer produced.
-    const reloaded = createHarness({ localStorage: { cu_scanner_result: persisted } });
+    const reloaded = createHarness({ localStorage: { drspeed_aias_result: persisted } });
     const restoredNotes = notesIn(reloaded);
     assert.strictEqual(restoredNotes.length, 1, 'the note survives a page reload');
     assert.strictEqual(
@@ -121,7 +121,7 @@ async function run() {
     const h = await liveScanWith(undefined);
     assert.strictEqual(notesIn(h).length, 0, 'no field => no note element at all');
 
-    const parsed = JSON.parse(h.sandbox.localStorage.getItem('cu_scanner_result'));
+    const parsed = JSON.parse(h.sandbox.localStorage.getItem('drspeed_aias_result'));
     assert.ok(!('kept_protection_summary' in parsed),
       'an absent field must persist as ABSENT, never as null/0 — the restore gates on presence');
 
@@ -189,10 +189,10 @@ async function run() {
     const read = (p) => fs.readFileSync(path.join(__dirname, '..', '..', 'admin', 'js', p), 'utf8');
     for (const name of ['scanner.js', 'menu-badge.js']) {
       const src = read(name);
-      const idx = src.indexOf("localStorage.setItem('cu_scanner_result'") >= 0
-        ? src.indexOf("localStorage.setItem('cu_scanner_result'")
-        : src.indexOf("localStorage.setItem( 'cu_scanner_result'");
-      assert.ok(idx > 0, name + ': could not locate the cu_scanner_result write');
+      const idx = src.indexOf("localStorage.setItem('drspeed_aias_result'") >= 0
+        ? src.indexOf("localStorage.setItem('drspeed_aias_result'")
+        : src.indexOf("localStorage.setItem( 'drspeed_aias_result'");
+      assert.ok(idx > 0, name + ': could not locate the drspeed_aias_result write');
       // Bound the slice by the literal's own closing delimiter, not a magic character
       // count — a fixed window silently stops covering the last key as the literal grows,
       // which is how this pin would rot into a false green.
@@ -226,18 +226,18 @@ async function run() {
   //
   // Both close the same way. createMenuBadgeHarness runs the SHIPPED file (so a syntax
   // error throws at load) and drives the real background path — heartbeat tick -> Railway
-  // status poll -> cu_scanner_build_result -> the localStorage write — so the assertion is
+  // status poll -> drspeed_aias_build_result -> the localStorage write — so the assertion is
   // on the payload that actually lands. A commented-out line cannot satisfy that.
   {
     const KEPT = { count: 2, vendors: ['Cloudflare Turnstile', 'reCAPTCHA'] };
     const mb = createMenuBadgeHarness({
       sessionStorage: {
-        cu_scanner_active_job: JSON.stringify({
+        drspeed_aias_active_job: JSON.stringify({
           job_id: 'job-bg', job_token: 'tok', railway_url: 'https://worker.example',
         }),
       },
       fetch: () => Promise.resolve({ json: () => Promise.resolve({ status: 'complete' }) }),
-      post: (data) => (data.action !== 'cu_scanner_build_result' ? { success: true, data: {} } : {
+      post: (data) => (data.action !== 'drspeed_aias_build_result' ? { success: true, data: {} } : {
         success: true,
         data: {
           safe_count: 1, aggressive_count: 0, can_push: true, total_pages: 2, scan_id: 'scan-bg',
@@ -247,15 +247,15 @@ async function run() {
       }),
     });
 
-    mb.tick({ aias_badge: 'green' });
+    mb.tick({ drspeed_aias_badge: 'green' });
     await flush();
 
-    assert.ok(mb.posts.some((p) => p.action === 'cu_scanner_build_result'),
+    assert.ok(mb.posts.some((p) => p.action === 'drspeed_aias_build_result'),
       'the tick really reached the build_result call (guard the guard — a harness that never'
       + ' fired would make every assertion below vacuous)');
 
-    const raw = mb.sandbox.localStorage.getItem('cu_scanner_result');
-    assert.ok(raw, 'the background writer persisted a cu_scanner_result entry');
+    const raw = mb.sandbox.localStorage.getItem('drspeed_aias_result');
+    assert.ok(raw, 'the background writer persisted a drspeed_aias_result entry');
     const blob = JSON.parse(raw);
     assert.deepStrictEqual(blob.kept_protection_summary, KEPT,
       'menu-badge.js carries kept_protection_summary through to localStorage — deleted,'
@@ -268,7 +268,7 @@ async function run() {
 
     // And what it wrote must restore into a rendered note — that AAS-return path is the
     // entire reason the background writer carries the field at all.
-    const reloaded = createHarness({ localStorage: { cu_scanner_result: raw } });
+    const reloaded = createHarness({ localStorage: { drspeed_aias_result: raw } });
     const restored = notesIn(reloaded);
     assert.strictEqual(restored.length, 1, 'the background-written blob restores the note on AAS-return');
     assert.strictEqual(restored[0].textContent,

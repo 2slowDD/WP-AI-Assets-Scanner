@@ -2,7 +2,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/2slowDD/WP-AI-Assets-Scanner/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/2slowDD/WP-AI-Assets-Scanner/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/LICENSE-GPLv2%2B-blue?style=for-the-badge)](LICENSE)
-![Version](https://img.shields.io/badge/VERSION-1.9.3-007cba?style=for-the-badge)
+![Version](https://img.shields.io/badge/VERSION-1.9.4-007cba?style=for-the-badge)
 ![WordPress](https://img.shields.io/badge/WORDPRESS-6.2%2B-21759b?style=for-the-badge)
 ![PHP](https://img.shields.io/badge/PHP-8.0%2B-777bb4?style=for-the-badge)
 
@@ -26,7 +26,7 @@ Nothing is sent to wpservice.pro until an administrator saves an API key or clic
 
 ## Switching from the wpservice.pro edition (1.8.9 and earlier)
 
-The WordPress.org edition lives in the folder `dr-speed-ai-assets-scanner`, so WordPress treats it as a separate plugin and the old private updater cannot move a site across. On each site: export the scan history if you want to keep it, **deactivate** the old plugin, install and activate the new one (the API key and settings carry over because the option names are unchanged), then remove `wp-content/plugins/ai-assets-scanner` by FTP. Do not use the Plugins-screen **Delete** link on the old copy: its uninstall routine deletes the scanner secret, the worker address and the scan history that the new plugin is now using.
+The WordPress.org edition lives in the folder `dr-speed-ai-assets-scanner`, so WordPress treats it as a separate plugin and the old private updater cannot move a site across. On each site: export the scan history if you want to keep it, **deactivate** the old plugin, install and activate the new one (the API key, settings and scan history carry over: on first load 1.9.4 moves them from the old `cu_scanner_` / `aias_` names to `drspeed_aias_`), then remove `wp-content/plugins/ai-assets-scanner` by FTP. Do not use the Plugins-screen **Delete** link on the old copy: its uninstall routine deletes the scanner secret, the worker address and the scan history that the new plugin is now using.
 
 ## Requirements
 

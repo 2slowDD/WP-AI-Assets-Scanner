@@ -1,7 +1,7 @@
 <?php
 use PHPUnit\Framework\TestCase;
-use CUScanner\Cdn\Registry;
-use CUScanner\Cdn\AdapterInterface;
+use DrSpeedAIAS\Cdn\Registry;
+use DrSpeedAIAS\Cdn\AdapterInterface;
 
 final class CdnRegistryTest extends TestCase {
     public function test_detect_returns_matching_adapter(): void {

@@ -10,15 +10,15 @@
 // instantiated with `new` inside the method — no injection seam.  We assert at the
 // underlying WP function layer:
 //   release_credits  → wp_remote_post to /credits/release
-//   ScanHistory      → update_option on cu_scanner_history
+//   ScanHistory      → update_option on drspeed_aias_history
 //   cancel success   → wp_send_json_success receives ['pages_completed' => N]
 // Any branch that genuinely cannot be asserted here (e.g. job_token never sent to wire
 // in the fallback path when the method simply skips) is documented inline as deferred to
 // AC-R2-4 (handle_failure $state live) / AC-R2-2 (user_cancel single-writer live).
 
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Admin\ScannerAjax;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -66,7 +66,7 @@ class R2G4BillingCarveoutTest extends TestCase {
     // Test 1: handle_failure + !$state → release_credits IS called
     //
     // Verifies the MANDATORY-unchanged branch: when submit_job never ran
-    // (no cu_scanner_job transient, only a pending token), AAS must release
+    // (no drspeed_aias_job transient, only a pending token), AAS must release
     // the pending reservation or the account strands (lockout).
     // -------------------------------------------------------------------------
 
@@ -74,18 +74,18 @@ class R2G4BillingCarveoutTest extends TestCase {
         $this->mockCheck();
         WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 11 );
 
-        // No cu_scanner_job transient — submit_job never ran.
+        // No drspeed_aias_job transient — submit_job never ran.
         WP_Mock::userFunction( 'get_transient' )
-            ->with( 'cu_scanner_job_11' )
+            ->with( 'drspeed_aias_job_11' )
             ->andReturn( false );
 
         // Pending token exists.
         WP_Mock::userFunction( 'get_transient' )
-            ->with( 'cu_scanner_pending_token_11' )
+            ->with( 'drspeed_aias_pending_token_11' )
             ->andReturn( 'pending-tok-abc' );
 
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_api_key', '' )
+            ->with( 'drspeed_aias_api_key', '' )
             ->andReturn( 'test-api-key' );
 
         WP_Mock::userFunction( 'get_home_url' )->andReturn( 'https://example.com' );
@@ -109,7 +109,7 @@ class R2G4BillingCarveoutTest extends TestCase {
         WP_Mock::userFunction( 'wp_remote_retrieve_body' )->andReturn( '{}' );
 
         WP_Mock::userFunction( 'delete_transient' )
-            ->with( 'cu_scanner_pending_token_11' )
+            ->with( 'drspeed_aias_pending_token_11' )
             ->once();
 
         // BypassManager::delete_all_tokens calls get_option + update_option — allow freely.
@@ -136,9 +136,9 @@ class R2G4BillingCarveoutTest extends TestCase {
     //
     // Assertion strategy:
     //   • wp_remote_post never() — proves release_credits does not fire.
-    //   • update_option never() with cu_scanner_history — proves ScanHistory not written.
-    //     (ScanHistory::update_status reads get_option('cu_scanner_history') then calls
-    //      update_option('cu_scanner_history', ...) — the update_option call is the write.)
+    //   • update_option never() with drspeed_aias_history — proves ScanHistory not written.
+    //     (ScanHistory::update_status reads get_option('drspeed_aias_history') then calls
+    //      update_option('drspeed_aias_history', ...) — the update_option call is the write.)
     //   Residual: confirms R1 owns the wire-level release; deferred to AC-R2-4 live bake.
     // -------------------------------------------------------------------------
 
@@ -146,9 +146,9 @@ class R2G4BillingCarveoutTest extends TestCase {
         $this->mockCheck();
         WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 7 );
 
-        // cu_scanner_job transient is present — submit_job ran.
+        // drspeed_aias_job transient is present — submit_job ran.
         WP_Mock::userFunction( 'get_transient' )
-            ->with( 'cu_scanner_job_7' )
+            ->with( 'drspeed_aias_job_7' )
             ->andReturn( [
                 'job_id'    => 'job-r2g4',
                 'job_token' => 'tok-r2g4',
@@ -157,12 +157,12 @@ class R2G4BillingCarveoutTest extends TestCase {
         // wp_remote_post must never be called — no release_credits fire.
         WP_Mock::userFunction( 'wp_remote_post' )->never();
 
-        // update_option for cu_scanner_history must never be called — no ScanHistory write.
-        // Allow update_option for other keys (e.g. BypassManager) but not cu_scanner_history.
+        // update_option for drspeed_aias_history must never be called — no ScanHistory write.
+        // Allow update_option for other keys (e.g. BypassManager) but not drspeed_aias_history.
         WP_Mock::userFunction( 'update_option' )
             ->andReturnUsing( function ( string $key ) {
                 $this->assertNotSame(
-                    'cu_scanner_history',
+                    'drspeed_aias_history',
                     $key,
                     'ScanHistory::update_status must NOT be called in the $state branch — do_build_result owns the partial record'
                 );
@@ -173,7 +173,7 @@ class R2G4BillingCarveoutTest extends TestCase {
         WP_Mock::userFunction( 'get_option' )->andReturn( [] );
 
         WP_Mock::userFunction( 'delete_transient' )
-            ->with( 'cu_scanner_job_7' )
+            ->with( 'drspeed_aias_job_7' )
             ->once();
 
         WP_Mock::userFunction( 'wp_send_json_success' )->once();
@@ -197,7 +197,7 @@ class R2G4BillingCarveoutTest extends TestCase {
         WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 3 );
 
         WP_Mock::userFunction( 'get_transient' )
-            ->with( 'cu_scanner_job_3' )
+            ->with( 'drspeed_aias_job_3' )
             ->andReturn( [
                 'job_id'      => 'job-cancel-test',
                 'job_token'   => 'tok-cancel-test',
@@ -205,7 +205,7 @@ class R2G4BillingCarveoutTest extends TestCase {
             ] );
 
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_api_key', '' )
+            ->with( 'drspeed_aias_api_key', '' )
             ->andReturn( 'test-api-key' );
 
         $this->mockWpParseUrl();
@@ -222,11 +222,11 @@ class R2G4BillingCarveoutTest extends TestCase {
         WP_Mock::userFunction( 'wp_remote_retrieve_body' )
             ->andReturn( json_encode( [ 'pages_completed' => 4 ] ) );
 
-        // update_option for cu_scanner_history must NEVER be called.
+        // update_option for drspeed_aias_history must NEVER be called.
         WP_Mock::userFunction( 'update_option' )
             ->andReturnUsing( function ( string $key ) {
                 $this->assertNotSame(
-                    'cu_scanner_history',
+                    'drspeed_aias_history',
                     $key,
                     'cancel_job must NOT write a ScanHistory record — do_build_result owns the user_cancel partial record'
                 );
@@ -237,7 +237,7 @@ class R2G4BillingCarveoutTest extends TestCase {
         WP_Mock::userFunction( 'get_option' )->andReturn( [] );
 
         WP_Mock::userFunction( 'delete_transient' )
-            ->with( 'cu_scanner_job_3' )
+            ->with( 'drspeed_aias_job_3' )
             ->once();
 
         // Success payload must include pages_completed = 4.

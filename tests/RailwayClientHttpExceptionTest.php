@@ -1,8 +1,8 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Api\RailwayClient;
-use CUScanner\Api\HttpException;
+use DrSpeedAIAS\Api\RailwayClient;
+use DrSpeedAIAS\Api\HttpException;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 

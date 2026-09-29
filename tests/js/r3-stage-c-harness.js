@@ -224,7 +224,7 @@ function createHarness(opts = {}) {
    'cu-rescan-noopt-button',
    'cu-cu-status-title', 'cu-cu-status-copy', 'cu-cu-settings-link',
    'cu-next-step-title', 'cu-next-step-copy',
-   'cu-result-url-list', 'cu-scanner-app', 'cu-sonar-anim', 'cu-step-label',
+   'cu-result-url-list', 'drspeed-aias-app', 'cu-sonar-anim', 'cu-step-label',
    'cu-target-stack-notice', 'cu-url-list', 'cu-url-list-area', 'cu-url-next',
    'cu-url-prev', 'cu-paused-banner', 'cu-paused-countdown', 'cu-paused-stopkeep',
    'cu-live-pager', 'cu-live-prev', 'cu-live-next', 'cu-live-page-label',
@@ -291,7 +291,7 @@ function createHarness(opts = {}) {
     },
     sessionStorage: makeStorage(opts.sessionStorage),
     localStorage: makeStorage(opts.localStorage),
-    cuScanner: opts.cuScanner || { ajaxUrl: '', nonce: 'n', siteUrl: 's', outbox: { state: 'none' } },
+    drspeedAias: opts.drspeedAias || { ajaxUrl: '', nonce: 'n', siteUrl: 's', outbox: { state: 'none' } },
     fetch: opts.fetch || (() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) })),  // benign default: detectPlugins() fires fetch on load; a reject here becomes a fatal unhandled rejection (node>=20) after the test's OK.
     setTimeout: (fn, ms) => { const t = { fn, ms, type: 'timeout', cleared: false }; timers.push(t); return t; },
     clearTimeout: (t) => { if (t) t.cleared = true; },
@@ -331,17 +331,17 @@ function makeStorage(seed) {
   };
 }
 
-// admin/js/menu-badge.js is the BACKGROUND-completion writer for cu_scanner_result: a scan
+// admin/js/menu-badge.js is the BACKGROUND-completion writer for drspeed_aias_result: a scan
 // that finishes while the operator is on another wp-admin page never runs scanner.js's
 // writer at all. Nothing in this suite used to PARSE that file — it was only ever read as
 // source TEXT by pin regexes — so a syntax error in it shipped green through every JS test,
 // and commenting a pinned line out still satisfied its pin (P17: "a call sitting in a
 // comment"). This runs the real file instead: vm.runInContext PARSES it, so a syntax error
 // throws here, and `tick()` drives the shipped heartbeat handler through the Railway status
-// poll and cu_scanner_build_result to the localStorage write, so tests can assert the
+// poll and drspeed_aias_build_result to the localStorage write, so tests can assert the
 // payload the production path actually emits.
 //
-// opts: { sessionStorage, localStorage, fetch, post(data) -> response, aiasMenuBadgeData }
+// opts: { sessionStorage, localStorage, fetch, post(data) -> response, drspeedAiasMenuBadgeData }
 function createMenuBadgeHarness(opts = {}) {
   const handlers = {};
   const posts = [];
@@ -369,7 +369,7 @@ function createMenuBadgeHarness(opts = {}) {
     // test that did not ask for it should not have it running underneath.
     setTimeout: (fn, ms) => { timers.push({ fn, ms, type: 'timeout' }); return timers.length; },
     setInterval: (fn, ms) => { timers.push({ fn, ms, type: 'interval' }); return timers.length; },
-    aiasMenuBadgeData: ('aiasMenuBadgeData' in opts) ? opts.aiasMenuBadgeData : { ajaxurl: '/admin-ajax.php', nonce: 'n' },
+    drspeedAiasMenuBadgeData: ('drspeedAiasMenuBadgeData' in opts) ? opts.drspeedAiasMenuBadgeData : { ajaxurl: '/admin-ajax.php', nonce: 'n' },
   };
   sandbox.window = sandbox; sandbox.globalThis = sandbox;
   const code = fs.readFileSync(path.join(__dirname, '../../admin/js/menu-badge.js'), 'utf8');

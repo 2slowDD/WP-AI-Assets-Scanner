@@ -1,5 +1,5 @@
 <?php
-namespace CUScanner\Scanner;
+namespace DrSpeedAIAS\Scanner;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -12,7 +12,7 @@ defined( 'ABSPATH' ) || exit;
  * Same-site admin endpoint — uses `manage_options` capability, not bearer.
  */
 class RestPreflight {
-    public const NS    = 'cu-scanner/v1';
+    public const NS    = 'drspeed-aias/v1';
     public const ROUTE = '/preflight';
 
     public static function register_routes(): void {

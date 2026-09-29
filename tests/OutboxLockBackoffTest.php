@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\Outbox;
+use DrSpeedAIAS\Scanner\Outbox;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 

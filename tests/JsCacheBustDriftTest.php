@@ -3,7 +3,7 @@
 //
 // THE BUG THIS EXISTS FOR, measured: b743c1c bumped the plugin to 1.7.94b, then ELEVEN more
 // commits landed on origin/main — three of them user-visible — with no further bump. Every
-// admin JS file is enqueued at ?ver=AIAS_VERSION, so two builds both calling themselves
+// admin JS file is enqueued at ?ver=DRSPEED_AIAS_VERSION, so two builds both calling themselves
 // "1.7.94b" differed visibly in the browser and WordPress could offer no update between them.
 // Only the operator noticing caught it, and it cost a full diagnostic cycle.
 //
@@ -36,7 +36,7 @@ final class JsCacheBustDriftTest extends TestCase {
 	 *
 	 * ⚠️ Covers admin/css TOO, not just admin/js. The first version of this guard watched only
 	 * `admin/js/*.js` — but `class-admin-pages.php:36` enqueues the stylesheet at the SAME
-	 * `?ver=AIAS_VERSION`, so a CSS-only change could ship with nothing demanding a bump.
+	 * `?ver=DRSPEED_AIAS_VERSION`, so a CSS-only change could ship with nothing demanding a bump.
 	 * That is the identical drift class this file exists to close, one directory over, and it was
 	 * found the day after shipping by a CSS-only fix that the guard let through in silence.
 	 *
@@ -109,6 +109,9 @@ final class JsCacheBustDriftTest extends TestCase {
 		'1.9.2' => '8a60ce8dab58894e1c898fa64fc75b01a0517551362543be4e5f12302060cb77',
 		// 1.9.3 — scanner.js offers to open Settings when the scan has no usable API key.
 		'1.9.3' => '20ccaf4161de10ec90b1ef7a6043d1dfc4dd5572f5f7579668ee381e4b6ad4fa',
+		// 1.9.4 — WordPress.org prefix review: localized globals, AJAX actions, handles and
+		// page slugs renamed to drspeed_aias / drspeedAias / drspeed-aias.
+		'1.9.4' => '99101a73b91e2315b224ba35a338ec0494737836e1b1d2f84a2506ccd2834835',
 	);
 
 	/**
@@ -162,6 +165,8 @@ final class JsCacheBustDriftTest extends TestCase {
 		'1.0.11.12' => 'd149099aa416d95eb650bfda39bcd068daf846fb889237e6db0fbde940e14ad2',
 		// No usable API key: the reserve error carries settings_url and the scanner offers to open Settings.
 		'1.0.11.13' => 'a6e9bae3aadef7d01101caebe6dfde076fbfb8aeb7d471a24c18ef9bdc5f43e3',
+		// Prefix rename (drspeedAias globals, drspeed_aias_ AJAX actions).
+		'1.0.11.14' => 'd9a35b1982092d488db391ae2c584494be58f42453ba1d76c0180c9e0db3e9e2',
 	);
 
 	private function root(): string {
@@ -171,7 +176,7 @@ final class JsCacheBustDriftTest extends TestCase {
 	/**
 	 * The version as it appears in the plugin header SOURCE, not the constant.
 	 *
-	 * Load-bearing: tests/bootstrap.php defines AIAS_VERSION as '1.0.0', so a guard that
+	 * Load-bearing: tests/bootstrap.php defines DRSPEED_AIAS_VERSION as '1.0.0', so a guard that
 	 * read the constant would compare a fixture against itself and pass no matter what shipped.
 	 * That shadow is the reason the three-place lockstep was blind for as long as it was.
 	 */
@@ -184,8 +189,8 @@ final class JsCacheBustDriftTest extends TestCase {
 
 	private function asset_version_from_source(): string {
 		$src = (string) file_get_contents( $this->root() . '/dr-speed-ai-assets-scanner.php' );
-		$this->assertSame( 1, preg_match( "/define\(\s*'AIAS_ASSET_VERSION',\s*'([^']+)'\s*\)/", $src, $m ),
-			'AIAS_ASSET_VERSION must be findable' );
+		$this->assertSame( 1, preg_match( "/define\(\s*'DRSPEED_AIAS_ASSET_VERSION',\s*'([^']+)'\s*\)/", $src, $m ),
+			'DRSPEED_AIAS_ASSET_VERSION must be findable' );
 		return $m[1];
 	}
 
@@ -229,9 +234,9 @@ final class JsCacheBustDriftTest extends TestCase {
 		$this->assertSame(
 			self::ADMIN_ASSETS_BY_CACHE_VERSION[ $version ],
 			$this->admin_js_fingerprint(),
-			"Admin assets changed but AIAS_ASSET_VERSION is still {$version}. Every admin "
+			"Admin assets changed but DRSPEED_AIAS_ASSET_VERSION is still {$version}. Every admin "
 			. 'asset is enqueued with that cache key, so shipping this would give two different '
-			. 'builds the same browser/CDN identity. Bump AIAS_ASSET_VERSION and ADD a row '
+			. 'builds the same browser/CDN identity. Bump DRSPEED_AIAS_ASSET_VERSION and ADD a row '
 			. 'here — do not rewrite an existing released fingerprint.'
 		);
 	}

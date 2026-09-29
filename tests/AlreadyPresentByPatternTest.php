@@ -1,8 +1,8 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
 use PHPUnit\Framework\TestCase;
-use CUScanner\Scanner\RulePusher;
+use DrSpeedAIAS\Scanner\RulePusher;
 
 /**
  * Test double standing in for CodeUnloader\Core\RuleRepository.

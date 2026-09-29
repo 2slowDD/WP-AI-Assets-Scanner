@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\EventEmitter;
+use DrSpeedAIAS\Scanner\EventEmitter;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -20,17 +20,17 @@ class EventEmitterTest extends TestCase {
 
     public function test_emit_appends_to_local_queue(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_pending_events', [] )
+            ->with( 'drspeed_aias_pending_events', [] )
             ->andReturn( [] );
         $captured = null;
         WP_Mock::userFunction( 'update_option' )
-            ->with( 'aias_pending_events', \Mockery::on( function ( $value ) use ( &$captured ) {
+            ->with( 'drspeed_aias_pending_events', \Mockery::on( function ( $value ) use ( &$captured ) {
                 $captured = $value;
                 return true;
             } ), false )
             ->once();
         WP_Mock::userFunction( 'wp_next_scheduled' )
-            ->with( 'aias_event_emitter_flush' )
+            ->with( 'drspeed_aias_event_emitter_flush' )
             ->andReturn( false );
         WP_Mock::userFunction( 'wp_schedule_single_event' )->once();
 
@@ -47,7 +47,7 @@ class EventEmitterTest extends TestCase {
         WP_Mock::userFunction( 'get_option' )->andReturn( [] );
         WP_Mock::userFunction( 'update_option' )->once();
         WP_Mock::userFunction( 'wp_next_scheduled' )
-            ->with( 'aias_event_emitter_flush' )
+            ->with( 'drspeed_aias_event_emitter_flush' )
             ->andReturn( time() + 1 );  // already scheduled
         WP_Mock::userFunction( 'wp_schedule_single_event' )->never();
 
@@ -69,13 +69,13 @@ class EventEmitterTest extends TestCase {
             ];
         }
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_pending_events', [] )
+            ->with( 'drspeed_aias_pending_events', [] )
             ->andReturn( $existing );
         WP_Mock::userFunction( 'get_transient' )
-            ->with( 'aias_event_overflow_warned' )
+            ->with( 'drspeed_aias_event_overflow_warned' )
             ->andReturn( false );  // no recent overflow warned
         WP_Mock::userFunction( 'set_transient' )
-            ->with( 'aias_event_overflow_warned', \Mockery::any(), 60 )
+            ->with( 'drspeed_aias_event_overflow_warned', \Mockery::any(), 60 )
             ->once();
         $captured = null;
         WP_Mock::userFunction( 'update_option' )
@@ -109,7 +109,7 @@ class EventEmitterTest extends TestCase {
         WP_Mock::userFunction( 'get_option' )->andReturn( $existing );
         // get_transient returns recent overflow (within 60s)
         WP_Mock::userFunction( 'get_transient' )
-            ->with( 'aias_event_overflow_warned' )
+            ->with( 'drspeed_aias_event_overflow_warned' )
             ->andReturn( time() - 10 );
         WP_Mock::userFunction( 'set_transient' )->never();  // not re-warned
         $captured = null;
@@ -130,7 +130,7 @@ class EventEmitterTest extends TestCase {
 
     public function test_flush_returns_zero_when_queue_empty(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_pending_events', [] )
+            ->with( 'drspeed_aias_pending_events', [] )
             ->andReturn( [] );
         $sent = EventEmitter::flush();
         $this->assertSame( 0, $sent );
@@ -138,7 +138,7 @@ class EventEmitterTest extends TestCase {
 
     public function test_flush_drains_queue_when_saas_accepts(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_pending_events', [] )
+            ->with( 'drspeed_aias_pending_events', [] )
             ->andReturn( [
                 [
                     'name' => 'scan_request_received', 'category' => 'operational',
@@ -147,7 +147,7 @@ class EventEmitterTest extends TestCase {
                 ],
             ] );
         WP_Mock::userFunction( 'update_option' )
-            ->with( 'aias_pending_events', [], false )
+            ->with( 'drspeed_aias_pending_events', [], false )
             ->once();
 
         $stub = new class {
@@ -179,7 +179,7 @@ class EventEmitterTest extends TestCase {
                 return true;
             } );
         WP_Mock::userFunction( 'wp_schedule_single_event' )
-            ->with( \Mockery::any(), 'aias_event_emitter_flush' )
+            ->with( \Mockery::any(), 'drspeed_aias_event_emitter_flush' )
             ->once();
 
         $stub = new class {

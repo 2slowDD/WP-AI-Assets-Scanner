@@ -1,6 +1,6 @@
 <?php
 use PHPUnit\Framework\TestCase;
-use CUScanner\Cdn\GenericAdapter;
+use DrSpeedAIAS\Cdn\GenericAdapter;
 
 final class GenericAdapterTest extends TestCase {
 

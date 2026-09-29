@@ -26,7 +26,7 @@ final class ScanStatusKeptBreakdownTest extends TestCase {
 	}
 
 	private function row( array $o ): array {
-		return AIAS_Scan_Status::build_pages( [ $this->page( $o ) ], [] )[0];
+		return DRSPEED_AIAS_Scan_Status::build_pages( [ $this->page( $o ) ], [] )[0];
 	}
 
 	/** The key must exist on EVERY row — an absent key is a chip with no tooltip, silently. */

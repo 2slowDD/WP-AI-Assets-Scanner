@@ -1,9 +1,9 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\OptimizerBypassOrchestrator;
-use CUScanner\Scanner\OptimizerState;
-use CUScanner\Scanner\Strategies\AbstractOptimizerBypass;
+use DrSpeedAIAS\Scanner\OptimizerBypassOrchestrator;
+use DrSpeedAIAS\Scanner\OptimizerState;
+use DrSpeedAIAS\Scanner\Strategies\AbstractOptimizerBypass;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -74,8 +74,8 @@ class OptimizerBypassOrchestratorTest extends TestCase {
         $orchestrator->begin( 'abcdef0123456789', 600 );
 
         $this->assertTrue( $a->disabled );
-        $this->assertArrayHasKey( 'aias_optimizer_state', $this->option_store );
-        $state = $this->option_store['aias_optimizer_state'];
+        $this->assertArrayHasKey( 'drspeed_aias_optimizer_state', $this->option_store );
+        $state = $this->option_store['drspeed_aias_optimizer_state'];
         $this->assertSame( 'abcdef0123456789', $state['scan_id'] );
         $this->assertArrayHasKey( 'flying_press', $state['snapshots'] );
         $this->assertSame( [ '_marker' => 'flying_press' ], $state['snapshots']['flying_press'] );
@@ -91,7 +91,7 @@ class OptimizerBypassOrchestratorTest extends TestCase {
 
         $this->assertTrue( $a->restored );
         $this->assertTrue( $b->restored );
-        $this->assertArrayNotHasKey( 'aias_optimizer_state', $this->option_store );
+        $this->assertArrayNotHasKey( 'drspeed_aias_optimizer_state', $this->option_store );
     }
 
     public function test_partial_disable_failure_rolls_back_atomically(): void {
@@ -110,7 +110,7 @@ class OptimizerBypassOrchestratorTest extends TestCase {
         $this->assertTrue( $a->disabled, 'a was disabled before b failed' );
         $this->assertTrue( $a->restored, 'a must be rolled back on failure' );
         $this->assertFalse( $c->disabled, 'c never reached' );
-        $this->assertArrayNotHasKey( 'aias_optimizer_state', $this->option_store,
+        $this->assertArrayNotHasKey( 'drspeed_aias_optimizer_state', $this->option_store,
             'state must not be persisted when disable failed' );
     }
 
@@ -125,7 +125,7 @@ class OptimizerBypassOrchestratorTest extends TestCase {
     public function test_complete_with_loaded_state_uses_provided_state(): void {
         $a = $this->make_strategy( 'a' );
         // Set state directly with marker payload
-        $this->option_store['aias_optimizer_state'] = [
+        $this->option_store['drspeed_aias_optimizer_state'] = [
             'scan_id' => 'abcdef0123456789', 'created_at' => time(),
             'expires_at' => time() + 100,
             'snapshots' => [ 'a' => [ '_external' => true ] ],
@@ -133,13 +133,13 @@ class OptimizerBypassOrchestratorTest extends TestCase {
         $orchestrator = new OptimizerBypassOrchestrator( [ $a ] );
 
         $orchestrator->complete_with_loaded_state(
-            $this->option_store['aias_optimizer_state'],
+            $this->option_store['drspeed_aias_optimizer_state'],
             'stale_state'
         );
 
         $this->assertTrue( $a->restored );
         $this->assertSame( [ '_external' => true ], $a->restored_with );
-        $this->assertArrayNotHasKey( 'aias_optimizer_state', $this->option_store );
+        $this->assertArrayNotHasKey( 'drspeed_aias_optimizer_state', $this->option_store );
     }
 
     /**
@@ -152,7 +152,7 @@ class OptimizerBypassOrchestratorTest extends TestCase {
         WP_Mock::userFunction( 'is_plugin_active' )
             ->andReturnUsing( fn( $f ) => $f === 'flying-press/flying-press.php' );
 
-        $orchestrator = \CUScanner\Scanner\OptimizerBypassOrchestrator::build_default_orchestrator();
+        $orchestrator = \DrSpeedAIAS\Scanner\OptimizerBypassOrchestrator::build_default_orchestrator();
 
         $rp = new \ReflectionClass( $orchestrator );
         $prop = $rp->getProperty( 'strategies' );
@@ -169,7 +169,7 @@ class OptimizerBypassOrchestratorTest extends TestCase {
     public function test_refuse_to_start_when_state_is_orphaned(): void {
         $a = $this->make_strategy( 'a' );
         // Inject orphaned state
-        $this->option_store['aias_optimizer_state'] = [
+        $this->option_store['drspeed_aias_optimizer_state'] = [
             'scan_id' => 'old-scan', 'created_at' => time() - 1000,
             'expires_at' => time() - 100,  // orphaned
             'snapshots' => [ 'a' => [ '_marker' => 'old' ] ],
@@ -185,7 +185,7 @@ class OptimizerBypassOrchestratorTest extends TestCase {
 
         $this->assertTrue( $a->restored, 'self-heal restored the orphaned state' );
         $this->assertSame( [ '_marker' => 'old' ], $a->restored_with );
-        $this->assertArrayNotHasKey( 'aias_optimizer_state', $this->option_store,
+        $this->assertArrayNotHasKey( 'drspeed_aias_optimizer_state', $this->option_store,
             'orphaned state cleared after self-heal' );
     }
 }

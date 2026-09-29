@@ -1,17 +1,17 @@
 /**
  * AAS 1.4.3 — Menu badge dynamic update via WP Heartbeat.
- * Server (CUScanner\MenuBadge::filter_heartbeat) returns {aias_badge: 'green'|'red'|null}.
+ * Server (DrSpeedAIAS\MenuBadge::filter_heartbeat) returns {drspeed_aias_badge: 'green'|'red'|null}.
  * This script syncs the DOM badge node accordingly on every heartbeat-tick.
  */
 (function ($) {
     'use strict';
 
     function findMenuLink() {
-        return document.querySelector('#toplevel_page_cu-scanner > a.menu-top');
+        return document.querySelector('#toplevel_page_drspeed-aias > a.menu-top');
     }
 
     function findBadge() {
-        return document.querySelector('#toplevel_page_cu-scanner .aias-menu-badge');
+        return document.querySelector('#toplevel_page_drspeed-aias .drspeed-aias-menu-badge');
     }
 
     function applyState(state) {
@@ -28,7 +28,7 @@
         }
 
         // state === 'green' || 'red'
-        var cls = 'aias-menu-badge aias-menu-badge--' + state;
+        var cls = 'drspeed-aias-menu-badge drspeed-aias-menu-badge--' + state;
         if (existing) {
             existing.className = cls;          // re-color in place
             existing.textContent = '!';
@@ -47,8 +47,8 @@
 
     // 1.4.4 — background active-job poller. Closes the architectural gap where
     // the 1.4.3 badge only appeared after the operator returned to AAS (because
-    // cu_scanner_history's status flip from 'queued' → 'complete' requires the
-    // client-side cu_scanner_build_result AJAX to fire, which only happens on
+    // drspeed_aias_history's status flip from 'queued' → 'complete' requires the
+    // client-side drspeed_aias_build_result AJAX to fire, which only happens on
     // the AAS scanner page). Now: on every Heartbeat tick (~15s), if there's
     // an active job in sessionStorage, this script polls Railway directly and
     // triggers the appropriate completion handler when the scan reaches a
@@ -58,22 +58,22 @@
     // tab that started the scan. Multi-tab support is a future iteration.
     //
     // Concurrency: if AAS tab is open and also polling via scanner.js, both
-    // can fire cu_scanner_build_result. The PHP handler is idempotent on
+    // can fire drspeed_aias_build_result. The PHP handler is idempotent on
     // already-'complete' records — second call just re-writes the same data.
 
     function maybeCheckActiveJob() {
-        var stored = sessionStorage.getItem('cu_scanner_active_job');
+        var stored = sessionStorage.getItem('drspeed_aias_active_job');
         if (!stored) return;
 
         var job;
         try {
             job = JSON.parse(stored);
         } catch (e) {
-            sessionStorage.removeItem('cu_scanner_active_job');
+            sessionStorage.removeItem('drspeed_aias_active_job');
             return;
         }
         if (!job || !job.job_id || !job.job_token || !job.railway_url) {
-            sessionStorage.removeItem('cu_scanner_active_job');
+            sessionStorage.removeItem('drspeed_aias_active_job');
             return;
         }
 
@@ -85,13 +85,13 @@
             .then(function (r) { return r.json(); })
             .then(function (data) { handleStatus(job, data); })
             .catch(function () {
-                if (!window.aiasMenuBadgeData) return;
-                $.post(window.aiasMenuBadgeData.ajaxurl, {
-                    action:    'cu_scanner_poll_status',
+                if (!window.drspeedAiasMenuBadgeData) return;
+                $.post(window.drspeedAiasMenuBadgeData.ajaxurl, {
+                    action:    'drspeed_aias_poll_status',
                     job_id:    job.job_id,
                     job_token: job.job_token,
                     from:      0,
-                    nonce:     window.aiasMenuBadgeData.nonce
+                    nonce:     window.drspeedAiasMenuBadgeData.nonce
                 }).then(function (res) {
                     if (res && res.success) {
                         handleStatus(job, res.data);
@@ -111,18 +111,18 @@
             triggerHandleKilled();
         } else if (data.status === 'cancelled_timeout') {
             // Terminal but no AAS-side action needed; just stop polling.
-            sessionStorage.removeItem('cu_scanner_active_job');
+            sessionStorage.removeItem('drspeed_aias_active_job');
         }
         // queued / in_progress / etc: no-op, next tick re-polls.
     }
 
     function triggerBuildResult(job) {
-        if (!window.aiasMenuBadgeData) return;
-        $.post(window.aiasMenuBadgeData.ajaxurl, {
-            action:    'cu_scanner_build_result',
+        if (!window.drspeedAiasMenuBadgeData) return;
+        $.post(window.drspeedAiasMenuBadgeData.ajaxurl, {
+            action:    'drspeed_aias_build_result',
             job_id:    job.job_id,
             job_token: job.job_token,
-            nonce:     window.aiasMenuBadgeData.nonce
+            nonce:     window.drspeedAiasMenuBadgeData.nonce
         }).then(function (res) {
             if (res && res.success && res.data) {
                 // Mirror scanner.js localStorage write so AAS-return shows
@@ -131,7 +131,7 @@
                 // a one-shot live-render concern and is intentionally skipped
                 // on background completion.
                 try {
-                    localStorage.setItem('cu_scanner_result', JSON.stringify({
+                    localStorage.setItem('drspeed_aias_result', JSON.stringify({
                         job_id:        job.job_id,
                         safe_count:    res.data.safe_count,
                         agg_count:     res.data.aggressive_count,
@@ -142,12 +142,12 @@
                         pages:         res.data.pages || [],
                         // Result-truth: this writer runs for BACKGROUND-completed scans.
                         // Omitting these here loses them on exactly the restore path the
-                        // whole aias_last_result machinery exists for.
+                        // whole drspeed_aias_last_result machinery exists for.
                         already_present:  ( 'already_present' in res.data ) ? res.data.already_present : null,
                         credits_refunded: res.data.credits_refunded,
                         cu_rules_active:  res.data.cu_rules_active,
                         // Same reason, same UNRENAMED name as scanner.js's writer and the
-                        // aias_last_result option. Absent (not zero) when nothing was kept.
+                        // drspeed_aias_last_result option. Absent (not zero) when nothing was kept.
                         kept_protection_summary: res.data.kept_protection_summary,
                         // FU-AAS-SYNC-SCOPE-LAST-SCAN — UNRENAMED, same as scanner.js's writer,
                         // the live payload and the PHP option. Without these, a background-completed
@@ -161,39 +161,39 @@
                     // still appears via the next Heartbeat tick.
                 }
             }
-            sessionStorage.removeItem('cu_scanner_active_job');
-            // Server-side cu_scanner_history is now 'complete'; next Heartbeat
-            // tick's filter_heartbeat returns aias_badge:'green' and applyState
+            sessionStorage.removeItem('drspeed_aias_active_job');
+            // Server-side drspeed_aias_history is now 'complete'; next Heartbeat
+            // tick's filter_heartbeat returns drspeed_aias_badge:'green' and applyState
             // injects the badge.
         });
     }
 
     function triggerHandleFailure() {
-        if (!window.aiasMenuBadgeData) return;
-        $.post(window.aiasMenuBadgeData.ajaxurl, {
-            action: 'cu_scanner_handle_failure',
-            nonce:  window.aiasMenuBadgeData.nonce
+        if (!window.drspeedAiasMenuBadgeData) return;
+        $.post(window.drspeedAiasMenuBadgeData.ajaxurl, {
+            action: 'drspeed_aias_handle_failure',
+            nonce:  window.drspeedAiasMenuBadgeData.nonce
         }).always(function () {
-            sessionStorage.removeItem('cu_scanner_active_job');
+            sessionStorage.removeItem('drspeed_aias_active_job');
         });
     }
 
     function triggerHandleKilled() {
-        if (!window.aiasMenuBadgeData) return;
-        $.post(window.aiasMenuBadgeData.ajaxurl, {
-            action: 'cu_scanner_handle_killed',
-            nonce:  window.aiasMenuBadgeData.nonce
+        if (!window.drspeedAiasMenuBadgeData) return;
+        $.post(window.drspeedAiasMenuBadgeData.ajaxurl, {
+            action: 'drspeed_aias_handle_killed',
+            nonce:  window.drspeedAiasMenuBadgeData.nonce
         }).always(function () {
-            sessionStorage.removeItem('cu_scanner_active_job');
+            sessionStorage.removeItem('drspeed_aias_active_job');
         });
     }
 
     $(document).on('heartbeat-tick', function (event, response) {
-        // Wire-shape: response.aias_badge is 'green' | 'red' | null.
+        // Wire-shape: response.drspeed_aias_badge is 'green' | 'red' | null.
         // hasOwnProperty distinguishes "key absent" (no MenuBadge installed) from
         // "key present, null" (MenuBadge says no badge).
-        if (response && Object.prototype.hasOwnProperty.call(response, 'aias_badge')) {
-            applyState(response.aias_badge);
+        if (response && Object.prototype.hasOwnProperty.call(response, 'drspeed_aias_badge')) {
+            applyState(response.drspeed_aias_badge);
         }
 
         // 1.4.4 — also check active-job state for background completion.
@@ -208,23 +208,23 @@
     // one admin page during the scan-end transition misses the state flip.
     //
     // This setInterval fires every 30s independent of operator navigation, hits
-    // the new cu_scanner_get_badge_state AJAX endpoint, and applies the
+    // the new drspeed_aias_get_badge_state AJAX endpoint, and applies the
     // returned badge state to the DOM. The endpoint internally drives the same
     // Railway poll → ScanHistory update path the admin_init poller uses, so
     // the badge appears within ~30s of scan completion regardless of where
     // the operator is in wp-admin.
     function pollBadgeState() {
-        if (!window.aiasMenuBadgeData) return;
-        $.post(window.aiasMenuBadgeData.ajaxurl, {
-            action: 'cu_scanner_get_badge_state',
-            nonce:  window.aiasMenuBadgeData.nonce
+        if (!window.drspeedAiasMenuBadgeData) return;
+        $.post(window.drspeedAiasMenuBadgeData.ajaxurl, {
+            action: 'drspeed_aias_get_badge_state',
+            nonce:  window.drspeedAiasMenuBadgeData.nonce
         }).then(function (res) {
             if (!res || !res.success || !res.data) return;
             // res.data.badge: 'green' | 'red' | null
             applyState(res.data.badge);
 
             // 1.4.11 — when the server returns a result snapshot (badge='green'
-            // and there's an unseen complete scan), populate cu_scanner_result
+            // and there's an unseen complete scan), populate drspeed_aias_result
             // in localStorage so scanner.js init at admin/js/scanner.js:1349
             // finds the result on AAS-return and restores Step 4. Idempotent:
             // only writes when localStorage is missing OR stores a different
@@ -232,13 +232,13 @@
             // itself on the AAS tab).
             if (res.data.result && res.data.result.job_id) {
                 try {
-                    var existing = localStorage.getItem('cu_scanner_result');
+                    var existing = localStorage.getItem('drspeed_aias_result');
                     var existingJob = null;
                     if (existing) {
                         try { existingJob = (JSON.parse(existing) || {}).job_id; } catch (_e) {}
                     }
                     if (existingJob !== res.data.result.job_id) {
-                        localStorage.setItem('cu_scanner_result', JSON.stringify(res.data.result));
+                        localStorage.setItem('drspeed_aias_result', JSON.stringify(res.data.result));
                     }
                 } catch (_storageErr) {
                     // localStorage quota or disabled — non-fatal; the badge

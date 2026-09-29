@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\RulePusher;
+use DrSpeedAIAS\Scanner\RulePusher;
 use WP_Mock\Tools\TestCase;
 
 // FakeRuleRepository is defined in SnapshotManagerTest.php.
@@ -354,7 +354,7 @@ class RulePusherTest extends TestCase {
     /** The real scanner-group names (r2 Major): taken from the builder, asserted to carry the em dash. */
     private function production_groups(): array {
         \WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( fn( $u, $c = -1 ) => parse_url( (string) $u, $c ) );
-        $groups = ( new \CUScanner\Scanner\CuJsonBuilder() )->build( [ [ 'url' => 'https://site.test/', 'status' => 'done', 'assets' => [] ] ], [] )['groups'];
+        $groups = ( new \DrSpeedAIAS\Scanner\CuJsonBuilder() )->build( [ [ 'url' => 'https://site.test/', 'status' => 'done', 'assets' => [] ] ], [] )['groups'];
         $this->assertStringContainsString( "\u{2014}", $groups[1]['name'], 'production group names carry an em dash (U+2014)' );
         return $groups;
     }

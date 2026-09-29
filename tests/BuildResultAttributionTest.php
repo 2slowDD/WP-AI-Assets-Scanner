@@ -1,8 +1,8 @@
 <?php
 // tests/BuildResultAttributionTest.php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Admin\ScannerAjax;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -81,10 +81,10 @@ class BuildResultAttributionTest extends TestCase {
 		// other option falls through to its default.
 		WP_Mock::userFunction( 'get_option' )->andReturnUsing(
 			function ( $k, $default = false ) {
-				if ( 'aias_railway_url' === $k ) {
+				if ( 'drspeed_aias_railway_url' === $k ) {
 					return 'https://cu-scanner-railway-production.up.railway.app';
 				}
-				if ( 'cu_scanner_api_key' === $k ) {
+				if ( 'drspeed_aias_api_key' === $k ) {
 					return 'api-key-123';
 				}
 				return $default;

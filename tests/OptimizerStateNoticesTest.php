@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\OptimizerStateNotices;
+use DrSpeedAIAS\Admin\OptimizerStateNotices;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -11,7 +11,7 @@ class OptimizerStateNoticesTest extends TestCase {
 
     public function test_render_banner_is_silent_when_no_state(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_optimizer_state', null )
+            ->with( 'drspeed_aias_optimizer_state', null )
             ->andReturn( null );
 
         ob_start();

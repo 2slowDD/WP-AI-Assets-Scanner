@@ -1,16 +1,16 @@
 <?php
-namespace CUScanner\Admin;
+namespace DrSpeedAIAS\Admin;
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-use CUScanner\Scanner\LastPushSyncUndo;
+use DrSpeedAIAS\Scanner\LastPushSyncUndo;
 
 class AdminPages {
     public function register(): void {
         add_action( 'admin_menu', [ $this, 'add_menus' ] );
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_assets' ] );
         add_action( 'admin_notices', [ $this, 'maybe_render_history_deleted_notice' ] );
-        ( new \CUScanner\MenuBadge() )->init();
+        ( new \DrSpeedAIAS\MenuBadge() )->init();
     }
 
     public function add_menus(): void {
@@ -20,71 +20,71 @@ class AdminPages {
         // it must stay in step with the plugin slug.
         add_menu_page(
             'Dr. Speed: AI Assets Scanner', 'Dr. Speed: AI Assets Scanner', 'manage_options',
-            'cu-scanner', [ $this, 'render_scanner' ],
+            'drspeed-aias', [ $this, 'render_scanner' ],
             $icon, 80
         );
         add_submenu_page(
-            'cu-scanner', 'Settings', 'Settings', 'manage_options',
-            'cu-scanner-settings', [ $this, 'render_settings' ]
+            'drspeed-aias', 'Settings', 'Settings', 'manage_options',
+            'drspeed-aias-settings', [ $this, 'render_settings' ]
         );
         add_submenu_page(
-            'cu-scanner', 'Scan History', 'Scan History', 'manage_options',
-            'cu-scanner-history', [ $this, 'render_history' ]
+            'drspeed-aias', 'Scan History', 'Scan History', 'manage_options',
+            'drspeed-aias-history', [ $this, 'render_history' ]
         );
     }
 
     public function enqueue_assets( string $hook ): void {
-        $pages = [ 'toplevel_page_cu-scanner', 'dr-speed-ai-assets-scanner_page_cu-scanner-settings', 'dr-speed-ai-assets-scanner_page_cu-scanner-history' ];
+        $pages = [ 'toplevel_page_drspeed-aias', 'dr-speed-ai-assets-scanner_page_drspeed-aias-settings', 'dr-speed-ai-assets-scanner_page_drspeed-aias-history' ];
         if ( ! in_array( $hook, $pages, true ) ) return;
-        wp_enqueue_style( 'cu-scanner-admin', AIAS_URL . 'admin/css/dr-speed-ai-assets-scanner-admin.css', [], AIAS_ASSET_VERSION );
-        if ( $hook === 'toplevel_page_cu-scanner' ) {
-            wp_enqueue_script( 'cu-scanner-scanner', AIAS_URL . 'admin/js/scanner.js', [], AIAS_ASSET_VERSION, true );
-            wp_localize_script( 'cu-scanner-scanner', 'cuScanner', [
+        wp_enqueue_style( 'drspeed-aias-admin', DRSPEED_AIAS_URL . 'admin/css/dr-speed-ai-assets-scanner-admin.css', [], DRSPEED_AIAS_ASSET_VERSION );
+        if ( $hook === 'toplevel_page_drspeed-aias' ) {
+            wp_enqueue_script( 'drspeed-aias-scanner', DRSPEED_AIAS_URL . 'admin/js/scanner.js', [], DRSPEED_AIAS_ASSET_VERSION, true );
+            wp_localize_script( 'drspeed-aias-scanner', 'drspeedAias', [
                 'ajaxUrl'          => admin_url( 'admin-ajax.php' ),
-                'nonce'            => wp_create_nonce( 'cu_scanner_nonce' ),
+                'nonce'            => wp_create_nonce( 'drspeed_aias_nonce' ),
                 'siteUrl'          => get_home_url(),
-                'outbox'           => \CUScanner\Scanner\Outbox::outbox_state_for_user( get_current_user_id() ),
+                'outbox'           => \DrSpeedAIAS\Scanner\Outbox::outbox_state_for_user( get_current_user_id() ),
                 'lastPushSyncUndo' => ( new LastPushSyncUndo() )->state_for_ui(),
             ] );
             // Subsystem D-4: nonce for AJAX banner-dismiss endpoint.
-            wp_localize_script( 'cu-scanner-scanner', 'aiasBannerL10n', [
-                'nonce' => wp_create_nonce( 'aias_dismiss_banner' ),
+            wp_localize_script( 'drspeed-aias-scanner', 'drspeedAiasBannerL10n', [
+                'nonce' => wp_create_nonce( 'drspeed_aias_dismiss_banner' ),
             ] );
 
             // FU-ANTIBLOCK-1/2 — single-source copy map (spec §3.1): plain text + separate
             // settings_url; scanner.js DOM-builds anchors. stack_names comes from the
             // CANONICAL map PluginDetector::stack_display_names() (FU-ANTIBLOCK-STACK-NAMES
             // drift-guard — consumer + reserved-row provenance documented there).
-            $copy_map                = \AIAS_Broken_Banner::export_copy_map();
-            $copy_map['stack_names'] = \CUScanner\Scanner\PluginDetector::stack_display_names();
-            wp_localize_script( 'cu-scanner-scanner', 'cuReasonCopy', $copy_map );
+            $copy_map                = \DRSPEED_AIAS_Broken_Banner::export_copy_map();
+            $copy_map['stack_names'] = \DrSpeedAIAS\Scanner\PluginDetector::stack_display_names();
+            wp_localize_script( 'drspeed-aias-scanner', 'drspeedAiasReasonCopy', $copy_map );
 
             // FU-ANTIBLOCK-2 — same-site pre-scan state (spec §3.4). detect_cached() is
             // zero-HTTP by contract (d-review M2) — never call detect() here.
-            wp_localize_script( 'cu-scanner-scanner', 'cuLocalStack', [
-                'cdn'              => ( new \CUScanner\Cdn\Detector() )->detect_cached(),
-                'acknowledged'     => ( new \CUScanner\Settings() )->get_acknowledged_cdn(),
-                'security_plugins' => \CUScanner\Scanner\PluginDetector::active_security_warn_ids(),
+            wp_localize_script( 'drspeed-aias-scanner', 'drspeedAiasLocalStack', [
+                'cdn'              => ( new \DrSpeedAIAS\Cdn\Detector() )->detect_cached(),
+                'acknowledged'     => ( new \DrSpeedAIAS\Settings() )->get_acknowledged_cdn(),
+                'security_plugins' => \DrSpeedAIAS\Scanner\PluginDetector::active_security_warn_ids(),
             ] );
         }
-        if ( $hook === 'dr-speed-ai-assets-scanner_page_cu-scanner-settings' ) {
-            wp_enqueue_script( 'cu-scanner-settings', AIAS_URL . 'admin/js/settings.js', [], AIAS_ASSET_VERSION, true );
-            wp_localize_script( 'cu-scanner-settings', 'cuScannerSettings', [
+        if ( $hook === 'dr-speed-ai-assets-scanner_page_drspeed-aias-settings' ) {
+            wp_enqueue_script( 'drspeed-aias-settings', DRSPEED_AIAS_URL . 'admin/js/settings.js', [], DRSPEED_AIAS_ASSET_VERSION, true );
+            wp_localize_script( 'drspeed-aias-settings', 'drspeedAiasSettings', [
                 'ajaxUrl' => admin_url( 'admin-ajax.php' ),
-                'nonce'   => wp_create_nonce( 'cu_scanner_settings_nonce' ),
+                'nonce'   => wp_create_nonce( 'drspeed_aias_settings_nonce' ),
             ] );
         }
-        if ( $hook === 'dr-speed-ai-assets-scanner_page_cu-scanner-history' ) {
+        if ( $hook === 'dr-speed-ai-assets-scanner_page_drspeed-aias-history' ) {
             wp_enqueue_script(
-                'cu-scanner-history',
-                AIAS_URL . 'admin/js/history.js',
+                'drspeed-aias-history',
+                DRSPEED_AIAS_URL . 'admin/js/history.js',
                 [ 'jquery' ],
-                AIAS_ASSET_VERSION,
+                DRSPEED_AIAS_ASSET_VERSION,
                 true
             );
-            wp_localize_script( 'cu-scanner-history', 'cuScannerHistory', [
+            wp_localize_script( 'drspeed-aias-history', 'drspeedAiasHistory', [
                 'ajaxUrl'       => admin_url( 'admin-ajax.php' ),
-                'nonce'         => wp_create_nonce( 'cu_scanner_nonce' ),
+                'nonce'         => wp_create_nonce( 'drspeed_aias_nonce' ),
                 'deleteWarning' => __(
                     "\xE2\x9A\xA0 This will permanently delete all scan history AND all stored scan JSON snapshots. Re-download links will stop working for old scans.\n\nDid you export a backup first?\n\nClick OK to delete everything, or Cancel to abort.",
                     'dr-speed-ai-assets-scanner'
@@ -95,14 +95,14 @@ class AdminPages {
 
     public function maybe_render_history_deleted_notice(): void {
         $screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
-        if ( ! $screen || $screen->id !== 'dr-speed-ai-assets-scanner_page_cu-scanner-history' ) {
+        if ( ! $screen || $screen->id !== 'dr-speed-ai-assets-scanner_page_drspeed-aias-history' ) {
             return;
         }
-        $count = get_transient( 'cu_scanner_history_deleted_notice' );
+        $count = get_transient( 'drspeed_aias_history_deleted_notice' );
         if ( $count === false ) {
             return;
         }
-        delete_transient( 'cu_scanner_history_deleted_notice' );
+        delete_transient( 'drspeed_aias_history_deleted_notice' );
         ?>
         <div class="notice notice-success is-dismissible">
             <p><?php
@@ -113,9 +113,9 @@ class AdminPages {
         <?php
     }
 
-    public function render_scanner(): void  { require AIAS_DIR . 'admin/views/scanner-page.php'; }
-    public function render_settings(): void { require AIAS_DIR . 'admin/views/settings-page.php'; }
-    public function render_history(): void  { require AIAS_DIR . 'admin/views/history-page.php'; }
+    public function render_scanner(): void  { require DRSPEED_AIAS_DIR . 'admin/views/scanner-page.php'; }
+    public function render_settings(): void { require DRSPEED_AIAS_DIR . 'admin/views/settings-page.php'; }
+    public function render_history(): void  { require DRSPEED_AIAS_DIR . 'admin/views/history-page.php'; }
 
     /**
      * Pure visibility predicate: show the CDN notice when a CDN is detected

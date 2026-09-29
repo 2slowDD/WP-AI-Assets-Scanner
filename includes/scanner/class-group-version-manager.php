@@ -1,5 +1,5 @@
 <?php
-namespace CUScanner\Scanner;
+namespace DrSpeedAIAS\Scanner;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -93,7 +93,7 @@ class GroupVersionManager {
 		// Rename and disable in one call — avoids a partial-failure window.
 		if ( $repo::update_group( (int) $base->id, [ 'name' => $new_name, 'enabled' => 0 ] ) === false ) {
 			return new \WP_Error(
-				'cu_scanner_version_failed',
+				'drspeed_aias_version_failed',
 				sprintf( 'Failed to rename and disable group "%s"', $base_name )
 			);
 		}

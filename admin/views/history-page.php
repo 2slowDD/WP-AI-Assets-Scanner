@@ -1,15 +1,15 @@
 <?php if ( ! defined( 'ABSPATH' ) ) exit; ?>
-<div class="wrap cu-admin-page" id="cu-scanner-history">
+<div class="wrap cu-admin-page" id="drspeed-aias-history">
 <h1 class="screen-reader-text">AI Assets Scanner history</h1>
 <h2 class="screen-reader-text cu-admin-notice-anchor">AI Assets Scanner notices</h2>
 <div class="cu-wrap">
 
     <div class="cu-header">
         <img class="cu-header-logo"
-             src="<?php echo esc_url( AIAS_URL . 'admin/images/dr-speed-ai-assets-scanner-logo.png' ); ?>"
+             src="<?php echo esc_url( DRSPEED_AIAS_URL . 'admin/images/dr-speed-ai-assets-scanner-logo.png' ); ?>"
              alt="AI Assets Scanner" />
         <div class="cu-header-text">
-            <h2>AI Assets Scanner <small class="cu-header-version">v<?php echo esc_html( AIAS_VERSION ); ?></small></h2>
+            <h2>AI Assets Scanner <small class="cu-header-version">v<?php echo esc_html( DRSPEED_AIAS_VERSION ); ?></small></h2>
             <span class="cu-step-label">Scan history</span>
         </div>
         <svg class="cu-header-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" width="36" height="36" aria-hidden="true">
@@ -25,7 +25,7 @@
     <main class="cu-history-body">
         <?php
         // phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Template file included within a class method; variables are local to method scope, not global.
-        $history = ( new CUScanner\ScanHistory() )->get_all();
+        $history = ( new DrSpeedAIAS\ScanHistory() )->get_all();
         $cu_total_scans = count( $history );
         $cu_total_pages = 0;
         $cu_total_credits = 0;
@@ -49,7 +49,7 @@
                 <span class="dashicons dashicons-chart-area" aria-hidden="true"></span>
                 <h2>No scans yet.</h2>
                 <p>Your completed scans, credit usage, and recommendation counts will appear here.</p>
-                <a class="button button-primary" href="?page=cu-scanner">Run your first scan</a>
+                <a class="button button-primary" href="?page=drspeed-aias">Run your first scan</a>
             </section>
         <?php else : ?>
             <section class="cu-history-table-card" aria-labelledby="cu-history-table-title">
@@ -75,6 +75,11 @@
                 <tbody>
                 <?php foreach ( $history as $record ) : ?>
                     <?php
+                    // A record written by an older or interrupted scan can miss fields; show blanks, never a PHP warning.
+                    $record = array_merge(
+                        [ 'created_at' => '', 'domain' => '', 'page_count' => 0, 'credits_used' => 0, 'safe_count' => 0, 'aggressive_count' => 0, 'status' => '', 'job_id' => '' ],
+                        is_array( $record ) ? $record : []
+                    );
                     $cu_status = (string) ( $record['status'] ?? '' );
                     $cu_status_classes = [ 'complete', 'partial', 'failed', 'cancelled', 'error' ];
                     $cu_status_modifier = in_array( $cu_status, $cu_status_classes, true ) ? $cu_status : 'unknown';
@@ -115,7 +120,7 @@
                             } ?></span></td>
                         <td>
                             <?php if ( in_array( $cu_status, [ 'complete', 'partial' ], true ) ) :
-                                $dl_url = admin_url( 'admin-ajax.php' ) . '?action=cu_scanner_download_json&job_id=' . rawurlencode( $record['job_id'] ) . '&nonce=' . wp_create_nonce( 'cu_scanner_nonce' );
+                                $dl_url = admin_url( 'admin-ajax.php' ) . '?action=drspeed_aias_download_json&job_id=' . rawurlencode( $record['job_id'] ) . '&nonce=' . wp_create_nonce( 'drspeed_aias_nonce' );
                             ?>
                                 <a href="<?php echo esc_url( $dl_url ); ?>" class="button button-small">Re-download</a>
                             <?php endif; ?>

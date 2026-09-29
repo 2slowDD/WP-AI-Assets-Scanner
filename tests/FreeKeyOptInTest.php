@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\SettingsAjax;
+use DrSpeedAIAS\Admin\SettingsAjax;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -51,7 +51,7 @@ final class FreeKeyOptInTest extends TestCase {
     }
 
     public function test_balance_refresh_makes_no_request_when_no_key_is_saved(): void {
-        WP_Mock::userFunction( 'get_option' )->with( 'cu_scanner_api_key', '' )->andReturn( '' );
+        WP_Mock::userFunction( 'get_option' )->with( 'drspeed_aias_api_key', '' )->andReturn( '' );
 
         try {
             ( new SettingsAjax() )->fetch_balance();
@@ -62,7 +62,7 @@ final class FreeKeyOptInTest extends TestCase {
     }
 
     public function test_opt_in_is_refused_when_a_key_is_already_saved(): void {
-        WP_Mock::userFunction( 'get_option' )->with( 'cu_scanner_api_key', '' )->andReturn( 'cusk_paid_key' );
+        WP_Mock::userFunction( 'get_option' )->with( 'drspeed_aias_api_key', '' )->andReturn( 'cusk_paid_key' );
 
         try {
             ( new SettingsAjax() )->request_free_key();
@@ -74,7 +74,7 @@ final class FreeKeyOptInTest extends TestCase {
 
     public function test_failure_message_names_the_real_cause(): void {
         WP_Mock::userFunction( 'sanitize_text_field' )->andReturnUsing( fn( $s ) => $s );
-        $http = fn( string $m, int $c ) => new \CUScanner\Api\HttpException( $m, $c );
+        $http = fn( string $m, int $c ) => new \DrSpeedAIAS\Api\HttpException( $m, $c );
 
         $rate = SettingsAjax::free_key_failure_message( $http( 'HTTP 429: Too many free key registration attempts. Try again later.', 429 ) );
         $this->assertStringContainsString( 'too many requests for this site in the last hour', $rate );
@@ -106,9 +106,9 @@ final class FreeKeyOptInTest extends TestCase {
         $src   = (string) file_get_contents( dirname( __DIR__ ) . '/admin/class-settings-ajax.php' );
         $start = strpos( $src, 'public function fetch_balance(): void' );
         $body  = substr( $src, $start, 3000 );
-        $guard = strpos( $body, "false === get_transient( 'aias_claim_checked' )" );
+        $guard = strpos( $body, "false === get_transient( 'drspeed_aias_claim_checked' )" );
         $this->assertNotFalse( $guard, 'the claim call must be gated by the once-a-minute transient' );
         $this->assertLessThan( strpos( $body, '->claim_paid_key(' ), $guard );
-        $this->assertStringContainsString( "set_transient( 'aias_claim_checked', 1, MINUTE_IN_SECONDS )", $body );
+        $this->assertStringContainsString( "set_transient( 'drspeed_aias_claim_checked', 1, MINUTE_IN_SECONDS )", $body );
     }
 }

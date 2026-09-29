@@ -1,11 +1,11 @@
 <?php
-namespace CUScanner;
+namespace DrSpeedAIAS;
 
 defined( 'ABSPATH' ) || exit;
 
 class ScanHistory {
-    private const HISTORY_OPTION    = 'cu_scanner_history';
-    private const JSON_OPTION_PREFIX = 'cu_scanner_json_';
+    private const HISTORY_OPTION    = 'drspeed_aias_history';
+    private const JSON_OPTION_PREFIX = 'drspeed_aias_json_';
     private const MAX_RECORDS       = 10;
 
     public function create_record( string $job_id, string $domain, int $page_count, string $status ): void {

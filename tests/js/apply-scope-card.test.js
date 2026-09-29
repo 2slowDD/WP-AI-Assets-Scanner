@@ -52,7 +52,7 @@ function testMixedHostRestore() {
   // The blob W1 writes for MIXED_NONE has NO has_internal_rules (pre-existing); the flag must still derive false.
   const blob = { job_id: 'job1', safe_count: 0, agg_count: 2, can_push: true, external_only: false, total_pages: 2, pages: [], scan_id: 'scan1',
                  already_present: null, credits_refunded: null, cu_rules_active: false, apply_safe_count: 0, apply_aggressive_count: 0 };
-  const h = createHarness({ localStorage: { cu_scanner_result: JSON.stringify(blob) } });
+  const h = createHarness({ localStorage: { drspeed_aias_result: JSON.stringify(blob) } });
   // scanner.js's restore IIFE ran at load with that blob (createHarness executes the file); assert what landed.
   assert.strictEqual(text(h, 'cu-ready-rule-total'), '0');
   assert.ok(dormant(h, 'cu-btn-push') && dormant(h, 'cu-btn-sync'), 'restore path: dormant buttons beside card 0 (AC-5(ii))');
@@ -60,7 +60,7 @@ function testMixedHostRestore() {
 }
 function testLegacyBlobFallsBack() {
   const blob = { job_id: 'job1', safe_count: 1, agg_count: 8, can_push: true, external_only: false, total_pages: 4, pages: [], scan_id: 'scan1' };
-  const h = createHarness({ localStorage: { cu_scanner_result: JSON.stringify(blob) } });
+  const h = createHarness({ localStorage: { drspeed_aias_result: JSON.stringify(blob) } });
   assert.strictEqual(text(h, 'cu-ready-rule-total'), '9', 'no apply_* => card falls back to the scan totals (AC-5(iii))');
   assert.ok(h.els['cu-btn-sync'], 'the Sync button element exists in the harness');
   assert.ok(!dormant(h, 'cu-btn-sync'), 'and the flag falls back to totalRules > 0');
@@ -75,7 +75,7 @@ function testNullIsNotKnown() {
   console.log('OK null apply_* is not treated as known');
 }
 // testW1CarriesApplyFields drives the REAL live write path: handleStatusUpdate({status:'complete'})
-// -> buildResult() -> post('cu_scanner_build_result') (fetch) -> the W1 localStorage.setItem literal.
+// -> buildResult() -> post('drspeed_aias_build_result') (fetch) -> the W1 localStorage.setItem literal.
 // This is the same pattern summary-bold-counts.test.js's testLiveScanPathRendersBold uses to drive
 // the live branch through the harness's fetch shim, so no harness-only __cuTest addition and no
 // second write path are needed.
@@ -86,7 +86,7 @@ function testW1CarriesApplyFields() {
       return Promise.resolve({
         ok: true,
         json: function () {
-          return Promise.resolve(action === 'cu_scanner_build_result'
+          return Promise.resolve(action === 'drspeed_aias_build_result'
             ? { success: true, data: Object.assign({
                 scan_id: 'scan1', total_pages: 4, safe_count: FIXTURE_B.safe_count,
                 aggressive_count: FIXTURE_B.aggressive_count, can_push: true, pages: [],
@@ -100,7 +100,7 @@ function testW1CarriesApplyFields() {
   });
   h.sandbox.window.__cuTest.handleStatusUpdate({ status: 'complete', total: 4, completed: 4, pages: [] });
   return flush().then(function () {
-    const blob = JSON.parse(h.sandbox.localStorage.getItem('cu_scanner_result'));
+    const blob = JSON.parse(h.sandbox.localStorage.getItem('drspeed_aias_result'));
     assert.strictEqual(blob.apply_safe_count, 1); assert.strictEqual(blob.apply_aggressive_count, 6);
     // Controller ruling G: the blob assertions above do not falsify edit 1 (the live
     // restoreStep4({ applySafeCount, applyAggCount }) call) — restoreStep4 rendering the DOM

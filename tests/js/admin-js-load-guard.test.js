@@ -69,7 +69,7 @@ const read = (name) => fs.readFileSync(path.join(ADMIN_JS, name), 'utf8');
 
     const sandbox = {
       console, jQuery: $,
-      cuScannerHistory: HISTORY_CFG,
+      drspeedAiasHistory: HISTORY_CFG,
       setTimeout: () => 0,
       location: { href: '' },
       confirm: () => opts.confirm !== false,
@@ -88,12 +88,12 @@ const read = (name) => fs.readFileSync(path.join(ADMIN_JS, name), 'utf8');
   }
 
   // Export — a redirect-download. The nonce rides the query string; drop it and
-  // cu_scanner_export_history dies on check_ajax_referer with an empty ZIP for the operator.
+  // drspeed_aias_export_history dies on check_ajax_referer with an empty ZIP for the operator.
   {
     const h = run({});
     h.node('#cu-history-export').fire('click');
     const url = h.sandbox.location.href;
-    assert.ok(/[?&]action=cu_scanner_export_history(&|$)/.test(url),
+    assert.ok(/[?&]action=drspeed_aias_export_history(&|$)/.test(url),
       'the export button navigates to the export action, got: ' + url);
     assert.ok(url.indexOf('nonce=' + encodeURIComponent(HISTORY_CFG.nonce)) !== -1,
       'the export URL carries the nonce — without it the handler rejects the download');
@@ -106,7 +106,7 @@ const read = (name) => fs.readFileSync(path.join(ADMIN_JS, name), 'utf8');
     h.node('#cu-history-delete').fire('click');
     assert.strictEqual(h.posts.length, 1, 'the delete button POSTs exactly once');
     assert.strictEqual(h.posts[0].url, HISTORY_CFG.ajaxUrl);
-    assert.strictEqual(h.posts[0].data.action, 'cu_scanner_delete_history');
+    assert.strictEqual(h.posts[0].data.action, 'drspeed_aias_delete_history');
     assert.strictEqual(h.posts[0].data.nonce, HISTORY_CFG.nonce,
       'the delete POST carries the nonce — this is a state-changing privileged action');
     assert.strictEqual(h.sandbox.reloaded, true, 'a successful delete reloads the page');
@@ -137,7 +137,7 @@ const read = (name) => fs.readFileSync(path.join(ADMIN_JS, name), 'utf8');
   function run() {
     const fetches = [];
     const ids = {
-      'cu-scanner-settings-form': el('cu-scanner-settings-form', 'form'),
+      'drspeed-aias-settings-form': el('drspeed-aias-settings-form', 'form'),
       'cu-settings-message': el('cu-settings-message'),
       'cu-credit-balance': el('cu-credit-balance'),
       'cu-refresh-balance': el('cu-refresh-balance', 'button'),
@@ -145,12 +145,12 @@ const read = (name) => fs.readFileSync(path.join(ADMIN_JS, name), 'utf8');
       'cu-balance-card': el('cu-balance-card'),
     };
     // What `new FormData(form)` harvests in a real browser.
-    ids['cu-scanner-settings-form']._fields = [['api_key', 'FAKE-TYPED-KEY-not-a-credential'], ['nonce', SETTINGS_CFG.nonce]];
+    ids['drspeed-aias-settings-form']._fields = [['api_key', 'FAKE-TYPED-KEY-not-a-credential'], ['nonce', SETTINGS_CFG.nonce]];
 
     const ready = [];
     const sandbox = {
       console,
-      cuScannerSettings: SETTINGS_CFG,
+      drspeedAiasSettings: SETTINGS_CFG,
       document: {
         addEventListener: (ev, fn) => { if (ev === 'DOMContentLoaded') ready.push(fn); },
         getElementById: (id) => ids[id] || null,
@@ -188,7 +188,7 @@ const read = (name) => fs.readFileSync(path.join(ADMIN_JS, name), 'utf8');
     const h = run();
     assert.strictEqual(h.fetches.length, 1, 'the ready handler runs to the end and auto-refreshes the balance');
     assert.strictEqual(h.fetches[0].url, SETTINGS_CFG.ajaxUrl);
-    assert.strictEqual(h.fetches[0].body.get('action'), 'cu_scanner_fetch_balance');
+    assert.strictEqual(h.fetches[0].body.get('action'), 'drspeed_aias_fetch_balance');
     assert.strictEqual(h.fetches[0].body.get('nonce'), SETTINGS_CFG.nonce,
       'the balance refresh carries the nonce');
   }
@@ -199,14 +199,14 @@ const read = (name) => fs.readFileSync(path.join(ADMIN_JS, name), 'utf8');
   // placeholder over the customer's working key, and every scan 401s afterwards.
   {
     const h = run();
-    const form = h.ids['cu-scanner-settings-form'];
+    const form = h.ids['drspeed-aias-settings-form'];
     const input = h.ids['cu_api_key'];
     input.value = SAVED_KEY_PLACEHOLDER;
     input.dataset.masked = '1';
 
     form._fire('submit', { preventDefault() {} });
     const body = h.fetches[h.fetches.length - 1].body;
-    assert.strictEqual(body.get('action'), 'cu_scanner_save_settings');
+    assert.strictEqual(body.get('action'), 'drspeed_aias_save_settings');
     assert.strictEqual(body.has('api_key'), false,
       'a masked key must NOT be submitted — the field holds a placeholder, not the key');
     assert.strictEqual(body.get('keep_api_key'), '1',
@@ -217,7 +217,7 @@ const read = (name) => fs.readFileSync(path.join(ADMIN_JS, name), 'utf8');
   // stops the branch above from being "fixed" into dropping api_key unconditionally.
   {
     const h = run();
-    const form = h.ids['cu-scanner-settings-form'];
+    const form = h.ids['drspeed-aias-settings-form'];
     form._fire('submit', { preventDefault() {} });
     const body = h.fetches[h.fetches.length - 1].body;
     assert.strictEqual(body.get('api_key'), 'FAKE-TYPED-KEY-not-a-credential',

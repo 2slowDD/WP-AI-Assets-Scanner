@@ -1,6 +1,6 @@
 <?php
 // tests/VersionLockstepTest.php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
 use PHPUnit\Framework\TestCase;
 
@@ -8,7 +8,7 @@ use PHPUnit\Framework\TestCase;
  * FU-H — the shipped version lives in THREE places that must move together.
  *
  *   1. dr-speed-ai-assets-scanner.php   plugin header      ` * Version:     <v>`
- *   2. dr-speed-ai-assets-scanner.php   `define( 'AIAS_VERSION', '<v>' )`
+ *   2. dr-speed-ai-assets-scanner.php   `define( 'DRSPEED_AIAS_VERSION', '<v>' )`
  *   3. README.md               shields.io badge   `![Version](.../VERSION-<v>-<hex>?...)`
  *
  * The badge is the one that drifts: it is a static literal inside a URL, so nothing in
@@ -16,7 +16,7 @@ use PHPUnit\Framework\TestCase;
  * The repo has shipped that drift before (memory: "README shields.io VERSION badge is a
  * static literal the version bump MISSES").
  *
- * ⛔ This test deliberately does NOT read the AIAS_VERSION *constant*.
+ * ⛔ This test deliberately does NOT read the DRSPEED_AIAS_VERSION *constant*.
  * tests/bootstrap.php defines it as '1.0.0' before the plugin file is ever parsed, so a
  * constant-reading assertion sees the shadow, never the shipped value, and is green for
  * every possible state of the three files. That shadow is exactly why the suite was blind
@@ -32,7 +32,7 @@ class VersionLockstepTest extends TestCase {
     private const HEADER_RE = '/^[ \t]*\*[ \t]*Version:[ \t]*(\S+)[ \t]*\r?$/m';
 
     /** The define() SOURCE LINE — not the constant it produces. */
-    private const DEFINE_RE = "/define\(\s*'AIAS_VERSION'\s*,\s*'([^']*)'\s*\)/";
+    private const DEFINE_RE = "/define\(\s*'DRSPEED_AIAS_VERSION'\s*,\s*'([^']*)'\s*\)/";
 
     /** shields.io badge: .../badge/VERSION-<version>-<6 hex colour>?... */
     private const BADGE_RE = '#!\[Version\]\(https://img\.shields\.io/badge/VERSION-(.+?)-[0-9a-fA-F]{6}\?#';
@@ -80,14 +80,14 @@ class VersionLockstepTest extends TestCase {
         $readme = $this->read_repo_file( 'README.md' );
 
         $header = $this->capture_one( self::HEADER_RE, $plugin, 'dr-speed-ai-assets-scanner.php plugin header' );
-        $define = $this->capture_one( self::DEFINE_RE, $plugin, "dr-speed-ai-assets-scanner.php define( 'AIAS_VERSION', … )" );
+        $define = $this->capture_one( self::DEFINE_RE, $plugin, "dr-speed-ai-assets-scanner.php define( 'DRSPEED_AIAS_VERSION', … )" );
         $badge  = $this->capture_one( self::BADGE_RE, $readme, 'README.md shields.io VERSION badge' );
         $stable = $this->capture_one( self::STABLE_TAG_RE, $this->read_repo_file( 'readme.txt' ), 'readme.txt Stable tag' );
 
-        $this->assertSame( '1.9.3', $header, '1.9.3 stops storing converted or revoked free keys' );
+        $this->assertSame( '1.9.4', $header, '1.9.4 renames every stored name to the drspeed_aias_ prefix' );
 
         // Shape first: without it, three empty captures would "agree" and pass.
-        foreach ( [ 'plugin header' => $header, 'AIAS_VERSION define' => $define, 'README badge' => $badge, 'readme.txt Stable tag' => $stable ] as $where => $v ) {
+        foreach ( [ 'plugin header' => $header, 'DRSPEED_AIAS_VERSION define' => $define, 'README badge' => $badge, 'readme.txt Stable tag' => $stable ] as $where => $v ) {
             $this->assertMatchesRegularExpression(
                 self::SHAPE_RE,
                 $v,
@@ -98,7 +98,7 @@ class VersionLockstepTest extends TestCase {
         $this->assertSame(
             $header,
             $define,
-            "the AIAS_VERSION define is out of lockstep with the plugin header"
+            "the DRSPEED_AIAS_VERSION define is out of lockstep with the plugin header"
         );
         $this->assertSame(
             $header,
@@ -121,8 +121,8 @@ class VersionLockstepTest extends TestCase {
     public function test_the_constant_is_shadowed_by_the_bootstrap_and_is_not_the_shipped_version(): void {
         $this->assertSame(
             '1.0.0',
-            AIAS_VERSION,
-            'tests/bootstrap.php defines AIAS_VERSION — the constant is a test fixture,'
+            DRSPEED_AIAS_VERSION,
+            'tests/bootstrap.php defines DRSPEED_AIAS_VERSION — the constant is a test fixture,'
                 . ' never the shipped version, so the lockstep guard must read file text instead'
         );
     }

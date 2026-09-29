@@ -1,5 +1,5 @@
 <?php
-namespace CUScanner\Scanner;
+namespace DrSpeedAIAS\Scanner;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -118,7 +118,7 @@ class CuJsonBuilder {
             ],
             'rules' => $rules,
             // Per-page S/A/N tallies, keyed by input page index (error pages absent).
-            // Consumed by AIAS_Scan_Status::build_pages() for the Step-4 table.
+            // Consumed by DRSPEED_AIAS_Scan_Status::build_pages() for the Step-4 table.
             'by_page' => $by_page,
         ];
     }
@@ -127,7 +127,7 @@ class CuJsonBuilder {
      * FU-SAN-HOVER-BREAKDOWN (1.8.2b) — collapse a per-page list of emitted rule handles into
      * the [{label,count}] rows the S:/A: hover tooltip names its assets from.
      *
-     * Deliberately the SAME shape as AIAS_Scan_Status::build_kept_breakdown() so the client can
+     * Deliberately the SAME shape as DRSPEED_AIAS_Scan_Status::build_kept_breakdown() so the client can
      * render all three tooltips through one builder instead of three near-copies.
      *
      * The invariant that matters: callers append exactly one handle per counted rule, so
@@ -339,6 +339,6 @@ class CuJsonBuilder {
     private function url_to_pattern( string $url ): string {
         // Delegates to the single shared normalizer. Kept as a thin private method so
         // existing call sites and the class's own API are unchanged.
-        return \CUScanner\Scanner\UrlPattern::from_url( $url );
+        return \DrSpeedAIAS\Scanner\UrlPattern::from_url( $url );
     }
 }

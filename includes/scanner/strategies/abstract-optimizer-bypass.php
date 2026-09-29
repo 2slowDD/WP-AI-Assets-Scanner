@@ -1,5 +1,5 @@
 <?php
-namespace CUScanner\Scanner\Strategies;
+namespace DrSpeedAIAS\Scanner\Strategies;
 
 defined( 'ABSPATH' ) || exit;
 

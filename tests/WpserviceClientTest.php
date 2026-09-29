@@ -1,8 +1,8 @@
 <?php
 // tests/WpserviceClientTest.php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Api\WpserviceClient;
+use DrSpeedAIAS\Api\WpserviceClient;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 

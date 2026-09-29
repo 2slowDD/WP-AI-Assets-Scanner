@@ -13,22 +13,22 @@ define( 'ABSPATH', __DIR__ );
 
 require __DIR__ . '/../admin/class-scanner-ajax.php';
 
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Admin\ScannerAjax;
 
-function aias_assert( $cond, $msg ) { if ( ! $cond ) { throw new RuntimeException( 'FAIL: ' . $msg ); } }
+function drspeed_aias_assert( $cond, $msg ) { if ( ! $cond ) { throw new RuntimeException( 'FAIL: ' . $msg ); } }
 
 $clean   = [ 'outcome' => 'class_a_clean', 'security_stacks' => [] ];
 $stacked = [ 'outcome' => 'class_a_clean', 'security_stacks' => [ 'cloudflare' ] ];
 $bc      = [ 'outcome' => 'class_bc_only', 'security_stacks' => [] ];
 $legacy  = [ 'outcome' => 'class_a_clean' ]; // pre-Task-2 cached shape: key absent
 
-aias_assert( ScannerAjax::compute_warning_needed( [ $clean ] ) === false, 'all clean -> false' );
-aias_assert( ScannerAjax::compute_warning_needed( [ $bc ] ) === true, 'non-clean outcome -> true (existing behavior)' );
-aias_assert( ScannerAjax::compute_warning_needed( [ $stacked ] ) === true, 'security stack on clean outcome -> true (NEW)' );
-aias_assert( ScannerAjax::compute_warning_needed( [ $legacy ] ) === false, 'legacy cached shape (no key) -> false, no notice/throw' );
-aias_assert( ScannerAjax::compute_warning_needed( [] ) === false, 'empty -> false' );
-aias_assert( ScannerAjax::compute_warning_needed( [ $clean, $stacked ] ) === true, 'mixed hosts: one stacked -> true' );
-aias_assert( ScannerAjax::compute_warning_needed( [ $clean, $legacy ] ) === false, 'mixed hosts: clean + legacy (no key) -> false' );
+drspeed_aias_assert( ScannerAjax::compute_warning_needed( [ $clean ] ) === false, 'all clean -> false' );
+drspeed_aias_assert( ScannerAjax::compute_warning_needed( [ $bc ] ) === true, 'non-clean outcome -> true (existing behavior)' );
+drspeed_aias_assert( ScannerAjax::compute_warning_needed( [ $stacked ] ) === true, 'security stack on clean outcome -> true (NEW)' );
+drspeed_aias_assert( ScannerAjax::compute_warning_needed( [ $legacy ] ) === false, 'legacy cached shape (no key) -> false, no notice/throw' );
+drspeed_aias_assert( ScannerAjax::compute_warning_needed( [] ) === false, 'empty -> false' );
+drspeed_aias_assert( ScannerAjax::compute_warning_needed( [ $clean, $stacked ] ) === true, 'mixed hosts: one stacked -> true' );
+drspeed_aias_assert( ScannerAjax::compute_warning_needed( [ $clean, $legacy ] ) === false, 'mixed hosts: clean + legacy (no key) -> false' );
 
 // --- strip_to_whitelist() passthrough (spec §3.3): security_stacks must survive the
 // AC-N2-SSRF allowlist (values are internal SECURITY_STACKS registry ids, a closed enum —
@@ -39,9 +39,9 @@ $stripped = ScannerAjax::__test_strip_to_whitelist( [
     'security_stacks' => [ 'cloudflare' ],
     'evil_raw_header' => 'x-secret: leaked-origin-header',
 ] );
-aias_assert( ( $stripped['security_stacks'] ?? null ) === [ 'cloudflare' ], 'security_stacks survives the allowlist with value intact (spec 3.3)' );
-aias_assert( ! array_key_exists( 'evil_raw_header', $stripped ), 'unknown/raw key still stripped (AC-N2-SSRF intent preserved)' );
-aias_assert( ( $stripped['outcome'] ?? null ) === 'class_a_clean', 'pre-existing allowlisted key unaffected' );
+drspeed_aias_assert( ( $stripped['security_stacks'] ?? null ) === [ 'cloudflare' ], 'security_stacks survives the allowlist with value intact (spec 3.3)' );
+drspeed_aias_assert( ! array_key_exists( 'evil_raw_header', $stripped ), 'unknown/raw key still stripped (AC-N2-SSRF intent preserved)' );
+drspeed_aias_assert( ( $stripped['outcome'] ?? null ) === 'class_a_clean', 'pre-existing allowlisted key unaffected' );
 
 echo "scanner-ajax-warning-needed-test ... ok\n";
 exit( 0 );

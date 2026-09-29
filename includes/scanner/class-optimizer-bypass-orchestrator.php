@@ -1,9 +1,9 @@
 <?php
-namespace CUScanner\Scanner;
+namespace DrSpeedAIAS\Scanner;
 
 defined( 'ABSPATH' ) || exit;
 
-use CUScanner\Scanner\Strategies\AbstractOptimizerBypass;
+use DrSpeedAIAS\Scanner\Strategies\AbstractOptimizerBypass;
 
 /**
  * Coordinates the Class C disable/restore lifecycle for one scan.
@@ -15,7 +15,7 @@ use CUScanner\Scanner\Strategies\AbstractOptimizerBypass;
  *   - normal completion: complete()
  *   - PHP fatal: register_shutdown_function (best-effort, not SIGKILL-safe)
  *   - stale-state self-heal: on_plugins_loaded() (next admin request after timeout)
- *   - watchdog: aias_optimizer_watchdog Action Scheduler / wp-cron event
+ *   - watchdog: drspeed_aias_optimizer_watchdog Action Scheduler / wp-cron event
  *   - refuse_to_start: begin() detects orphaned state and self-heals before throwing
  *
  * Spec §3.5, §5, §4.6.2.
@@ -34,7 +34,7 @@ class OptimizerBypassOrchestrator {
      */
     public static function init(): void {
         add_action( 'plugins_loaded', [ self::class, 'on_plugins_loaded' ], 0 );
-        add_action( 'aias_optimizer_watchdog', [ self::class, 'on_watchdog' ], 10, 1 );
+        add_action( 'drspeed_aias_optimizer_watchdog', [ self::class, 'on_watchdog' ], 10, 1 );
     }
 
     /**
@@ -95,9 +95,9 @@ class OptimizerBypassOrchestrator {
         // Failure-path 4: watchdog — Action Scheduler if available, wp-cron fallback.
         $watchdog_at = time() + $ttl_seconds + 300;
         if ( function_exists( 'as_schedule_single_action' ) ) {
-            as_schedule_single_action( $watchdog_at, 'aias_optimizer_watchdog', [ 'scan_id' => $scan_id ] );
+            as_schedule_single_action( $watchdog_at, 'drspeed_aias_optimizer_watchdog', [ 'scan_id' => $scan_id ] );
         } else {
-            wp_schedule_single_event( $watchdog_at, 'aias_optimizer_watchdog', [ $scan_id ] );
+            wp_schedule_single_event( $watchdog_at, 'drspeed_aias_optimizer_watchdog', [ $scan_id ] );
         }
     }
 

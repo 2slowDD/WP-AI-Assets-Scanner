@@ -11,6 +11,8 @@ class UninstallTest extends TestCase {
      */
     private const SERVICE_PLUGIN_OPTIONS = [
         'cu_scanner_credit_products',
+        'cu_scanner_free_key_next_number',
+        'cu_scanner_free_trial_credits',
         'cu_scanner_db_version',
         'cu_scanner_free_key_insert_error',
         'cu_scanner_insert_error',
@@ -84,17 +86,33 @@ class UninstallTest extends TestCase {
 
         require dirname( __DIR__ ) . '/uninstall.php';
 
-        // No secret survives uninstall.
-        $this->assertContains( 'cu_scanner_api_key', $deleted_options );
-        $this->assertContains( 'cu_scanner_secret', $deleted_options );
-        $this->assertContains( 'cu_scanner_paid_key_claim_token', $deleted_options );
-        // Migration marker must go, or a reinstall skips m1.
+        // No secret survives uninstall, under its current or its pre-1.9.4 name.
+        foreach ( [ 'api_key', 'secret', 'paid_key_claim_token' ] as $secret ) {
+            $this->assertContains( 'drspeed_aias_' . $secret, $deleted_options );
+            $this->assertContains( 'cu_scanner_' . $secret, $deleted_options );
+        }
+        // Migration marker must go (both names), or a reinstall skips the ladder.
+        $this->assertContains( 'drspeed_aias_db_version', $deleted_options );
         $this->assertContains( 'aias_db_version', $deleted_options );
         // The removed self-updater's cache is cleaned up.
         $this->assertContains( 'cu_scanner_updater_manifest_v1', $deleted_transients );
 
-        foreach ( [ 'cu_scanner_free_key_retry', 'cu_scanner_outbox_replay', 'cu_scanner_r3_rebuild', 'aias_event_emitter_flush', 'aias_optimizer_watchdog' ] as $hook ) {
-            $this->assertContains( $hook, $unscheduled, $hook . ' must be unscheduled' );
+        foreach ( [ 'free_key_retry', 'outbox_replay', 'r3_rebuild' ] as $hook ) {
+            $this->assertContains( 'drspeed_aias_' . $hook, $unscheduled );
+            $this->assertContains( 'cu_scanner_' . $hook, $unscheduled );
+        }
+        foreach ( [ 'event_emitter_flush', 'optimizer_watchdog' ] as $hook ) {
+            $this->assertContains( 'drspeed_aias_' . $hook, $unscheduled );
+            $this->assertContains( 'aias_' . $hook, $unscheduled );
+        }
+
+        // Every name in the shared list, current and old, is removed.
+        $names = require dirname( __DIR__ ) . '/includes/names.php';
+        foreach ( [ 'options', 'version' ] as $group ) {
+            foreach ( $names[ $group ] as $new => $old ) {
+                $this->assertContains( $new, $deleted_options );
+                $this->assertContains( $old, $deleted_options );
+            }
         }
 
         // The wpservice.pro service plugin shares the cu_scanner_ prefix; its rows must survive.

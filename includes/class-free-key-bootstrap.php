@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner;
+namespace DrSpeedAIAS;
 
-use CUScanner\Api\WpserviceClient;
+use DrSpeedAIAS\Api\WpserviceClient;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -25,7 +25,7 @@ class FreeKeyBootstrap {
     public const OUTCOME_UNUSABLE = 'unusable';
 
     /** One-shot Settings message after a key is stored: restored (welcome back) or new. */
-    public const WELCOME_TRANSIENT = 'aias_free_key_welcome';
+    public const WELCOME_TRANSIENT = 'drspeed_aias_free_key_welcome';
 
     /**
      * @return string 'stored', 'pending', 'kept' (a paid key is saved) or
@@ -60,7 +60,7 @@ class FreeKeyBootstrap {
                 }
                 $this->settings->set_free_key_unusable( $status );
                 if ( function_exists( 'wp_clear_scheduled_hook' ) ) {
-                    wp_clear_scheduled_hook( 'cu_scanner_free_key_retry' );
+                    wp_clear_scheduled_hook( 'drspeed_aias_free_key_retry' );
                 }
                 return self::OUTCOME_UNUSABLE;
             }
@@ -109,8 +109,8 @@ class FreeKeyBootstrap {
     }
 
     public static function schedule_retry(): void {
-        if ( function_exists( 'wp_next_scheduled' ) && function_exists( 'wp_schedule_single_event' ) && ! wp_next_scheduled( 'cu_scanner_free_key_retry' ) ) {
-            wp_schedule_single_event( time() + HOUR_IN_SECONDS, 'cu_scanner_free_key_retry' );
+        if ( function_exists( 'wp_next_scheduled' ) && function_exists( 'wp_schedule_single_event' ) && ! wp_next_scheduled( 'drspeed_aias_free_key_retry' ) ) {
+            wp_schedule_single_event( time() + HOUR_IN_SECONDS, 'drspeed_aias_free_key_retry' );
         }
     }
 
@@ -127,7 +127,7 @@ class FreeKeyBootstrap {
         if ( $this->client_factory ) {
             return ( $this->client_factory )( $current_key );
         }
-        return new WpserviceClient( AIAS_WPSERVICE_URL, $current_key );
+        return new WpserviceClient( DRSPEED_AIAS_WPSERVICE_URL, $current_key );
     }
 
     private function cache_railway_url( string $api_key ): void {

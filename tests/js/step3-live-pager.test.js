@@ -166,10 +166,10 @@ function runMissingPagerHidesNothing() {
 //    the real path: page-load outbox restore -> startOutboxTick -> 30 s tick -> 'dispatched'.
 async function runOutboxDispatchIsANewScan() {
   const h = createHarness({
-    cuScanner: { ajaxUrl: '', nonce: 'n', siteUrl: 's', outbox: { state: 'queued' } },
+    drspeedAias: { ajaxUrl: '', nonce: 'n', siteUrl: 's', outbox: { state: 'queued' } },
     fetch: (u, init) => {
       const action = init && init.body && init.body.get ? init.body.get('action') : '';
-      const body = action === 'cu_scanner_outbox_tick'
+      const body = action === 'drspeed_aias_outbox_tick'
         ? { success: true, data: { state: 'dispatched', job_id: 'j2', job_token: 't2', railway_url: 'https://w.test' } }
         : {};
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });

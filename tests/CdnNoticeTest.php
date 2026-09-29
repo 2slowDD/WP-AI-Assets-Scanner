@@ -1,6 +1,6 @@
 <?php
 use PHPUnit\Framework\TestCase;
-use CUScanner\Admin\AdminPages;
+use DrSpeedAIAS\Admin\AdminPages;
 
 final class CdnNoticeTest extends TestCase {
     public function test_notice_visibility_logic(): void {

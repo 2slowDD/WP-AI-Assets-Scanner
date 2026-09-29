@@ -9,7 +9,7 @@
  * floor exists for) arrives UN-stamped: is_et_rescan() returned false → the ratchet
  * was skipped AND persist_r_orig() clobbered the baseline. This pins the fix: AAS
  * detects the ET rescan from its own submit-time intent (extra_time_urls), persisted
- * as a job-keyed marker, mirroring the reviewed cu_scanner_bypass_map_<job_id> pattern.
+ * as a job-keyed marker, mirroring the reviewed drspeed_aias_bypass_map_<job_id> pattern.
  *
  * ScannerAjax loads standalone (see tests/bypass-suffix-map-persist-test.php docblock).
  * The ratchet-gate helpers call get_transient/get_option, stubbed below with an
@@ -26,9 +26,9 @@ function get_option( $k, $default = false ) { return $default; } // ratchet defa
 
 require __DIR__ . '/../admin/class-scanner-ajax.php';
 
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Admin\ScannerAjax;
 
-function aias_assert( $cond, string $msg ): void {
+function drspeed_aias_assert( $cond, string $msg ): void {
     if ( ! $cond ) { throw new RuntimeException( 'FAIL: ' . $msg ); }
 }
 
@@ -40,28 +40,28 @@ $unstamped = [ [ 'url' => 'https://customer-a.example?perfmattersoff', 'assets' 
 $stamped   = [ [ 'url' => 'https://x.test', 'extra_time_charged' => true ] ];
 
 // ── AC-1: job-keyed marker — one key helper shared by writer + reader (parity). ──
-aias_assert( ScannerAjax::et_rescan_marker_key( 'J1' ) === 'cu_scanner_et_rescan_J1', 'marker key shape' );
-aias_assert( $ajax->__test_et_rescan_requested( 'J1' ) === false, 'no marker -> false' );
+drspeed_aias_assert( ScannerAjax::et_rescan_marker_key( 'J1' ) === 'drspeed_aias_et_rescan_J1', 'marker key shape' );
+drspeed_aias_assert( $ajax->__test_et_rescan_requested( 'J1' ) === false, 'no marker -> false' );
 set_transient( ScannerAjax::et_rescan_marker_key( 'J1' ), 1, 7200 );
-aias_assert( $ajax->__test_et_rescan_requested( 'J1' ) === true, 'marker set -> true' );
-aias_assert( $ajax->__test_et_rescan_requested( 'J2' ) === false, 'other job unaffected' );
+drspeed_aias_assert( $ajax->__test_et_rescan_requested( 'J1' ) === true, 'marker set -> true' );
+drspeed_aias_assert( $ajax->__test_et_rescan_requested( 'J2' ) === false, 'other job unaffected' );
 
 // ── AC-trigger: the submit-time predicate that decides whether to set the marker. ──
-aias_assert( ScannerAjax::intent_requests_extra_time( [ 'extra_time_urls' => [ 'u' ] ] ) === true, 'ET urls -> true' );
-aias_assert( ScannerAjax::intent_requests_extra_time( [ 'extra_time_urls' => [] ] ) === false, 'empty ET list -> false' );
-aias_assert( ScannerAjax::intent_requests_extra_time( [] ) === false, 'no key -> false' );
+drspeed_aias_assert( ScannerAjax::intent_requests_extra_time( [ 'extra_time_urls' => [ 'u' ] ] ) === true, 'ET urls -> true' );
+drspeed_aias_assert( ScannerAjax::intent_requests_extra_time( [ 'extra_time_urls' => [] ] ) === false, 'empty ET list -> false' );
+drspeed_aias_assert( ScannerAjax::intent_requests_extra_time( [] ) === false, 'no key -> false' );
 
 // ── AC-2: the gate ENGAGES on a zero-yield ET rescan (marker set, no billing stamp). ──
-aias_assert( $ajax->__test_is_et_rescan( $unstamped ) === false, 'unstamped pages alone -> is_et false (this WAS the regression)' );
-aias_assert( $ajax->__test_resolve_is_et_rescan( $unstamped, 'J1' ) === true, 'unstamped + marker -> gate TRUE (the fix)' );
-aias_assert( $ajax->__test_resolve_is_et_rescan( $unstamped, 'J2' ) === false, 'unstamped + no marker -> gate false (a normal scan)' );
+drspeed_aias_assert( $ajax->__test_is_et_rescan( $unstamped ) === false, 'unstamped pages alone -> is_et false (this WAS the regression)' );
+drspeed_aias_assert( $ajax->__test_resolve_is_et_rescan( $unstamped, 'J1' ) === true, 'unstamped + marker -> gate TRUE (the fix)' );
+drspeed_aias_assert( $ajax->__test_resolve_is_et_rescan( $unstamped, 'J2' ) === false, 'unstamped + no marker -> gate false (a normal scan)' );
 
 // ── AC-back-compat: the billing stamp still engages the gate. ──
-aias_assert( $ajax->__test_resolve_is_et_rescan( $stamped, 'J2' ) === true, 'stamped pages -> gate true (old path preserved)' );
+drspeed_aias_assert( $ajax->__test_resolve_is_et_rescan( $stamped, 'J2' ) === true, 'stamped pages -> gate true (old path preserved)' );
 
 // ── AC-3: persist is SKIPPED for the zero-yield ET rescan → no baseline clobber. ──
-aias_assert( $ajax->__test_should_persist_r_orig( $unstamped, 'J1' ) === false, 'ET rescan (marker) -> do NOT persist (no clobber)' );
-aias_assert( $ajax->__test_should_persist_r_orig( $unstamped, 'J2' ) === true, 'normal scan -> DO persist baseline' );
+drspeed_aias_assert( $ajax->__test_should_persist_r_orig( $unstamped, 'J1' ) === false, 'ET rescan (marker) -> do NOT persist (no clobber)' );
+drspeed_aias_assert( $ajax->__test_should_persist_r_orig( $unstamped, 'J2' ) === true, 'normal scan -> DO persist baseline' );
 
 echo "et-rescan-marker-gate-test ... ok\n";
 exit( 0 );

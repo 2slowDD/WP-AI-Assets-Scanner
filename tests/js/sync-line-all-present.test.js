@@ -1,5 +1,5 @@
 // FU-AAS-SYNC-LINE-ALL-PRESENT — the Sync success line through the REAL scanner.js click
-// handler (spec §3.4, AC-8): stubbed fetch answers cu_scanner_sync_to_cu; the button's real
+// handler (spec §3.4, AC-8): stubbed fetch answers drspeed_aias_sync_to_cu; the button's real
 // click() fires the handler; the rendered #cu-push-result is asserted.
 //   (a) all present  → "Synced to Code Unloader — all 6 rules are already present."
 //   (b) 0/1/5        → today's counts line, byte for byte; undo button activates
@@ -17,7 +17,7 @@ async function clickSync(summary) {
     fetch: (url, opt) => {
       const action = opt && opt.body && typeof opt.body.get === 'function' ? opt.body.get('action') : '?';
       actions.push(action);
-      const data = action === 'cu_scanner_sync_to_cu' ? summary : {};
+      const data = action === 'drspeed_aias_sync_to_cu' ? summary : {};
       return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, data }) });
     },
   });
@@ -29,7 +29,7 @@ async function clickSync(summary) {
 
   h.els['cu-btn-sync'].click();
   await flush();
-  assert.ok(actions.includes('cu_scanner_sync_to_cu'), 'the click posted the sync action (non-vacuity)');
+  assert.ok(actions.includes('drspeed_aias_sync_to_cu'), 'the click posted the sync action (non-vacuity)');
   assert.strictEqual(h.els['cu-btn-sync'].disabled, true, 'the Sync button is disabled after a click');
   return { html: h.els['cu-push-result'].innerHTML, undo };
 }

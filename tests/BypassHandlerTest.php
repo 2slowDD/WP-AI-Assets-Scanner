@@ -1,8 +1,8 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\BypassHandler;
-use CUScanner\Scanner\EventEmitter;
+use DrSpeedAIAS\Scanner\BypassHandler;
+use DrSpeedAIAS\Scanner\EventEmitter;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -27,7 +27,7 @@ class BypassHandlerTest extends TestCase {
 	public function test_handle_with_no_token_does_nothing(): void {
 		// No $_GET['cu_scan_token'] — handler returns early, no events emitted.
 		WP_Mock::userFunction( 'get_option' )
-			->with( 'aias_pending_events', [] )
+			->with( 'drspeed_aias_pending_events', [] )
 			->andReturn( [] );
 		BypassHandler::handle_wp_loaded();
 		// No events emitted (would require update_option to be called)
@@ -44,14 +44,14 @@ class BypassHandlerTest extends TestCase {
 
 		// Misuse throttle: window not active, so log_misuse() proceeds and opens it.
 		WP_Mock::userFunction( 'get_transient' )
-			->with( 'aias_bypass_misuse_throttle' )
+			->with( 'drspeed_aias_bypass_misuse_throttle' )
 			->andReturn( false );
 		WP_Mock::userFunction( 'set_transient' )
-			->with( 'aias_bypass_misuse_throttle', 1, 600 );
+			->with( 'drspeed_aias_bypass_misuse_throttle', 1, 600 );
 
-		// EventEmitter::emit will read+update aias_pending_events
+		// EventEmitter::emit will read+update drspeed_aias_pending_events
 		WP_Mock::userFunction( 'get_option' )
-			->with( 'aias_pending_events', [] )
+			->with( 'drspeed_aias_pending_events', [] )
 			->andReturn( [] );
 		$captured = null;
 		WP_Mock::userFunction( 'update_option' )
@@ -98,7 +98,7 @@ class BypassHandlerTest extends TestCase {
 		// Throttle window already open — log_misuse() must bail before touching
 		// the event queue (no update_option) or resetting the window (no set_transient).
 		WP_Mock::userFunction( 'get_transient' )
-			->with( 'aias_bypass_misuse_throttle' )
+			->with( 'drspeed_aias_bypass_misuse_throttle' )
 			->andReturn( 1 );
 		WP_Mock::userFunction( 'set_transient' )->never();
 		WP_Mock::userFunction( 'update_option' )->never();
@@ -121,14 +121,14 @@ class BypassHandlerTest extends TestCase {
 			->andReturnUsing( fn( $v ) => $v );
 
 		WP_Mock::userFunction( 'get_transient' )
-			->with( 'aias_bypass_misuse_throttle' )
+			->with( 'drspeed_aias_bypass_misuse_throttle' )
 			->andReturn( false );
 		WP_Mock::userFunction( 'set_transient' )
 			->once()
-			->with( 'aias_bypass_misuse_throttle', 1, 600 );
+			->with( 'drspeed_aias_bypass_misuse_throttle', 1, 600 );
 
 		WP_Mock::userFunction( 'get_option' )
-			->with( 'aias_pending_events', [] )
+			->with( 'drspeed_aias_pending_events', [] )
 			->andReturn( [] );
 		WP_Mock::userFunction( 'update_option' )->andReturn( true );
 		WP_Mock::userFunction( 'wp_next_scheduled' )->andReturn( false );

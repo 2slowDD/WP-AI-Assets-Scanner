@@ -2,7 +2,7 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * AIAS_Broken_Banner — dismissable admin notice for pages blocked during a scan.
+ * DRSPEED_AIAS_Broken_Banner — dismissable admin notice for pages blocked during a scan.
  *
  * Render surface: the scan-results (Step 4) JS calls the AJAX dismiss endpoint;
  * the banner HTML itself is built in scanner.js using data from build_result.
@@ -10,9 +10,9 @@ defined( 'ABSPATH' ) || exit;
  * wipe hook.  The render() method is also provided for unit tests and any future
  * PHP-rendered surface.
  */
-class AIAS_Broken_Banner {
+class DRSPEED_AIAS_Broken_Banner {
 
-	const OPTION_DISMISSALS = 'aias_dismissed_warnings';
+	const OPTION_DISMISSALS = 'drspeed_aias_dismissed_warnings';
 
 	/**
 	 * T0-C (2026-08-02) — the worker's `attribution` enum, mirrored from
@@ -76,11 +76,11 @@ class AIAS_Broken_Banner {
 
 		ob_start();
 		?>
-		<div class="notice notice-warning aias-broken-banner" data-scan-id="<?php echo esc_attr( $scan_id ); ?>">
+		<div class="notice notice-warning drspeed-aias-broken-banner" data-scan-id="<?php echo esc_attr( $scan_id ); ?>">
 			<p><strong>&#9888; <?php echo esc_html__( 'Some pages couldn\'t be fully scanned', 'dr-speed-ai-assets-scanner' ); ?></strong></p>
 			<p><?php echo wp_kses_post( $copy ); ?></p>
 			<p>
-				<button type="button" class="button aias-dismiss-banner">
+				<button type="button" class="button drspeed-aias-dismiss-banner">
 					<?php esc_html_e( 'Got it — don\'t show again for this scan', 'dr-speed-ai-assets-scanner' ); ?>
 				</button>
 			</p>
@@ -171,7 +171,7 @@ class AIAS_Broken_Banner {
 			if ( $categories[0] === 'rate' ) {
 				// T0-C: name the party that actually rate-limited the scan. $attribution is
 				// already allowlisted by normalize_attribution() — it only picks a branch here.
-				$settings_url = esc_url( admin_url( 'admin.php?page=cu-scanner-settings#cu-cloudflare-waf-bypass' ) );
+				$settings_url = esc_url( admin_url( 'admin.php?page=drspeed-aias-settings#cu-cloudflare-waf-bypass' ) );
 				$tail         = esc_html__( 'The rules from the unblocked device (if any) are complete and safe to apply.', 'dr-speed-ai-assets-scanner' );
 
 				if ( 'cloudflare' === $attribution ) {
@@ -213,7 +213,7 @@ class AIAS_Broken_Banner {
 			'Your bot protection denied the scanner. The rules from the unblocked device are complete and safe to apply. For full coverage, temporarily disable bot protection during scans.',
 			'dr-speed-ai-assets-scanner'
 		);
-		$settings_url = esc_url( admin_url( 'admin.php?page=cu-scanner-settings#cu-cloudflare-waf-bypass' ) );
+		$settings_url = esc_url( admin_url( 'admin.php?page=drspeed-aias-settings#cu-cloudflare-waf-bypass' ) );
 		if ( in_array( 'rate', $categories, true ) ) {
 			// Mixed-with-rate: the rate-specific sentence is the single settings
 			// link — the generic bot one is gated off to avoid duplicate copy.
@@ -352,7 +352,7 @@ class AIAS_Broken_Banner {
 			'phrases'            => $phrases,
 			'remediation'        => $remediation,
 			'categories'         => $categories,
-			'settings_url'       => esc_url( admin_url( 'admin.php?page=cu-scanner-settings#cu-cloudflare-waf-bypass' ) ),
+			'settings_url'       => esc_url( admin_url( 'admin.php?page=drspeed-aias-settings#cu-cloudflare-waf-bypass' ) ),
 			'settings_link_keys' => [ 'tier2_cf_challenge', 'tier2_rocket_loader_stub', 'tier1_http_rate_limit', 'tier2_waf_challenge', 'tier2_unknown_challenge' ],
 		];
 	}
@@ -367,11 +367,11 @@ class AIAS_Broken_Banner {
 
 	/**
 	 * AJAX handler: mark a scan's banner as dismissed.
-	 * Nonce: aias_dismiss_banner
+	 * Nonce: drspeed_aias_dismiss_banner
 	 * Capability: manage_options (same as every other scanner AJAX endpoint)
 	 */
 	public static function ajax_dismiss(): void {
-		check_ajax_referer( 'aias_dismiss_banner' );
+		check_ajax_referer( 'drspeed_aias_dismiss_banner' );
 
 		// Rule 4 + 11: nonce alone is NOT authorization — capability check is mandatory.
 		if ( ! current_user_can( 'manage_options' ) ) {
@@ -394,4 +394,4 @@ class AIAS_Broken_Banner {
 	}
 }
 
-add_action( 'wp_ajax_aias_dismiss_banner', [ 'AIAS_Broken_Banner', 'ajax_dismiss' ] );
+add_action( 'wp_ajax_drspeed_aias_dismiss_banner', [ 'DRSPEED_AIAS_Broken_Banner', 'ajax_dismiss' ] );

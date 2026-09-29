@@ -6,9 +6,9 @@ function run() {
   let cancelCalled = false, confirmShown = '';
   const h = createHarness({
     confirm: (msg) => { confirmShown = msg; return true; },
-    // stub the post() path: scanner.js calls fetch to admin-ajax for cu_scanner_cancel_job
+    // stub the post() path: scanner.js calls fetch to admin-ajax for drspeed_aias_cancel_job
     fetch: (url, opt) => {
-      if (String(opt && opt.body).indexOf('cu_scanner_cancel_job') !== -1) {
+      if (String(opt && opt.body).indexOf('drspeed_aias_cancel_job') !== -1) {
         cancelCalled = true;
         return Promise.resolve({ json: () => Promise.resolve({ success: true, data: { pages_completed: 2 } }) });
       }
@@ -21,7 +21,7 @@ function run() {
 
   return new Promise((resolve) => setImmediate(() => {
     assert.ok(/Keep your 2 completed pages/.test(confirmShown), 'paused-context confirm copy');
-    assert.ok(cancelCalled, 'cu_scanner_cancel_job called');
+    assert.ok(cancelCalled, 'drspeed_aias_cancel_job called');
     assert.strictEqual(h.timers.filter((t) => t.type === 'interval' && !t.cleared).length, 0,
                        'countdown cleared on Stop&keep');
     console.log('OK r3-stopkeep'); resolve();

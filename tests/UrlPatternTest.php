@@ -1,9 +1,9 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
 use PHPUnit\Framework\TestCase;
 use WP_Mock;
-use CUScanner\Scanner\UrlPattern;
+use DrSpeedAIAS\Scanner\UrlPattern;
 
 /**
  * AC-13 — characterization of the shared URL→CU-pattern normalizer.

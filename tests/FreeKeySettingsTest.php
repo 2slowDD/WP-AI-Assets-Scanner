@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Settings;
+use DrSpeedAIAS\Settings;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -28,7 +28,7 @@ class FreeKeySettingsTest extends TestCase {
     public function test_buy_credits_url_includes_context_for_free_key(): void {
         WP_Mock::userFunction( 'get_home_url' )->andReturn( 'https://www.Example.com/site' );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_paid_key_claim_token', '' )
+            ->with( 'drspeed_aias_paid_key_claim_token', '' )
             ->andReturn( str_repeat( 'a', 64 ) );
 
         $settings = new Settings();

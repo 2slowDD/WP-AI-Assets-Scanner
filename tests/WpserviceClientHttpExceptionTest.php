@@ -1,8 +1,8 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Api\WpserviceClient;
-use CUScanner\Api\HttpException;
+use DrSpeedAIAS\Api\WpserviceClient;
+use DrSpeedAIAS\Api\HttpException;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 

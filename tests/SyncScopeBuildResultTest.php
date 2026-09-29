@@ -1,8 +1,8 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\ScannerAjax;
-use CUScanner\Scanner\CuJsonBuilder;
+use DrSpeedAIAS\Admin\ScannerAjax;
+use DrSpeedAIAS\Scanner\CuJsonBuilder;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -113,8 +113,8 @@ trait SyncScopeBuildResultFixtures {
             'status' => 'complete', 'total' => count( $pages ), 'completed' => count( $pages ), 'pages' => $pages, 'flags' => [],
         ] ) );
         WP_Mock::userFunction( 'get_option' )->andReturnUsing( function ( $k, $default = false ) use ( &$options ) {
-            if ( 'aias_railway_url' === $k ) { return 'https://cu-scanner-railway-production.up.railway.app'; }
-            if ( 'cu_scanner_api_key' === $k )     { return 'api-key-123'; }
+            if ( 'drspeed_aias_railway_url' === $k ) { return 'https://cu-scanner-railway-production.up.railway.app'; }
+            if ( 'drspeed_aias_api_key' === $k )     { return 'api-key-123'; }
             return array_key_exists( $k, $options ) ? $options[ $k ] : $default;   // ratchet default-ON falls through to $default (true)
         } );
         WP_Mock::userFunction( 'update_option' )->andReturnUsing( function ( $k, $v ) use ( &$options ) { $options[ $k ] = $v; return true; } );
@@ -218,14 +218,14 @@ class SyncScopeBuildResultTest extends TestCase {
     }
 
     private function stored_json( string $job ): array {
-        $this->assertArrayHasKey( 'cu_scanner_json_' . $job, $this->options, 'do_build_result stored the scan JSON' );
-        return json_decode( (string) $this->options[ 'cu_scanner_json_' . $job ], true );
+        $this->assertArrayHasKey( 'drspeed_aias_json_' . $job, $this->options, 'do_build_result stored the scan JSON' );
+        return json_decode( (string) $this->options[ 'drspeed_aias_json_' . $job ], true );
     }
 
     // ---------------------------------------------------------------- AC-1
     public function test_ac1_et_rescan_stores_scanned_patterns_and_keeps_the_carried_rule(): void {
         $scenario = $this->et_rescan_scenario();
-        $this->transients['cu_scanner_r_orig_1'] = $scenario['r_orig'];
+        $this->transients['drspeed_aias_r_orig_1'] = $scenario['r_orig'];
         $this->stub_everything( $scenario['rescan'] );
 
         ( new ScannerAjax() )->do_build_result( 'job-et', 'tok' );
@@ -263,7 +263,7 @@ class SyncScopeBuildResultTest extends TestCase {
         // call (class-scanner-ajax.php ~L1401) transitions THIS job to 'complete'. This lets the
         // REAL, uninjected get_badge_state() (below) resolve to 'green' purely from
         // get_option()-backed state, with no MenuBadge/Code Unloader injection needed.
-        $this->options['cu_scanner_history'] = [ [ 'job_id' => 'job-b', 'status' => 'queued' ] ];
+        $this->options['drspeed_aias_history'] = [ [ 'job_id' => 'job-b', 'status' => 'queued' ] ];
         $payload = ( new ScannerAjax() )->do_build_result( 'job-b', 'tok' );
 
         $json       = $this->stored_json( 'job-b' );
@@ -272,7 +272,7 @@ class SyncScopeBuildResultTest extends TestCase {
         $totals     = ScannerAjax::rule_counts_from_rules( $json['rules'] );
         $this->assertGreaterThan( $expected['safe'] + $expected['aggressive'], $totals['safe'] + $totals['aggressive'], 'the external page contributed rules to the SCAN totals' );
 
-        foreach ( [ 'live payload' => $payload, 'aias_last_result option' => $this->options['aias_last_result'] ] as $where => $p ) {
+        foreach ( [ 'live payload' => $payload, 'drspeed_aias_last_result option' => $this->options['drspeed_aias_last_result'] ] as $where => $p ) {
             $this->assertSame( $expected['safe'],       $p['apply_safe_count'],       "$where: apply_safe_count is host-internal + scoped" );
             $this->assertSame( $expected['aggressive'], $p['apply_aggressive_count'], "$where: apply_aggressive_count is host-internal + scoped" );
             $this->assertSame( ( $p['apply_safe_count'] + $p['apply_aggressive_count'] ) > 0, $p['has_internal_rules'], "$where: AC-10(v) totality — flag === counts > 0 with NON-zero counts" );
@@ -280,7 +280,7 @@ class SyncScopeBuildResultTest extends TestCase {
         }
         // scan totals stay the by_page sums (external included): the option carries agg_count, the live payload aggressive_count
         $this->assertSame( $totals['aggressive'], $payload['aggressive_count'] );
-        $this->assertSame( $totals['aggressive'], $this->options['aias_last_result']['agg_count'] );
+        $this->assertSame( $totals['aggressive'], $this->options['drspeed_aias_last_result']['agg_count'] );
         // Task-4 review fold (2026-09-05): the aggressive leg above is 0 === 0 on this all-SAFE
         // fixture (page() emits only Safe rules — the legacy classify() fallback never yields
         // Aggressive), so it passes even if the safe/aggressive split were silently swapped. Add
@@ -288,11 +288,11 @@ class SyncScopeBuildResultTest extends TestCase {
         // actually exercised.
         $this->assertGreaterThan( 0, $totals['safe'], 'this fixture must actually produce safe rules for the leg below to be meaningful' );
         $this->assertSame( $totals['safe'], $payload['safe_count'] );
-        $this->assertSame( $totals['safe'], $this->options['aias_last_result']['safe_count'] );
+        $this->assertSame( $totals['safe'], $this->options['drspeed_aias_last_result']['safe_count'] );
 
         // W3 hop: get_badge_state returns the persisted option verbatim when green.
         // The MenuBadge mock this brief originally sketched is unreachable — get_badge_state()
-        // constructs `new \CUScanner\MenuBadge()` itself with no injection seam — so the real path
+        // constructs `new \DrSpeedAIAS\MenuBadge()` itself with no injection seam — so the real path
         // is driven end-to-end instead: the history seed above lets the real, uninjected MenuBadge
         // resolve 'green' from get_option()-backed state, and wp_send_json_success's payload is
         // captured to assert `result` is exactly the persisted option (apply_* included).
@@ -300,9 +300,9 @@ class SyncScopeBuildResultTest extends TestCase {
         WP_Mock::userFunction( 'wp_send_json_success' )->once()->andReturnUsing( function ( $data ) use ( &$captured ) { $captured = $data; } );
         ( new ScannerAjax() )->get_badge_state();
         $this->assertSame( 'green', $captured['badge'], 'W3 hop: the real get_badge_state() resolves green from option state alone' );
-        $this->assertSame( $this->options['aias_last_result'], $captured['result'], 'W3 hop: result is the persisted option VERBATIM (apply_* included)' );
-        $this->assertSame( $this->options['aias_last_result']['apply_safe_count'], $expected['safe'], 'the option get_badge_state returns verbatim carries apply_safe_count' );
-        $this->assertSame( $this->options['aias_last_result']['apply_aggressive_count'], $expected['aggressive'] );
+        $this->assertSame( $this->options['drspeed_aias_last_result'], $captured['result'], 'W3 hop: result is the persisted option VERBATIM (apply_* included)' );
+        $this->assertSame( $this->options['drspeed_aias_last_result']['apply_safe_count'], $expected['safe'], 'the option get_badge_state returns verbatim carries apply_safe_count' );
+        $this->assertSame( $this->options['drspeed_aias_last_result']['apply_aggressive_count'], $expected['aggressive'] );
     }
 
     // ---------------------------------------------------------------- AC-5 (PHP side)
@@ -311,11 +311,11 @@ class SyncScopeBuildResultTest extends TestCase {
         // handler-leg helper (SyncScopeBuildResultTestFixtureAccess::mixed_host_et_json()) runs
         // the exact same fixture and can never silently diverge from this test.
         $scenario = $this->mixed_host_et_scenario();
-        $this->transients['cu_scanner_r_orig_1'] = $scenario['r_orig'];
+        $this->transients['drspeed_aias_r_orig_1'] = $scenario['r_orig'];
         $this->stub_everything( $scenario['rescan'] );
         $payload = ( new ScannerAjax() )->do_build_result( 'job-mixed', 'tok' );
 
-        foreach ( [ 'live payload' => $payload, 'aias_last_result option' => $this->options['aias_last_result'] ] as $where => $p ) {
+        foreach ( [ 'live payload' => $payload, 'drspeed_aias_last_result option' => $this->options['drspeed_aias_last_result'] ] as $where => $p ) {
             $this->assertFalse( $p['has_internal_rules'], "$where: no internal in-scope rules" );
             $this->assertSame( 0, $p['apply_safe_count'], $where );
             $this->assertSame( 0, $p['apply_aggressive_count'], $where );
@@ -377,13 +377,13 @@ class SyncScopeBuildResultTestFixtureAccess {
         $scenario = $this->et_rescan_scenario();
 
         $options    = [];
-        $transients = [ 'cu_scanner_r_orig_1' => $scenario['r_orig'] ];
+        $transients = [ 'drspeed_aias_r_orig_1' => $scenario['r_orig'] ];
         $this->stub_everything_impl( $scenario['rescan'], $options, $transients );
 
         ( new ScannerAjax() )->do_build_result( 'job-et', 'tok' );
 
-        $test->assertArrayHasKey( 'cu_scanner_json_job-et', $options, 'the AC-1 ET-rescan producer stored the scan JSON' );
-        $decoded = json_decode( (string) $options['cu_scanner_json_job-et'], true );
+        $test->assertArrayHasKey( 'drspeed_aias_json_job-et', $options, 'the AC-1 ET-rescan producer stored the scan JSON' );
+        $decoded = json_decode( (string) $options['drspeed_aias_json_job-et'], true );
 
         // Leave WP_Mock clean for the caller to register its OWN (handler-phase) stubs next.
         WP_Mock::tearDown();
@@ -408,13 +408,13 @@ class SyncScopeBuildResultTestFixtureAccess {
         $scenario = $this->mixed_host_et_scenario();
 
         $options    = [];
-        $transients = [ 'cu_scanner_r_orig_1' => $scenario['r_orig'] ];
+        $transients = [ 'drspeed_aias_r_orig_1' => $scenario['r_orig'] ];
         $this->stub_everything_impl( $scenario['rescan'], $options, $transients );
 
         ( new ScannerAjax() )->do_build_result( 'job-mixed', 'tok' );
 
-        $test->assertArrayHasKey( 'cu_scanner_json_job-mixed', $options, 'the AC-5 mixed-host ET rescan producer stored the scan JSON' );
-        $decoded = json_decode( (string) $options['cu_scanner_json_job-mixed'], true );
+        $test->assertArrayHasKey( 'drspeed_aias_json_job-mixed', $options, 'the AC-5 mixed-host ET rescan producer stored the scan JSON' );
+        $decoded = json_decode( (string) $options['drspeed_aias_json_job-mixed'], true );
 
         // Leave WP_Mock clean for the caller to register its OWN (handler-phase) stubs next.
         WP_Mock::tearDown();
@@ -470,13 +470,13 @@ class SyncScopeBuildResultTestFixtureAccess {
         ];
 
         $options    = [];
-        $transients = [ 'cu_scanner_r_orig_1' => $this->r_orig_from( $parent ) ];
+        $transients = [ 'drspeed_aias_r_orig_1' => $this->r_orig_from( $parent ) ];
         $this->stub_everything_impl( $rescan, $options, $transients );
 
         $payload = ( new ScannerAjax() )->do_build_result( 'job-b-et', 'tok' );
 
-        $test->assertArrayHasKey( 'cu_scanner_json_job-b-et', $options, 'the Fixture B ET producer stored the scan JSON' );
-        $decoded = json_decode( (string) $options['cu_scanner_json_job-b-et'], true );
+        $test->assertArrayHasKey( 'drspeed_aias_json_job-b-et', $options, 'the Fixture B ET producer stored the scan JSON' );
+        $decoded = json_decode( (string) $options['drspeed_aias_json_job-b-et'], true );
 
         // Leave WP_Mock clean for the caller to register its OWN (handler-phase) stubs next.
         WP_Mock::tearDown();
@@ -507,8 +507,8 @@ class SyncScopeBuildResultTestFixtureAccess {
 
         $payload = ( new ScannerAjax() )->do_build_result( 'job-e', 'tok' );
 
-        $test->assertArrayHasKey( 'cu_scanner_json_job-e', $options, 'the Fixture E producer stored the scan JSON' );
-        $decoded = json_decode( (string) $options['cu_scanner_json_job-e'], true );
+        $test->assertArrayHasKey( 'drspeed_aias_json_job-e', $options, 'the Fixture E producer stored the scan JSON' );
+        $decoded = json_decode( (string) $options['drspeed_aias_json_job-e'], true );
 
         // Non-vacuity (spec assumption #11): the real builder DID emit single-device legs.
         $devices = array_count_values( array_column( array_filter( $decoded['rules'], fn( $r ) => str_starts_with( $r['url_pattern'], 'https://site.test/' ) ), 'device_type' ) );

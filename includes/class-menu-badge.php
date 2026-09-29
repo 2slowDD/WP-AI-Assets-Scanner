@@ -1,14 +1,14 @@
 <?php
-namespace CUScanner;
+namespace DrSpeedAIAS;
 
 defined( 'ABSPATH' ) || exit;
 
 class MenuBadge {
 
-    private const OPTION_LAST_SEEN = 'aias_last_seen_scan_id';
+    private const OPTION_LAST_SEEN = 'drspeed_aias_last_seen_scan_id';
 
     /** R3 Stage C (Tier C) — wp-cron hook name for the deferred rebuild event. */
-    public const CRON_HOOK = 'cu_scanner_r3_rebuild';
+    public const CRON_HOOK = 'drspeed_aias_r3_rebuild';
 
     // Badge state values (returned by get_badge_state + on Heartbeat wire).
     private const BADGE_STATE_GREEN = 'green';
@@ -23,12 +23,12 @@ class MenuBadge {
 
     /** @var ScanHistory|null Constructor-injected for testability (per d-review Minor 5). */
     private $history;
-    /** @var \CUScanner\Admin\ScannerAjax|null Injected for testability (mirrors $history). */
+    /** @var \DrSpeedAIAS\Admin\ScannerAjax|null Injected for testability (mirrors $history). */
     private $ajax;
     /** @var callable|null (string $url, string $key): object — injected RailwayClient factory. */
     private $railway_factory;
 
-    public function __construct( ?ScanHistory $history = null, ?\CUScanner\Admin\ScannerAjax $ajax = null, ?callable $railway_factory = null ) {
+    public function __construct( ?ScanHistory $history = null, ?\DrSpeedAIAS\Admin\ScannerAjax $ajax = null, ?callable $railway_factory = null ) {
         $this->history         = $history;         // null => lazy-init in get_history() (production path).
         $this->ajax            = $ajax;
         $this->railway_factory = $railway_factory;
@@ -92,7 +92,7 @@ class MenuBadge {
 
         add_filter( 'add_menu_classes',                    [ $this, 'filter_menu_title' ],     10, 1 );
         add_filter( 'heartbeat_received',                  [ $this, 'filter_heartbeat' ],      10, 2 );
-        add_action( 'admin_head-toplevel_page_cu-scanner', [ $this, 'mark_seen_on_main_page' ] );
+        add_action( 'admin_head-toplevel_page_drspeed-aias', [ $this, 'mark_seen_on_main_page' ] );
         add_action( 'admin_enqueue_scripts',               [ $this, 'enqueue_inline_css' ] );
         add_action( 'admin_enqueue_scripts',               [ $this, 'enqueue_heartbeat_listener' ] );
 
@@ -113,17 +113,17 @@ class MenuBadge {
      *
      * admin_init fires on every admin request — regular page renders + AJAX +
      * Heartbeat. Without rate limiting, this would poll Railway dozens of times
-     * per minute. The transient `aias_menu_badge_last_poll` caps polling to
+     * per minute. The transient `drspeed_aias_menu_badge_last_poll` caps polling to
      * once per 15 seconds (matching the previous Heartbeat-driven cadence).
      */
     public function maybe_poll_active_job_on_admin_init(): void {
-        $last_poll = (int) get_transient( 'aias_menu_badge_last_poll' );
+        $last_poll = (int) get_transient( 'drspeed_aias_menu_badge_last_poll' );
         if ( $last_poll + 15 > time() ) {
             return;
         }
         // Set first to avoid races where two near-simultaneous requests both
         // pass the rate-limit check + double-poll.
-        set_transient( 'aias_menu_badge_last_poll', time(), 60 );
+        set_transient( 'drspeed_aias_menu_badge_last_poll', time(), 60 );
 
         $this->check_active_job_completion();
     }
@@ -134,7 +134,7 @@ class MenuBadge {
      * navigation: if the operator sits idle on one admin page, admin_init
      * doesn't fire and the badge transition is missed. The setInterval in
      * menu-badge.js fires every 30s independent of operator navigation, hits
-     * cu_scanner_get_badge_state, which calls THIS method to drive the same
+     * drspeed_aias_get_badge_state, which calls THIS method to drive the same
      * check_active_job_completion path. Returns the post-check badge state so
      * the AJAX response can carry it straight to the JS DOM updater.
      */
@@ -146,7 +146,7 @@ class MenuBadge {
     /**
      * WordPress passes the global $menu array (each item is [ $menu_title,
      * $capability, $menu_slug, $page_title, $css_class, $hookname, $icon_url ]).
-     * We match by $menu_slug at index 2 ('cu-scanner') and append a badge span
+     * We match by $menu_slug at index 2 ('drspeed-aias') and append a badge span
      * to the title HTML if the badge state is non-null.
      */
     public function filter_menu_title( $menu ) {
@@ -163,7 +163,7 @@ class MenuBadge {
         }
 
         foreach ( $menu as $position => $item ) {
-            if ( isset( $item[2] ) && $item[2] === 'cu-scanner' ) {
+            if ( isset( $item[2] ) && $item[2] === 'drspeed-aias' ) {
                 $menu[ $position ][0] = $item[0] . ' ' . $this->badge_html( $state );
                 break;
             }
@@ -176,7 +176,7 @@ class MenuBadge {
      * Returns the current badge state in the response so JS can update the DOM.
      *
      * Wire shape: PHP null → JSON null (preserved across heartbeat AJAX
-     * response). JS uses hasOwnProperty.call(response, 'aias_badge') to
+     * response). JS uses hasOwnProperty.call(response, 'drspeed_aias_badge') to
      * distinguish "key absent" from "key present, null". Both paths handled.
      */
     public function filter_heartbeat( array $response, array $data ): array {
@@ -190,7 +190,7 @@ class MenuBadge {
 
         // 1.4.5 — server-side background scan-completion polling. Closes the
         // 1.4.4 client-side-only architectural gap where menu-badge.js's polling
-        // proved unreliable (zero cu_scanner_build_result calls observed in
+        // proved unreliable (zero drspeed_aias_build_result calls observed in
         // production despite the Heartbeat ticks firing). The server-side path
         // runs in filter_heartbeat (already executing on every wp-admin page
         // every ~15s), polls Railway via wp_remote_get (no CORS, no tab-state
@@ -198,14 +198,14 @@ class MenuBadge {
         // scan reaches a terminal state.
         $this->check_active_job_completion();
 
-        $response['aias_badge'] = $this->get_badge_state();   // 'green' | 'red' | null
+        $response['drspeed_aias_badge'] = $this->get_badge_state();   // 'green' | 'red' | null
         return $response;
     }
 
     /**
      * 1.4.5 — server-side scan-completion polling driven by WP Heartbeat.
      *
-     * Reads the `cu_scanner_job_<user_id>` transient (set by ScannerAjax::submit_job
+     * Reads the `drspeed_aias_job_<user_id>` transient (set by ScannerAjax::submit_job
      * at L389-394 with {job_id, job_token, bypass_token, railway_url}). If present,
      * fetches Railway's job status via the existing RailwayClient::get_status. On
      * terminal status:
@@ -223,7 +223,7 @@ class MenuBadge {
      */
     public function check_active_job_completion(): void {
         $user_id = get_current_user_id();
-        $transient_key = 'cu_scanner_job_' . $user_id;
+        $transient_key = 'drspeed_aias_job_' . $user_id;
         $state = get_transient( $transient_key );
 
         // 1.4.7-diag — log EVERY heartbeat tick BEFORE the early-return check so
@@ -386,7 +386,7 @@ class MenuBadge {
                 error_log( '[AI Assets Scanner] r3-rebuild cron: build FAILED: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- diagnostic.
                 $this->get_history()->update_status( $job_id, 'failed' );
             }
-            delete_transient( 'cu_scanner_job_' . $user_id );
+            delete_transient( 'drspeed_aias_job_' . $user_id );
             wp_clear_scheduled_hook( self::CRON_HOOK, [ $job ] );
             return;
         }
@@ -411,32 +411,32 @@ class MenuBadge {
      * inline CSS on every admin page is the cheaper trade-off.
      */
     public function enqueue_inline_css(): void {
-        wp_register_style( 'aias-menu-badge', false, [], AIAS_ASSET_VERSION );
-        wp_enqueue_style( 'aias-menu-badge' );
+        wp_register_style( 'drspeed-aias-menu-badge', false, [], DRSPEED_AIAS_ASSET_VERSION );
+        wp_enqueue_style( 'drspeed-aias-menu-badge' );
         wp_add_inline_style(
-            'aias-menu-badge',
-            '.aias-menu-badge { display:block; clear:both; width:fit-content; '
+            'drspeed-aias-menu-badge',
+            '.drspeed-aias-menu-badge { display:block; clear:both; width:fit-content; '
             . 'margin:3px auto 4px; padding:1px 8px; border-radius:10px; color:#fff; '
             . 'font-weight:bold; font-size:11px; line-height:17px; text-align:center; }'
-            . '.aias-menu-badge--green { background:#46b450; }'
-            . '.aias-menu-badge--red   { background:#dc3232; }'
+            . '.drspeed-aias-menu-badge--green { background:#46b450; }'
+            . '.drspeed-aias-menu-badge--red   { background:#dc3232; }'
         );
     }
 
     public function enqueue_heartbeat_listener(): void {
         wp_enqueue_script(
-            'aias-menu-badge',
-            AIAS_URL . 'admin/js/menu-badge.js',
+            'drspeed-aias-menu-badge',
+            DRSPEED_AIAS_URL . 'admin/js/menu-badge.js',
             [ 'jquery', 'heartbeat' ],
-            AIAS_VERSION,
+            DRSPEED_AIAS_VERSION,
             true
         );
         // 1.4.4 — localize ajaxurl + nonce for the background active-job poller
-        // in menu-badge.js. Nonce action matches the existing cu_scanner_nonce
+        // in menu-badge.js. Nonce action matches the existing drspeed_aias_nonce
         // used by scanner.js + ScannerAjax::check() (admin/class-scanner-ajax.php:42).
-        wp_localize_script( 'aias-menu-badge', 'aiasMenuBadgeData', [
+        wp_localize_script( 'drspeed-aias-menu-badge', 'drspeedAiasMenuBadgeData', [
             'ajaxurl' => admin_url( 'admin-ajax.php' ),
-            'nonce'   => wp_create_nonce( 'cu_scanner_nonce' ),
+            'nonce'   => wp_create_nonce( 'drspeed_aias_nonce' ),
         ] );
     }
 
@@ -446,6 +446,10 @@ class MenuBadge {
      */
     private function most_recent_triggering_record( array $history ): ?array {
         foreach ( $history as $rec ) {
+            // A record without a job_id cannot be marked seen, so it cannot drive the badge.
+            if ( ! is_array( $rec ) || '' === (string) ( $rec['job_id'] ?? '' ) ) {
+                continue;
+            }
             $status = $rec['status'] ?? '';
             if ( $status === self::STATUS_COMPLETE || $status === self::STATUS_FAILED ) {
                 return $rec;
@@ -461,9 +465,9 @@ class MenuBadge {
         return $this->history;
     }
 
-    private function get_ajax(): \CUScanner\Admin\ScannerAjax {
+    private function get_ajax(): \DrSpeedAIAS\Admin\ScannerAjax {
         if ( $this->ajax === null ) {
-            $this->ajax = new \CUScanner\Admin\ScannerAjax();
+            $this->ajax = new \DrSpeedAIAS\Admin\ScannerAjax();
         }
         return $this->ajax;
     }
@@ -472,20 +476,20 @@ class MenuBadge {
         if ( $this->railway_factory !== null ) {
             return ( $this->railway_factory )( $url, '' );
         }
-        $key = ( new \CUScanner\Settings() )->get_api_key();
-        return new \CUScanner\Api\RailwayClient( $url, $key );
+        $key = ( new \DrSpeedAIAS\Settings() )->get_api_key();
+        return new \DrSpeedAIAS\Api\RailwayClient( $url, $key );
     }
 
     /** Gated diagnostic log — default OFF (see includes/debug.php). */
     private static function dbg( string $msg ): void {
-        if ( aias_debug_enabled() ) {
-            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- intentional diagnostic; gated by aias_debug_enabled().
+        if ( drspeed_aias_debug_enabled() ) {
+            // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- intentional diagnostic; gated by drspeed_aias_debug_enabled().
             error_log( $msg );
         }
     }
 
     private function badge_html( string $state ): string {
-        $cls = esc_attr( 'aias-menu-badge aias-menu-badge--' . $state );
+        $cls = esc_attr( 'drspeed-aias-menu-badge drspeed-aias-menu-badge--' . $state );
         return '<span class="' . $cls . '" aria-label="Unseen scan result">!</span>';
     }
 }

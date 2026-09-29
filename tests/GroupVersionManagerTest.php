@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\GroupVersionManager;
+use DrSpeedAIAS\Scanner\GroupVersionManager;
 use WP_Mock\Tools\TestCase;
 
 require_once __DIR__ . '/SnapshotManagerTest.php'; // provides FakeRuleRepository

@@ -1,7 +1,7 @@
 <?php
 
 use PHPUnit\Framework\TestCase;
-use CUScanner\Cdn\CloudflareAdapter;
+use DrSpeedAIAS\Cdn\CloudflareAdapter;
 
 final class CloudflareAdapterTest extends TestCase {
 
@@ -157,7 +157,7 @@ final class CloudflareAdapterTest extends TestCase {
         $this->assertStringNotContainsString( 'CU Scanner', $html );
     }
 
-    public function test_instructions_still_use_x_cu_scanner_header_token(): void {
+    public function test_instructions_still_use_x_drspeed_aias_header_token(): void {
         // The rename must NOT touch the request-header expression.
         $html = $this->adapter->instructionsHtml( 'mysecret' );
         $this->assertStringContainsString( 'x-cu-scanner', $html );

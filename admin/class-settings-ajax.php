@@ -1,19 +1,19 @@
 <?php
-namespace CUScanner\Admin;
+namespace DrSpeedAIAS\Admin;
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-use CUScanner\Settings;
-use CUScanner\Api\WpserviceClient;
+use DrSpeedAIAS\Settings;
+use DrSpeedAIAS\Api\WpserviceClient;
 
 class SettingsAjax {
     public function register(): void {
-        add_action( 'wp_ajax_cu_scanner_save_settings', [ $this, 'save_settings' ] );
-        add_action( 'wp_ajax_cu_scanner_fetch_balance', [ $this, 'fetch_balance' ] );
-        add_action( 'wp_ajax_cu_scanner_ack_cdn', [ $this, 'ack_cdn' ] );
-        add_action( 'wp_ajax_cu_scanner_regenerate_secret', [ $this, 'regenerate_secret' ] );
-        add_action( 'wp_ajax_cu_scanner_request_free_key', [ $this, 'request_free_key' ] );
-        add_action( 'wp_ajax_cu_scanner_replace_key', [ $this, 'replace_key' ] );
+        add_action( 'wp_ajax_drspeed_aias_save_settings', [ $this, 'save_settings' ] );
+        add_action( 'wp_ajax_drspeed_aias_fetch_balance', [ $this, 'fetch_balance' ] );
+        add_action( 'wp_ajax_drspeed_aias_ack_cdn', [ $this, 'ack_cdn' ] );
+        add_action( 'wp_ajax_drspeed_aias_regenerate_secret', [ $this, 'regenerate_secret' ] );
+        add_action( 'wp_ajax_drspeed_aias_request_free_key', [ $this, 'request_free_key' ] );
+        add_action( 'wp_ajax_drspeed_aias_replace_key', [ $this, 'replace_key' ] );
     }
 
     /**
@@ -22,18 +22,18 @@ class SettingsAjax {
      * (this site's domain and the plugin version) and to whom (wpservice.pro).
      */
     public function request_free_key(): void {
-        check_ajax_referer( 'cu_scanner_settings_nonce', 'nonce' );
+        check_ajax_referer( 'drspeed_aias_settings_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
 
         $settings = new Settings();
-        if ( ! \CUScanner\FreeKeyBootstrap::can_request( $settings ) ) {
+        if ( ! \DrSpeedAIAS\FreeKeyBootstrap::can_request( $settings ) ) {
             wp_send_json_error( __( 'An API key is already saved.', 'dr-speed-ai-assets-scanner' ) );
         }
 
-        $bootstrap = new \CUScanner\FreeKeyBootstrap( $settings );
+        $bootstrap = new \DrSpeedAIAS\FreeKeyBootstrap( $settings );
         $outcome   = $bootstrap->run();
 
-        if ( \CUScanner\FreeKeyBootstrap::OUTCOME_UNUSABLE === $outcome ) {
+        if ( \DrSpeedAIAS\FreeKeyBootstrap::OUTCOME_UNUSABLE === $outcome ) {
             wp_send_json_error( self::unusable_free_key_message( $settings->get_free_key_unusable() ) );
         }
         if ( $settings->is_free_key( $settings->get_api_key() ) ) {
@@ -47,7 +47,7 @@ class SettingsAjax {
      * one message for every failure. The reply is plain text shown with textContent.
      */
     public static function free_key_failure_message( ?\RuntimeException $error ): string {
-        $status = $error instanceof \CUScanner\Api\HttpException ? $error->get_status_code() : -1;
+        $status = $error instanceof \DrSpeedAIAS\Api\HttpException ? $error->get_status_code() : -1;
         $detail = null === $error ? '' : $error->getMessage();
         if ( function_exists( 'sanitize_text_field' ) ) {
             $detail = sanitize_text_field( $detail );
@@ -81,22 +81,22 @@ class SettingsAjax {
     }
 
     public function regenerate_secret(): void {
-        check_ajax_referer( 'cu_scanner_settings_nonce', 'nonce' );
+        check_ajax_referer( 'drspeed_aias_settings_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
         $secret = ( new Settings() )->regenerate_scanner_secret();
         wp_send_json_success( [ 'secret' => $secret ] );
     }
 
     public function ack_cdn(): void {
-        check_ajax_referer( 'cu_scanner_settings_nonce', 'nonce' );
+        check_ajax_referer( 'drspeed_aias_settings_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
         $cdn = sanitize_text_field( wp_unslash( $_POST['cdn'] ?? '' ) );
-        ( new \CUScanner\Settings() )->set_acknowledged_cdn( $cdn );
+        ( new \DrSpeedAIAS\Settings() )->set_acknowledged_cdn( $cdn );
         wp_send_json_success();
     }
 
     public function save_settings(): void {
-        check_ajax_referer( 'cu_scanner_settings_nonce', 'nonce' );
+        check_ajax_referer( 'drspeed_aias_settings_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
 
         $settings = new Settings();
@@ -134,7 +134,7 @@ class SettingsAjax {
         }
 
         // Authenticate FIRST, commit the key only after. A submitted key never
-        // reaches cu_scanner_api_key until /auth has accepted it, so none of the
+        // reaches drspeed_aias_api_key until /auth has accepted it, so none of the
         // three ways a bad value arrives can destroy the stored one: the mask
         // this page renders back into the field, an empty submission, or a typo.
         // This handler deliberately knows NOTHING about the mask format (that
@@ -155,7 +155,7 @@ class SettingsAjax {
         // accepted residual is that a good key cannot be saved while
         // wpservice.pro is unreachable: recoverable by retry, unlike key loss.
         try {
-            $client = new WpserviceClient( AIAS_WPSERVICE_URL, $api_key );
+            $client = new WpserviceClient( DRSPEED_AIAS_WPSERVICE_URL, $api_key );
             $auth   = $client->authenticate();
             if ( ! $keep ) {
                 $settings->set_api_key( $api_key );
@@ -193,7 +193,7 @@ class SettingsAjax {
      * replacement never removes the key that works.
      */
     public function replace_key(): void {
-        check_ajax_referer( 'cu_scanner_settings_nonce', 'nonce' );
+        check_ajax_referer( 'drspeed_aias_settings_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
 
         $settings = new Settings();
@@ -210,7 +210,7 @@ class SettingsAjax {
         }
 
         try {
-            $auth = ( new WpserviceClient( AIAS_WPSERVICE_URL, $new_key ) )->authenticate();
+            $auth = ( new WpserviceClient( DRSPEED_AIAS_WPSERVICE_URL, $new_key ) )->authenticate();
         } catch ( \RuntimeException $e ) {
             wp_send_json_error( $e->getMessage() );
         }
@@ -222,7 +222,7 @@ class SettingsAjax {
         $settings->set_api_key( $new_key );
         $settings->clear_pending_free_key();
         $settings->clear_free_key_unusable();
-        wp_clear_scheduled_hook( 'cu_scanner_free_key_retry' );
+        wp_clear_scheduled_hook( 'drspeed_aias_free_key_retry' );
         self::store_railway_url( $settings, $auth );
 
         wp_send_json_success( [ 'credits' => (int) ( $auth['balance'] ?? 0 ) ] );
@@ -251,7 +251,7 @@ class SettingsAjax {
     }
 
     public function fetch_balance(): void {
-        check_ajax_referer( 'cu_scanner_settings_nonce', 'nonce' );
+        check_ajax_referer( 'drspeed_aias_settings_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_send_json_error( 'Forbidden', 403 );
 
         $settings = new Settings();
@@ -260,7 +260,7 @@ class SettingsAjax {
             wp_send_json_error( __( 'No API key saved.', 'dr-speed-ai-assets-scanner' ) );
         }
         if ( $settings->has_pending_free_key() ) {
-            ( new \CUScanner\FreeKeyBootstrap() )->run();
+            ( new \DrSpeedAIAS\FreeKeyBootstrap() )->run();
             if ( $settings->has_pending_free_key() ) {
                 wp_send_json_error( 'Free API key activation is pending. Please try again later.' );
             }
@@ -271,10 +271,10 @@ class SettingsAjax {
 
             // The paid-key claim runs on every Settings load and window focus; once a
             // minute is enough to pick up a purchase and keeps the service's counter low.
-            if ( $settings->is_free_key( $api_key ) && false === get_transient( 'aias_claim_checked' ) ) {
-                set_transient( 'aias_claim_checked', 1, MINUTE_IN_SECONDS );
+            if ( $settings->is_free_key( $api_key ) && false === get_transient( 'drspeed_aias_claim_checked' ) ) {
+                set_transient( 'drspeed_aias_claim_checked', 1, MINUTE_IN_SECONDS );
                 try {
-                    $claim = ( new WpserviceClient( AIAS_WPSERVICE_URL, $api_key ) )
+                    $claim = ( new WpserviceClient( DRSPEED_AIAS_WPSERVICE_URL, $api_key ) )
                         ->claim_paid_key( $api_key, $settings->get_paid_key_claim_token() );
                     $claimed_key = sanitize_text_field( (string) ( $claim['api_key'] ?? '' ) );
                     if ( '' !== $claimed_key && ! $settings->is_free_key( $claimed_key ) && ! $settings->is_pending_free_key( $claimed_key ) ) {
@@ -287,7 +287,7 @@ class SettingsAjax {
                 }
             }
 
-            $client  = new WpserviceClient( AIAS_WPSERVICE_URL, $api_key );
+            $client  = new WpserviceClient( DRSPEED_AIAS_WPSERVICE_URL, $api_key );
             $balance = $client->get_credits();
             if ( $updated ) {
                 $auth = $client->authenticate();

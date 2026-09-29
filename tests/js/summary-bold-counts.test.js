@@ -308,7 +308,7 @@ function testLiveScanPathRendersBold() {
       return Promise.resolve({
         ok: true,
         json: function () {
-          return Promise.resolve(action === 'cu_scanner_build_result'
+          return Promise.resolve(action === 'drspeed_aias_build_result'
             ? { success: true, data: {
                 scan_id: 'scan1', total_pages: 4, safe_count: 2, aggressive_count: 6,
                 can_push: true, pages: [], has_active_cu_rules: false,

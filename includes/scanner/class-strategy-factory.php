@@ -1,11 +1,11 @@
 <?php
-namespace CUScanner\Scanner;
+namespace DrSpeedAIAS\Scanner;
 
 defined( 'ABSPATH' ) || exit;
 
-use CUScanner\Scanner\Strategies\AbstractOptimizerBypass;
-use CUScanner\Scanner\Strategies\SgOptimizerBypass;
-use CUScanner\Scanner\Strategies\HummingbirdBypass;
+use DrSpeedAIAS\Scanner\Strategies\AbstractOptimizerBypass;
+use DrSpeedAIAS\Scanner\Strategies\SgOptimizerBypass;
+use DrSpeedAIAS\Scanner\Strategies\HummingbirdBypass;
 
 class StrategyFactory {
     public static function for_method( string $method ): AbstractOptimizerBypass {

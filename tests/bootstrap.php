@@ -3,11 +3,11 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 define( 'ABSPATH', '/fake/wp/' );
 define( 'WP_PLUGIN_DIR', '/fake/wp/wp-content/plugins' );
-define( 'AIAS_DIR', dirname( __DIR__ ) . '/' );
-define( 'AIAS_VERSION', '1.0.0' );
-define( 'AIAS_URL', 'https://example.test/wp-content/plugins/dr-speed-ai-assets-scanner/' );
-define( 'AIAS_WPSERVICE_URL', 'https://api.wpservice.pro' );
-require_once AIAS_DIR . 'includes/debug.php';
+define( 'DRSPEED_AIAS_DIR', dirname( __DIR__ ) . '/' );
+define( 'DRSPEED_AIAS_VERSION', '1.0.0' );
+define( 'DRSPEED_AIAS_URL', 'https://example.test/wp-content/plugins/dr-speed-ai-assets-scanner/' );
+define( 'DRSPEED_AIAS_WPSERVICE_URL', 'https://api.wpservice.pro' );
+require_once DRSPEED_AIAS_DIR . 'includes/debug.php';
 defined( 'HOUR_IN_SECONDS' )   || define( 'HOUR_IN_SECONDS',   3600 );
 defined( 'DAY_IN_SECONDS' )    || define( 'DAY_IN_SECONDS',    86400 );
 defined( 'MINUTE_IN_SECONDS' ) || define( 'MINUTE_IN_SECONDS', 60 );
@@ -53,9 +53,9 @@ if ( ! class_exists( 'WP_Query' ) ) {
 spl_autoload_register( function ( string $class ): void {
     // Shared with dr-speed-ai-assets-scanner.php so the suite exercises the REAL production
     // autoload map, not a hand-maintained test-only copy that can silently drift.
-    $map = require AIAS_DIR . 'includes/autoload-map.php';
+    $map = require DRSPEED_AIAS_DIR . 'includes/autoload-map.php';
     if ( isset( $map[ $class ] ) ) {
-        require AIAS_DIR . $map[ $class ];
+        require DRSPEED_AIAS_DIR . $map[ $class ];
     }
 } );
 

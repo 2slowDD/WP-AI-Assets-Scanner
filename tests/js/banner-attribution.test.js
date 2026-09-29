@@ -4,7 +4,7 @@ const { createHarness } = require('./r3-stage-c-harness');
 // T0-C — the post-scan banner must name the party that rate-limited the scan.
 //
 // P17: this drives the REAL production activation path, not an injected one:
-//   handleStatusUpdate('complete') -> buildResult() -> post('cu_scanner_build_result')
+//   handleStatusUpdate('complete') -> buildResult() -> post('drspeed_aias_build_result')
 //   -> the bannerData projection (scanner.js:1875) -> restoreStep4() -> renderBrokenBanner().
 // Handing renderBrokenBanner/restoreStep4 a hand-built bannerData would inject the very
 // field under test and would stay green if the :1875 projection dropped it. It does not:
@@ -15,7 +15,7 @@ function flush() {
 }
 
 // Renders the banner for one `attribution` value by standing up a harness whose
-// cu_scanner_build_result response carries it, exactly as the PHP payload does.
+// drspeed_aias_build_result response carries it, exactly as the PHP payload does.
 function renderBannerWith(attribution) {
   const data = {
     scan_id: 'scan1',
@@ -32,15 +32,15 @@ function renderBannerWith(attribution) {
   const h = createHarness({
     fetch: function (url, opts) {
       const action = opts && opts.body ? opts.body.get('action') : null;
-      const body = action === 'cu_scanner_build_result'
+      const body = action === 'drspeed_aias_build_result'
         ? { success: true, data: data }
         : { success: true, data: {} };
       return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
     },
   });
-  // wp_localize_script's cuReasonCopy: without the category map every reason
+  // wp_localize_script's drspeedAiasReasonCopy: without the category map every reason
   // degrades to 'bot' and the rate branch is never reached.
-  h.sandbox.cuReasonCopy = {
+  h.sandbox.drspeedAiasReasonCopy = {
     phrases: { tier1_http_rate_limit: 'rate limited' },
     categories: { tier1_http_rate_limit: 'rate' },
   };

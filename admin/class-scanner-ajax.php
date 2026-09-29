@@ -1,51 +1,51 @@
 <?php
-namespace CUScanner\Admin;
+namespace DrSpeedAIAS\Admin;
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-use CUScanner\Settings;
-use CUScanner\ScanHistory;
-use CUScanner\Api\WpserviceClient;
-use CUScanner\Api\RailwayClient;
-use CUScanner\Scanner\PageDiscovery;
-use CUScanner\Scanner\PluginDetector;
-use CUScanner\Scanner\BypassManager;
-use CUScanner\Scanner\CuJsonBuilder;
-use CUScanner\Scanner\EventEmitter;
-use CUScanner\Scanner\LastPushSyncUndo;
-use CUScanner\Scanner\RulePusher;
+use DrSpeedAIAS\Settings;
+use DrSpeedAIAS\ScanHistory;
+use DrSpeedAIAS\Api\WpserviceClient;
+use DrSpeedAIAS\Api\RailwayClient;
+use DrSpeedAIAS\Scanner\PageDiscovery;
+use DrSpeedAIAS\Scanner\PluginDetector;
+use DrSpeedAIAS\Scanner\BypassManager;
+use DrSpeedAIAS\Scanner\CuJsonBuilder;
+use DrSpeedAIAS\Scanner\EventEmitter;
+use DrSpeedAIAS\Scanner\LastPushSyncUndo;
+use DrSpeedAIAS\Scanner\RulePusher;
 
 class ScannerAjax {
     public function register(): void {
         $actions = [
-            'cu_scanner_detect_plugins',
-            'cu_scanner_discover_pages',
-            'cu_scanner_reserve_job',
-            'cu_scanner_submit_job',
-            'cu_scanner_poll_status',
-            'cu_scanner_cancel_job',
-            'cu_scanner_handle_failure',
-            'cu_scanner_handle_killed',
-            'cu_scanner_build_result',
-            'cu_scanner_download_json',
-            'cu_scanner_push_to_cu',
-            'cu_scanner_sync_to_cu',
-            'cu_scanner_undo_last_push_sync',
-            'cu_scanner_check_job',
-            'cu_scanner_export_history',
-            'cu_scanner_delete_history',
-            'cu_scanner_probe_target_stack',
-            'cu_scanner_get_badge_state',
-            'cu_scanner_outbox_enqueue',
-            'cu_scanner_outbox_tick',
+            'drspeed_aias_detect_plugins',
+            'drspeed_aias_discover_pages',
+            'drspeed_aias_reserve_job',
+            'drspeed_aias_submit_job',
+            'drspeed_aias_poll_status',
+            'drspeed_aias_cancel_job',
+            'drspeed_aias_handle_failure',
+            'drspeed_aias_handle_killed',
+            'drspeed_aias_build_result',
+            'drspeed_aias_download_json',
+            'drspeed_aias_push_to_cu',
+            'drspeed_aias_sync_to_cu',
+            'drspeed_aias_undo_last_push_sync',
+            'drspeed_aias_check_job',
+            'drspeed_aias_export_history',
+            'drspeed_aias_delete_history',
+            'drspeed_aias_probe_target_stack',
+            'drspeed_aias_get_badge_state',
+            'drspeed_aias_outbox_enqueue',
+            'drspeed_aias_outbox_tick',
         ];
         foreach ( $actions as $action ) {
-            add_action( 'wp_ajax_' . $action, [ $this, str_replace( 'cu_scanner_', '', $action ) ] );
+            add_action( 'wp_ajax_' . $action, [ $this, str_replace( 'drspeed_aias_', '', $action ) ] );
         }
     }
 
     private function check(): void {
-        check_ajax_referer( 'cu_scanner_nonce', 'nonce' );
+        check_ajax_referer( 'drspeed_aias_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) {
             wp_send_json_error( 'Forbidden', 403 );
         }
@@ -55,18 +55,18 @@ class ScannerAjax {
 
     private function ratchet_enabled(): bool {
         // Default-ON (beta). Opt-out kill switch: set the option to a falsy value (0 / false).
-        return (bool) get_option( 'cu_scanner_ratchet_enabled', true );
+        return (bool) get_option( 'drspeed_aias_ratchet_enabled', true );
     }
 
     private function ratchet_debug_enabled(): bool {
-        return aias_debug_enabled();
+        return drspeed_aias_debug_enabled();
     }
 
     private function log_ratchet_diag( string $phase, array $data ): void {
         if ( ! $this->ratchet_debug_enabled() ) {
             return;
         }
-        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional CU_SCANNER_DEBUG-gated server-side diagnostic; no secrets (asset handles/URLs only), withheld from browser.
+        // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional DRSPEED_AIAS_DEBUG-gated server-side diagnostic; no secrets (asset handles/URLs only), withheld from browser.
         error_log( '[AI Assets Scanner][ratchet][' . $phase . '] ' . wp_json_encode( $data ) );
     }
 
@@ -100,7 +100,7 @@ class ScannerAjax {
             return '';
         }
 
-        $auth        = ( new WpserviceClient( AIAS_WPSERVICE_URL, $api_key ) )->authenticate();
+        $auth        = ( new WpserviceClient( DRSPEED_AIAS_WPSERVICE_URL, $api_key ) )->authenticate();
         $railway_url = (string) ( $auth['railway_url'] ?? '' );
         if ( '' === $railway_url ) {
             throw new \RuntimeException( 'SaaS auth response did not include Railway URL.' );
@@ -116,7 +116,7 @@ class ScannerAjax {
         }
 
         try {
-            ( new WpserviceClient( AIAS_WPSERVICE_URL, $api_key ) )->release_credits( $job_token );
+            ( new WpserviceClient( DRSPEED_AIAS_WPSERVICE_URL, $api_key ) )->release_credits( $job_token );
         } catch ( \RuntimeException ) {}
     }
 
@@ -156,7 +156,7 @@ class ScannerAjax {
                 : __( 'The free API key request has not finished yet. Open Settings and click Validate your key again.', 'dr-speed-ai-assets-scanner' ),
             'retryable'    => false,
             'error'        => 'no_api_key',
-            'settings_url' => admin_url( 'admin.php?page=cu-scanner-settings#cu-free-key-optin' ),
+            'settings_url' => admin_url( 'admin.php?page=drspeed-aias-settings#cu-free-key-optin' ),
         ];
     }
 
@@ -165,7 +165,7 @@ class ScannerAjax {
      * wrong domain). Same shape as missing_key_error() so the scanner offers Settings.
      */
     public static function rejected_key_error( \Throwable $e ): ?array {
-        $code = $e instanceof \CUScanner\Api\HttpException ? $e->get_status_code() : -1;
+        $code = $e instanceof \DrSpeedAIAS\Api\HttpException ? $e->get_status_code() : -1;
         if ( 401 !== $code && 403 !== $code ) {
             return null;
         }
@@ -174,12 +174,12 @@ class ScannerAjax {
             'message'      => sprintf( __( 'wpservice.pro did not accept the saved API key (%s). Open Settings to check the key, or use Replace API key to enter a paid key.', 'dr-speed-ai-assets-scanner' ), self::truncate_error_detail( $e->getMessage() ) ),
             'retryable'    => false,
             'error'        => 'invalid_api_key',
-            'settings_url' => admin_url( 'admin.php?page=cu-scanner-settings' ),
+            'settings_url' => admin_url( 'admin.php?page=drspeed-aias-settings' ),
         ];
     }
 
     private static function friendly_error( \Throwable $e, string $fallback ): array {
-        $code = $e instanceof \CUScanner\Api\HttpException ? $e->get_status_code() : -1;
+        $code = $e instanceof \DrSpeedAIAS\Api\HttpException ? $e->get_status_code() : -1;
         if ( 409 === $code ) {
             return [
                 'message'   => 'A scan is already queued or running for this account. Please wait for it to finish before starting another.',
@@ -189,7 +189,7 @@ class ScannerAjax {
         }
         return [
             'message'   => $fallback,
-            'retryable' => \CUScanner\Scanner\Outbox::is_retryable( $e ),
+            'retryable' => \DrSpeedAIAS\Scanner\Outbox::is_retryable( $e ),
         ];
     }
 
@@ -200,7 +200,7 @@ class ScannerAjax {
         $api_key = $this->settings()->get_api_key();
         try {
             // No key means the user has not connected to wpservice.pro yet: make no request.
-            $credits = '' === $api_key ? [] : ( new WpserviceClient( AIAS_WPSERVICE_URL, $api_key ) )->get_credits();
+            $credits = '' === $api_key ? [] : ( new WpserviceClient( DRSPEED_AIAS_WPSERVICE_URL, $api_key ) )->get_credits();
             $balance = isset( $credits['balance'] ) ? (int) $credits['balance'] : null;
         } catch ( \RuntimeException $e ) {
             error_log( '[AI Assets Scanner] detect_plugins balance: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional production logging: exception detail is withheld from the browser and written to server error log only.
@@ -210,12 +210,12 @@ class ScannerAjax {
         $extra    = [];
         $detected = null;
         try {
-            $detected = ( new \CUScanner\Cdn\Detector() )->detect();
+            $detected = ( new \DrSpeedAIAS\Cdn\Detector() )->detect();
             $ack      = $this->settings()->get_acknowledged_cdn();
-            if ( \CUScanner\Admin\AdminPages::cdn_notice_should_show( $detected, $ack ) ) {
+            if ( \DrSpeedAIAS\Admin\AdminPages::cdn_notice_should_show( $detected, $ack ) ) {
                 $extra['cdn_notice'] = [
                     'name'         => $detected,
-                    'settings_url' => admin_url( 'admin.php?page=cu-scanner-settings#cu-cloudflare-waf-bypass' ),
+                    'settings_url' => admin_url( 'admin.php?page=drspeed-aias-settings#cu-cloudflare-waf-bypass' ),
                 ];
             }
         } catch ( \Throwable $e ) {
@@ -232,7 +232,7 @@ class ScannerAjax {
                 $kind    = self::throttle_notice_kind( $name );
                 $payload = [ 'name' => $name, 'kind' => $kind ];
                 if ( 'cdn' === $kind ) {
-                    $payload['settings_url'] = admin_url( 'admin.php?page=cu-scanner-settings#cu-cloudflare-waf-bypass' );
+                    $payload['settings_url'] = admin_url( 'admin.php?page=drspeed-aias-settings#cu-cloudflare-waf-bypass' );
                 }
                 $extra['last_scan_throttle'] = $payload;
                 // Supersede the proactive cdn_notice when it's the same detected CDN (avoid a double notice).
@@ -317,9 +317,9 @@ class ScannerAjax {
         try {
             $api_key = $settings->get_api_key();
             $this->ensure_railway_url( $settings, $api_key );
-            $client = new WpserviceClient( AIAS_WPSERVICE_URL, $api_key );
+            $client = new WpserviceClient( DRSPEED_AIAS_WPSERVICE_URL, $api_key );
             $result = $client->reserve_job( $page_count, $extra_time_count );
-            set_transient( 'cu_scanner_pending_token_' . get_current_user_id(), $result['job_token'], 3600 );
+            set_transient( 'drspeed_aias_pending_token_' . get_current_user_id(), $result['job_token'], 3600 );
             wp_send_json_success( [ 'reserved' => true, 'job_token' => $result['job_token'] ] );
         } catch ( \RuntimeException $e ) {
             error_log( '[AI Assets Scanner] reserve_job: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional production logging: full exception detail to server log; truncated user-visible detail via format_reserve_error_detail().
@@ -471,7 +471,7 @@ class ScannerAjax {
         $payload = [
             'pages'          => $pages,
             'api_key'        => $api_key,
-            'wpservice_url'  => AIAS_WPSERVICE_BASE,
+            'wpservice_url'  => DRSPEED_AIAS_WPSERVICE_BASE,
             'scanner_secret' => $settings->get_scanner_secret(),
         ];
         $http_auth = $settings->get_http_auth();
@@ -530,7 +530,7 @@ class ScannerAjax {
      *   2. for Class C entries, build strategies + OptimizerBypassOrchestrator->begin()
      *      (RuntimeException propagates to the caller's catch),
      *   3. ScanHistory->create_record(...,'queued'),
-     *   4. set_transient( 'cu_scanner_job_<user_id>', ... , 7200 ).
+     *   4. set_transient( 'drspeed_aias_job_<user_id>', ... , 7200 ).
      *
      * CRITICAL: the transient is keyed on the $user_id PARAMETER, NOT
      * get_current_user_id() — under WP-cron (outbox replay) the current user is 0,
@@ -592,13 +592,13 @@ class ScannerAjax {
                 $method = $entry['disable_method'] ?? '';
                 if ( $method === '' ) continue;
                 try {
-                    $strategies[] = \CUScanner\Scanner\StrategyFactory::for_method( $method );
+                    $strategies[] = \DrSpeedAIAS\Scanner\StrategyFactory::for_method( $method );
                 } catch ( \InvalidArgumentException $_ ) {
                     // Unknown method: silently skip (factory may lag detector additions).
                 }
             }
             if ( ! empty( $strategies ) ) {
-                ( new \CUScanner\Scanner\OptimizerBypassOrchestrator( $strategies ) )
+                ( new \DrSpeedAIAS\Scanner\OptimizerBypassOrchestrator( $strategies ) )
                     ->begin( $scan_id, 1800 );
             }
         }
@@ -607,7 +607,7 @@ class ScannerAjax {
         ( new ScanHistory() )->create_record( $job_id, $domain, count( $urls ), 'queued' );
 
         // Keyed on the $user_id PARAMETER — under WP-cron get_current_user_id() is 0.
-        set_transient( 'cu_scanner_job_' . $user_id, [
+        set_transient( 'drspeed_aias_job_' . $user_id, [
             'job_id'       => $job_id,
             'job_token'    => $job_token,
             'bypass_token' => $bypass_token,
@@ -620,7 +620,7 @@ class ScannerAjax {
         // Keyed by JOB_ID (not user_id) because do_build_result() receives $job_id as a
         // parameter and runs on both the interactive build_result path and the
         // background MenuBadge heartbeat path (where the user-keyed transient may be
-        // gone), and because cancel_job() deletes cu_scanner_job_ BEFORE build_result
+        // gone), and because cancel_job() deletes drspeed_aias_job_ BEFORE build_result
         // runs — whereas a cancelled scan's completed pages still deserve the note.
         // Built from the reshaped pages actually sent to Railway ($payload['pages']) so
         // the key is byte-identical to the pages[].url the worker echoes back verbatim.
@@ -628,7 +628,7 @@ class ScannerAjax {
         // list are stored, so a URL absent from the map yields no note (never false).
         $bypass_map = self::build_bypass_map( $pages_sent );
         if ( ! empty( $bypass_map ) ) {
-            set_transient( 'cu_scanner_bypass_map_' . $job_id, $bypass_map, 7200 );
+            set_transient( 'drspeed_aias_bypass_map_' . $job_id, $bypass_map, 7200 );
         }
 
         // Persist the set of final scan URLs sent WITH Extra Time (operator 2026-09-14), so
@@ -639,7 +639,7 @@ class ScannerAjax {
         // nothing stored when no page requested Extra Time.
         $et_urls = self::build_et_url_set( $pages_sent );
         if ( ! empty( $et_urls ) ) {
-            set_transient( 'cu_scanner_et_urls_' . $job_id, $et_urls, 7200 );
+            set_transient( 'drspeed_aias_et_urls_' . $job_id, $et_urls, 7200 );
         }
 
         // FU-ET-STAMP-SEVERS-RATCHET — persist a job-keyed ET-rescan marker so
@@ -664,8 +664,8 @@ class ScannerAjax {
         $this->check();
         // Wipe all prior banner dismissals — each new scan gets a fresh slate.
         // After $this->check() so the state-change is gated by nonce + capability per WP Compliance Rules 4/11.
-        // Leading backslash: AIAS_Broken_Banner is in the global namespace; this file is in CUScanner\Admin.
-        \AIAS_Broken_Banner::on_submit_job();
+        // Leading backslash: DRSPEED_AIAS_Broken_Banner is in the global namespace; this file is in DrSpeedAIAS\Admin.
+        \DRSPEED_AIAS_Broken_Banner::on_submit_job();
 
         $settings    = $this->settings();
         $api_key     = $settings->get_api_key();
@@ -706,7 +706,7 @@ class ScannerAjax {
 
         // FU-NEW-2 Phase 5 (T5.2) — capture per-URL bypass map from JS probe step.
         // External URLs use target-detected suffixes; internal URLs use $host_bypass.
-        // Missing external URLs default to [] and fire cu_scanner_target_bypass_missing.
+        // Missing external URLs default to [] and fire drspeed_aias_target_bypass_missing.
         //
         // wp-compliance Rule 25 / proposed-Rule-27 — $_POST may carry a structured
         // multi-level map (URL key → suffix-array). PHP's $_POST parser hands us
@@ -731,7 +731,7 @@ class ScannerAjax {
         $submitted_urls_raw = array_map( 'esc_url_raw', wp_unslash( (array) ( $_POST['submitted_urls'] ?? [] ) ) );
 
         // FU-NEW-2 Phase 5 (T5.4) — capture target_stack_summary blob (forwarded by
-        // JS after the cu_scanner_probe_target_stack step). Null when absent/empty.
+        // JS after the drspeed_aias_probe_target_stack step). Null when absent/empty.
         $target_stack_summary = null;
         // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce verified in $this->check() before any submit payload is processed.
 	if ( isset( $_POST['target_stack_summary'] ) ) {
@@ -818,7 +818,7 @@ class ScannerAjax {
     /**
      * Total credits billed for a scan, summed from the per-page rule.
      *
-     * Delegates to AIAS_Scan_Status::classify() — the SAME rule that drives the per-URL
+     * Delegates to DRSPEED_AIAS_Scan_Status::classify() — the SAME rule that drives the per-URL
      * Step-4 "Credits" column — so the scan-history total always equals the sum of that
      * column and the amount the SaaS actually charged. Each page contributes:
      *   origin_unavailable → 0; error → 0 (+1 if it ran a billed Extra-Time continuation);
@@ -834,7 +834,7 @@ class ScannerAjax {
         $total = 0;
         foreach ( $pages_raw as $i => $page ) {
             // $by_page absent (legacy callers) → null tally → page_credit keeps legacy 1-per-ok.
-            $total += \AIAS_Scan_Status::page_credit( (array) $page, $by_page[ $i ] ?? null );
+            $total += \DRSPEED_AIAS_Scan_Status::page_credit( (array) $page, $by_page[ $i ] ?? null );
         }
         return (int) $total;
     }
@@ -969,7 +969,7 @@ class ScannerAjax {
             if ( ! is_array( $page ) || ! is_string( $page['url'] ?? null ) || '' === $page['url'] ) {
                 continue;
             }
-            $set[ \CUScanner\Scanner\UrlPattern::from_url( $page['url'] ) ] = true;
+            $set[ \DrSpeedAIAS\Scanner\UrlPattern::from_url( $page['url'] ) ] = true;
         }
         return array_keys( $set );
     }
@@ -1041,7 +1041,7 @@ class ScannerAjax {
         } catch ( \Throwable $e ) {
             // 404 = SaaS older than this plugin (deploy order, spec §6.4). Any other
             // failure is equally non-fatal: the screen is still correct without it.
-            $status = ( $e instanceof \CUScanner\Api\HttpException ) ? $e->get_status_code() : -1;
+            $status = ( $e instanceof \DrSpeedAIAS\Api\HttpException ) ? $e->get_status_code() : -1;
             $class  = ( $status >= 400 && $status < 500 ) ? 'terminal' : 'transient';
             error_log( sprintf( // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Intentional production logging; best-effort billing call with no user-visible surface, and the status/class is the only diagnosable record that a claim was refused.
                 '[AI Assets Scanner] refund_duplicates failed (status=%d, %s): %s',
@@ -1088,7 +1088,7 @@ class ScannerAjax {
         $groups = [];
         foreach ( $pages_raw as $i => $page ) {
             $url = is_array( $page ) ? (string) ( $page['url'] ?? '' ) : '';
-            $groups[ \CUScanner\Scanner\UrlPattern::from_url( $url ) ][] = $i;
+            $groups[ \DrSpeedAIAS\Scanner\UrlPattern::from_url( $url ) ][] = $i;
         }
 
         $totals      = [ 'safe' => 0, 'aggressive' => 0 ];
@@ -1130,7 +1130,7 @@ class ScannerAjax {
 
             foreach ( $indices as $i ) {
                 $page  = is_array( $pages_raw[ $i ] ) ? $pages_raw[ $i ] : [];
-                $class = \AIAS_Scan_Status::classify( $page )['class'] ?? '';
+                $class = \DRSPEED_AIAS_Scan_Status::classify( $page )['class'] ?? '';
                 // Delivered-class filter — NOT a tally check. recompute_by_page writes a
                 // tally for every pages_raw entry, so on the ratchet path an errored page
                 // HAS one. This set is the same one page_credit() uses.
@@ -1164,7 +1164,7 @@ class ScannerAjax {
      * rules whose url_pattern is absent from the rescanned pages (recompute_by_page attributes them
      * to no page). The payload's per-pattern breakdown vs the rescanned URLs lets us decide whether
      * the restored rules are real OTHER pages (by-design) or stale variants of the rescanned URL
-     * (a ratchet bug). Pure + diagnostic-only; the caller logs it CU_SCANNER_DEBUG-gated.
+     * (a ratchet bug). Pure + diagnostic-only; the caller logs it DRSPEED_AIAS_DEBUG-gated.
      * FU-AAS-RATCHET-ABSENT-PAGE-RESTORE (2026-06-13).
      *
      * @param array $by_page   Per-page S/A tally (the per-URL table source).
@@ -1220,7 +1220,7 @@ class ScannerAjax {
 
     public function check_job(): void {
         $this->check();
-        $state = get_transient( 'cu_scanner_job_' . get_current_user_id() );
+        $state = get_transient( 'drspeed_aias_job_' . get_current_user_id() );
         if ( ! $state ) {
             wp_send_json_error( 'No active job' ); return;
         }
@@ -1250,7 +1250,7 @@ class ScannerAjax {
     public function cancel_job(): void {
         $this->check();
         $user_id = get_current_user_id();
-        $state   = get_transient( 'cu_scanner_job_' . $user_id );
+        $state   = get_transient( 'drspeed_aias_job_' . $user_id );
         if ( ! $state ) { wp_send_json_error( 'No active scan' ); return; }
 
         $settings = $this->settings();
@@ -1271,7 +1271,7 @@ class ScannerAjax {
             // Marking it cancelled + deleting the local transient here would strand the
             // reservation until admin-kill/expiry (the intermittent post-cancel 409). Keep
             // local state intact and surface a retryable error so the user can retry.
-            if ( \CUScanner\Scanner\Outbox::is_retryable( $e ) ) {
+            if ( \DrSpeedAIAS\Scanner\Outbox::is_retryable( $e ) ) {
                 error_log( '[AI Assets Scanner] cancel_job: backend unreachable, cancel not applied: ' . $e->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- intentional production logging; the browser receives a generic message, not $e->getMessage().
                 wp_send_json_error( [ 'message' => 'Could not reach the scanner backend to cancel. Your scan is still running — please try again in a moment.', 'retryable' => true ] );
                 return;
@@ -1280,11 +1280,11 @@ class ScannerAjax {
         }
 
         ( new BypassManager() )->delete_all_tokens();
-        // do_build_result (cu_scanner_build_result) is the single write-owner for the
+        // do_build_result (drspeed_aias_build_result) is the single write-owner for the
         // user_cancel ScanHistory record — the JS calls build_result after a successful
         // cancel, so AAS must NOT write a competing 'cancelled' record here.
         // Return pages_completed so the JS can pass it to build_result for the banner.
-        delete_transient( 'cu_scanner_job_' . $user_id );
+        delete_transient( 'drspeed_aias_job_' . $user_id );
         wp_send_json_success( [ 'pages_completed' => $pages_completed ] );
     }
 
@@ -1333,12 +1333,12 @@ class ScannerAjax {
         // the badge-flash-on-next-nav timing race where mark_seen_on_main_page
         // (admin_head hook) ran BEFORE this AJAX completed — at admin_head time
         // ScanHistory still had status='queued', so mark_seen early-returned
-        // without updating aias_last_seen_scan_id, leaving the badge to fire on
+        // without updating drspeed_aias_last_seen_scan_id, leaving the badge to fire on
         // the next non-AAS navigation. The server-side Heartbeat path
         // (MenuBadge::check_active_job_completion) intentionally does NOT call
         // update_option here because the operator IS away from AAS in that case
         // and the badge SHOULD fire.
-        update_option( 'aias_last_seen_scan_id', $job_id );
+        update_option( 'drspeed_aias_last_seen_scan_id', $job_id );
         wp_send_json_success( $result );
     }
 
@@ -1353,7 +1353,7 @@ class ScannerAjax {
      * wp_send_json_success arg and consumed directly by the Heartbeat path).
      *
      * @param string|null $terminal_source Whitelist-validated terminal source (E3) or null;
-     *                                     threads to AIAS_Scan_Status::build_pages() for
+     *                                     threads to DRSPEED_AIAS_Scan_Status::build_pages() for
      *                                     cancel-aware Credits rendering. Display-only.
      *
      * @throws \RuntimeException Railway fetch error or empty coverage data.
@@ -1397,7 +1397,7 @@ class ScannerAjax {
         // $merger is kept in scope so recovered_by_pattern is available for the pages_payload below (B4).
         $merger  = null;
         if ( $enabled && $is_et ) {
-            $r_orig  = get_transient( 'cu_scanner_r_orig_' . get_current_user_id() );
+            $r_orig  = get_transient( 'drspeed_aias_r_orig_' . get_current_user_id() );
             $matches = $this->r_orig_matches( $r_orig, $pages_raw );
             $this->log_ratchet_diag( 'gate', [
                 'ratchet_enabled' => $enabled,
@@ -1408,7 +1408,7 @@ class ScannerAjax {
             ] );
             if ( $matches ) {
                 $orig_by_page       = $cu_json['by_page'];
-                $merger             = new \CUScanner\Scanner\RatchetMerger();
+                $merger             = new \DrSpeedAIAS\Scanner\RatchetMerger();
                 $cu_json['rules']   = $merger->merge( $r_orig['rules'], $pages_raw, $flags );
                 $cu_json['by_page'] = $this->recompute_by_page( $cu_json['rules'], $pages_raw, $orig_by_page );
                 $this->log_ratchet_diag( 'merged', $merger->last_merge_diag );
@@ -1475,7 +1475,7 @@ class ScannerAjax {
         $safe_count  = $rule_counts['safe'];
         $agg_count   = $rule_counts['aggressive'];
 
-        // FU-AAS-RATCHET-ABSENT-PAGE-RESTORE diagnostic (CU_SCANNER_DEBUG-gated): when the by_page
+        // FU-AAS-RATCHET-ABSENT-PAGE-RESTORE diagnostic (DRSPEED_AIAS_DEBUG-gated): when the by_page
         // tally disagrees with the rule-list group counts, the ET ratchet restored rules for pages
         // absent from this rescan. Log the per-pattern breakdown vs the rescanned URLs so we can tell
         // real other-page rules (by-design) from stale same-page patterns (a ratchet bug).
@@ -1519,7 +1519,7 @@ class ScannerAjax {
         $credits_refunded = null;
         if ( $attribution['refund_pages'] > 0 ) {
             $credits_refunded = self::claim_duplicate_refund(
-                new WpserviceClient( AIAS_WPSERVICE_URL, $this->settings()->get_api_key() ),
+                new WpserviceClient( DRSPEED_AIAS_WPSERVICE_URL, $this->settings()->get_api_key() ),
                 (string) $job_token,
                 (int) $attribution['refund_pages']
             );
@@ -1532,11 +1532,11 @@ class ScannerAjax {
 
         // Signal scan completion so the Class C orchestrator can restore plugins (spec §3.5).
         $scan_id_complete = substr( hash( 'sha256', (string) $job_id ), 0, 16 );
-        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- 'cu_scanner_*' is the long-standing internal prefix shared with the wpservice-saas backend and the Railway worker; renaming would break inter-component contracts.
-        do_action( 'cu_scanner_scan_complete', $scan_id_complete );
+        // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- 'drspeed_aias_*' is the long-standing internal prefix shared with the wpservice-saas backend and the Railway worker; renaming would break inter-component contracts.
+        do_action( 'drspeed_aias_scan_complete', $scan_id_complete );
 
         ( new BypassManager() )->delete_all_tokens();
-        delete_transient( 'cu_scanner_job_' . get_current_user_id() );
+        delete_transient( 'drspeed_aias_job_' . get_current_user_id() );
 
         // Compute pages_blocked + blocked_reasons from Railway status for Subsystem D-4 banner.
         // Railway per-page shape (Task 8 / Subsystem D-1):
@@ -1613,15 +1613,15 @@ class ScannerAjax {
         // internal and external rows are stamped. Fail-closed: a URL absent from the map
         // (external target with no probe suffix, expired transient, background rebuild)
         // leaves bypass_suffixes unset → the note stays off, never a false positive.
-        $bypass_map = get_transient( 'cu_scanner_bypass_map_' . $job_id );
+        $bypass_map = get_transient( 'drspeed_aias_bypass_map_' . $job_id );
         if ( is_array( $bypass_map ) && ! empty( $bypass_map ) ) {
             $pages_raw = self::stamp_bypass_suffixes( $pages_raw, $bypass_map );
         }
 
         // Per-URL Step-4 results table. by_page is keyed by the same $pages_raw
         // index, so build_pages() joins status/credits with S/A/N tallies cleanly.
-        // Leading backslash: AIAS_Scan_Status is in the global namespace; this file is in CUScanner\Admin.
-        $pages_payload = \AIAS_Scan_Status::build_pages( $pages_raw, $cu_json['by_page'] ?? [], $is_partial, $terminal_source );
+        // Leading backslash: DRSPEED_AIAS_Scan_Status is in the global namespace; this file is in DrSpeedAIAS\Admin.
+        $pages_payload = \DRSPEED_AIAS_Scan_Status::build_pages( $pages_raw, $cu_json['by_page'] ?? [], $is_partial, $terminal_source );
 
         // Stamp every row with et_requested (operator 2026-09-14): TRUE when this row's URL was
         // sent to Railway WITH Extra Time in THIS scan, read back from the submit-time set
@@ -1631,8 +1631,8 @@ class ScannerAjax {
         // array_values() $pages_raw and build_pages() appends exactly one row per raw page in
         // order, so $pages_payload[$idx] is $pages_raw[$idx] (ratchet_recovered below relies on
         // the same). Absent / expired / non-array transient → every row false → note as before.
-        // Rows flow unchanged into BOTH writers below (aias_last_result + the live return).
-        $et_urls = get_transient( 'cu_scanner_et_urls_' . $job_id );
+        // Rows flow unchanged into BOTH writers below (drspeed_aias_last_result + the live return).
+        $et_urls = get_transient( 'drspeed_aias_et_urls_' . $job_id );
         if ( ! is_array( $et_urls ) ) {
             $et_urls = [];
         }
@@ -1650,7 +1650,7 @@ class ScannerAjax {
         $kept_summary = self::aggregate_kept_protection( $pages_raw );
 
         // ONE fragment, merged into BOTH payload writers below — the persisted
-        // aias_last_result option and the live return. Deliberately not two copies of a
+        // drspeed_aias_last_result option and the live return. Deliberately not two copies of a
         // `count > 0` test: duplicating the condition is exactly how a field ends up on
         // one writer only, which is the mistake the comment on the option writer records
         // (FU-AAS-PERSISTED-PAYLOAD-DROPS-HAS_ACTIVE_CU_RULES). Empty array when nothing
@@ -1666,7 +1666,7 @@ class ScannerAjax {
             foreach ( $pages_payload as $idx => &$row ) {
                 // Repointed off RatchetMerger's __test_ seam onto the shared normalizer,
                 // alongside recompute_by_page's (FU-AAS-PRODUCTION-USES-TEST-SEAM).
-                $pat = \CUScanner\Scanner\UrlPattern::from_url( (string) ( $pages_raw[ $idx ]['url'] ?? '' ) );
+                $pat = \DrSpeedAIAS\Scanner\UrlPattern::from_url( (string) ( $pages_raw[ $idx ]['url'] ?? '' ) );
                 $row['ratchet_recovered'] = (int) ( $merger->recovered_by_pattern[ $pat ] ?? 0 );
             }
             unset( $row );
@@ -1710,7 +1710,7 @@ class ScannerAjax {
         // scan_id) so a BACKGROUND-completed scan can rebuild the complete result screen
         // on operator return — get_badge_state() returns this verbatim. Field names match
         // the JS restore contract (scanner.js init). autoload=false (per-scan blob). Bug-fix (1.5.4).
-        update_option( 'aias_last_result', array_merge( [
+        update_option( 'drspeed_aias_last_result', array_merge( [
             'job_id'        => $job_id,
             'safe_count'    => $safe_count,
             'agg_count'     => $agg_count,
@@ -1734,7 +1734,7 @@ class ScannerAjax {
             'cu_rules_active'  => $cu_rules_active,
             // FU-BILLING-BLOCKED-NOOPT (E3): persisted for future consumers — the rows
             // above already carry the cancel-aware credits baked in; RESTORE replays
-            // them verbatim (aias_last_result → get_badge_state → JS restore).
+            // them verbatim (drspeed_aias_last_result → get_badge_state → JS restore).
             'terminal_source' => $terminal_source,
         ], $kept_field ), false );
 
@@ -1782,7 +1782,7 @@ class ScannerAjax {
     public function handle_killed(): void {
         $this->check();
         $user_id = get_current_user_id();
-        $state   = get_transient( 'cu_scanner_job_' . $user_id );
+        $state   = get_transient( 'drspeed_aias_job_' . $user_id );
 
         // Even with no transient (e.g. session expired between Railway emitting
         // 'killed' and this handler being invoked), still try to clean up any
@@ -1793,7 +1793,7 @@ class ScannerAjax {
             ( new ScanHistory() )->update_status( $state['job_id'], 'cancelled', [
                 'credits_used' => 0,  // admin_kill is non-charging
             ] );
-            delete_transient( 'cu_scanner_job_' . $user_id );
+            delete_transient( 'drspeed_aias_job_' . $user_id );
         }
 
         wp_send_json_success();
@@ -1802,18 +1802,18 @@ class ScannerAjax {
     public function handle_failure(): void {
         $this->check();
         $user_id  = get_current_user_id();
-        $state    = get_transient( 'cu_scanner_job_' . $user_id );
+        $state    = get_transient( 'drspeed_aias_job_' . $user_id );
 
         // submit_job never ran (e.g. PHP fatal) — release using the pending token from reserve_job.
         if ( ! $state ) {
-            $pending = get_transient( 'cu_scanner_pending_token_' . $user_id );
+            $pending = get_transient( 'drspeed_aias_pending_token_' . $user_id );
             if ( $pending ) {
                 try {
                     $settings = $this->settings();
-                    ( new WpserviceClient( AIAS_WPSERVICE_URL, $settings->get_api_key() ) )
+                    ( new WpserviceClient( DRSPEED_AIAS_WPSERVICE_URL, $settings->get_api_key() ) )
                         ->release_credits( $pending );
                 } catch ( \RuntimeException ) {}
-                delete_transient( 'cu_scanner_pending_token_' . $user_id );
+                delete_transient( 'drspeed_aias_pending_token_' . $user_id );
             }
             ( new BypassManager() )->delete_all_tokens();
             wp_send_json_success();
@@ -1821,18 +1821,18 @@ class ScannerAjax {
         }
 
         // FALLBACK: $state is present (submit_job ran) but the JS routed here instead of
-        // cu_scanner_build_result (e.g. an older JS bundle, or a race before Task 5 ships).
+        // drspeed_aias_build_result (e.g. an older JS bundle, or a race before Task 5 ships).
         // R1 finalises the charge and owns the credit release for failed+$state jobs —
         // AAS must NOT call release_credits here (race) and must NOT stamp a 'failed'
         // ScanHistory record (do_build_result is the single write-owner for the partial
         // record). Only clean up local state so the UI can recover.
         ( new BypassManager() )->delete_all_tokens();
-        delete_transient( 'cu_scanner_job_' . $user_id );
+        delete_transient( 'drspeed_aias_job_' . $user_id );
         wp_send_json_success();
     }
 
     public function download_json(): void {
-        check_ajax_referer( 'cu_scanner_nonce', 'nonce' );
+        check_ajax_referer( 'drspeed_aias_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) wp_die( 'Forbidden' );
         $raw    = sanitize_text_field( wp_unslash( $_GET['job_id'] ?? '' ) );
         $job_id = (string) preg_replace( '/[^A-Za-z0-9._-]/', '', $raw );
@@ -1840,7 +1840,7 @@ class ScannerAjax {
         $json   = ( new ScanHistory() )->get_json( $job_id );
         if ( ! $json ) { wp_die( 'Not found' ); }
         header( 'Content-Type: application/json' );
-        header( 'Content-Disposition: attachment; filename="cu-scanner-' . $job_id . '.json"' );
+        header( 'Content-Disposition: attachment; filename="drspeed-aias-' . $job_id . '.json"' );
         echo $json; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- JSON file download served with Content-Disposition: attachment; not rendered as HTML.
         exit;
     }
@@ -1970,7 +1970,7 @@ class ScannerAjax {
         $this->check();
         $history = new ScanHistory();
         $count   = $history->delete_all();
-        set_transient( 'cu_scanner_history_deleted_notice', $count, 30 );
+        set_transient( 'drspeed_aias_history_deleted_notice', $count, 30 );
         wp_send_json_success( [ 'deleted' => $count ] );
     }
 
@@ -2052,7 +2052,7 @@ class ScannerAjax {
         $zip = new \ZipArchive();
         $rc  = $zip->open( $tmp_path, \ZipArchive::CREATE | \ZipArchive::OVERWRITE );
         if ( $rc !== true ) {
-            if ( aias_debug_enabled() ) {
+            if ( drspeed_aias_debug_enabled() ) {
                 error_log( '[AI Assets Scanner] ZipArchive::open failed: ' . $rc ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- debug logging only.
             }
             wp_delete_file( $tmp_path );
@@ -2086,7 +2086,7 @@ class ScannerAjax {
             $zip->addFromString( 'scans/' . $safe . '.json', $snapshot );
         }
 
-        $readme  = 'AI Assets Scanner v' . AIAS_VERSION . "\n";
+        $readme  = 'AI Assets Scanner v' . DRSPEED_AIAS_VERSION . "\n";
         $readme .= 'Export timestamp: ' . gmdate( 'c' ) . "\n";
         $readme .= 'Records: ' . count( $records ) . "\n";
         if ( ! empty( $missing_snapshots ) ) {
@@ -2095,7 +2095,7 @@ class ScannerAjax {
         $zip->addFromString( 'README.txt', $readme );
 
         if ( $zip->close() !== true ) {
-            if ( aias_debug_enabled() ) {
+            if ( drspeed_aias_debug_enabled() ) {
                 error_log( '[AI Assets Scanner] ZipArchive::close failed' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- debug logging only.
             }
             wp_delete_file( $tmp_path );
@@ -2118,15 +2118,15 @@ class ScannerAjax {
     /**
      * AJAX endpoint: probe external URLs for their actual optimizer stack.
      * Spec §6.1 + §6.1.1. Runs server-side wp_remote_get from operator's WP install
-     * BEFORE cu_scanner_reserve_job — does NOT consume customer credit by construction.
+     * BEFORE drspeed_aias_reserve_job — does NOT consume customer credit by construction.
      *
-     * Request:  POST { action: cu_scanner_probe_target_stack, _wpnonce, urls: [string,...] }
+     * Request:  POST { action: drspeed_aias_probe_target_stack, _wpnonce, urls: [string,...] }
      * Response: { success: true, data: { per_host_results, suggested_bypass_per_url, warning_needed, summary } }
      */
     public function probe_target_stack(): void {
         // AC-N2-Auth — nonce + capability. Uses '_wpnonce' (default WP form-nonce param)
         // to match the spec'd request shape; existing handlers use 'nonce' instead.
-        if ( ! check_ajax_referer( 'cu_scanner_nonce', '_wpnonce', false ) ) {
+        if ( ! check_ajax_referer( 'drspeed_aias_nonce', '_wpnonce', false ) ) {
             wp_send_json( [ 'ok' => false, 'error' => 'nonce_invalid' ], 403 );
             return;
         }
@@ -2159,7 +2159,7 @@ class ScannerAjax {
         foreach ( $by_host as $host => $host_urls ) {
             $url1 = $host_urls[0];
             $url2 = $host_urls[1] ?? self::root_url_for( $host, $url1 );
-            $result = \CUScanner\Scanner\PluginDetector::probe_target_stack( $url1, $url2, 12 );
+            $result = \DrSpeedAIAS\Scanner\PluginDetector::probe_target_stack( $url1, $url2, 12 );
             $result['host'] = $host;
             $per_host_results[] = $result;
         }
@@ -2203,8 +2203,8 @@ class ScannerAjax {
                 // is the signal; throttling it here would hide the scans that hurt most.
                 $suffixes = $suggested_bypass_per_url[ $u ] ?? [];
                 if ( ! empty( $suffixes ) && $u !== $probe_submitted ) {
-                    // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- 'cu_scanner_*' is the long-standing internal prefix shared with the wpservice-saas backend and the Railway worker; renaming would break inter-component contracts.
-                    do_action( 'cu_scanner_suffix_suggested_unresolved', [
+                    // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- 'drspeed_aias_*' is the long-standing internal prefix shared with the wpservice-saas backend and the Railway worker; renaming would break inter-component contracts.
+                    do_action( 'drspeed_aias_suffix_suggested_unresolved', [
                         'url'      => $u,
                         'host'     => (string) $host,
                         'suffixes' => $suffixes,
@@ -2307,7 +2307,7 @@ class ScannerAjax {
      *
      * - Internal URLs (same host as $home_url) use $host_bypass (today's behavior).
      * - External URLs use $target_bypass_per_url[url] ?? [] (empty default; NEVER host-leaked).
-     *   When fallback fires, do_action('cu_scanner_target_bypass_missing', [...]) telemetry hook.
+     *   When fallback fires, do_action('drspeed_aias_target_bypass_missing', [...]) telemetry hook.
      *
      * Note: bypass_token is attached downstream where the token is built — this helper
      * focuses solely on the per-URL bypass_suffixes decision (the load-bearing §4.2 rule).
@@ -2339,8 +2339,8 @@ class ScannerAjax {
                 } else {
                     // AC-N2-12 — external URL missing from map → empty fallback + telemetry.
                     $bypass_suffixes = [];
-                    // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- 'cu_scanner_*' is the long-standing internal prefix shared with the wpservice-saas backend and the Railway worker; renaming would break inter-component contracts.
-                    do_action( 'cu_scanner_target_bypass_missing', [ 'url' => $url, 'host' => $host ] );
+                    // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- 'drspeed_aias_*' is the long-standing internal prefix shared with the wpservice-saas backend and the Railway worker; renaming would break inter-component contracts.
+                    do_action( 'drspeed_aias_target_bypass_missing', [ 'url' => $url, 'host' => $host ] );
                 }
             } else {
                 $bypass_suffixes = $host_bypass;
@@ -2726,7 +2726,7 @@ class ScannerAjax {
      * @return string Transient key.
      */
     public static function et_rescan_marker_key( string $job_id ): string {
-        return 'cu_scanner_et_rescan_' . $job_id;
+        return 'drspeed_aias_et_rescan_' . $job_id;
     }
 
     /**
@@ -2788,7 +2788,7 @@ class ScannerAjax {
         }
         $urls = array_values( array_unique( array_column( $pages_raw, 'url' ) ) );
         set_transient(
-            'cu_scanner_r_orig_' . get_current_user_id(),
+            'drspeed_aias_r_orig_' . get_current_user_id(),
             [ 'urls' => $urls, 'rules' => $keys ],
             HOUR_IN_SECONDS
         );
@@ -2861,7 +2861,7 @@ class ScannerAjax {
         foreach ( $pages_raw as $i => $page ) {
             // Was a production call into RatchetMerger's __test_ seam; both that copy and
             // CuJsonBuilder's now delegate here. Closes FU-AAS-PRODUCTION-USES-TEST-SEAM.
-            $pat    = \CUScanner\Scanner\UrlPattern::from_url( (string) ( $page['url'] ?? '' ) );
+            $pat    = \DrSpeedAIAS\Scanner\UrlPattern::from_url( (string) ( $page['url'] ?? '' ) );
             $safe   = $rule_map[ $pat ]['safe']       ?? 0;
             $agg    = $rule_map[ $pat ]['aggressive'] ?? 0;
             // Preserve original needed count — not affected by merge.
@@ -2940,15 +2940,15 @@ class ScannerAjax {
      *
      * @param array                                       $pages_payload Pages payload rows (by reference internally; returns stamped copy).
      * @param array                                       $pages_raw     Raw Railway pages (used for url→pattern derivation).
-     * @param \CUScanner\Scanner\RatchetMerger|null       $merger        Merger instance after merge(), or null if ratchet did not run.
+     * @param \DrSpeedAIAS\Scanner\RatchetMerger|null       $merger        Merger instance after merge(), or null if ratchet did not run.
      * @return array Stamped pages_payload.
      */
-    public function __test_inject_ratchet_recovered( array $pages_payload, array $pages_raw, ?\CUScanner\Scanner\RatchetMerger $merger ): array {
+    public function __test_inject_ratchet_recovered( array $pages_payload, array $pages_raw, ?\DrSpeedAIAS\Scanner\RatchetMerger $merger ): array {
         if ( null !== $merger ) {
             foreach ( $pages_payload as $idx => &$row ) {
                 // Repointed off RatchetMerger's __test_ seam onto the shared normalizer,
                 // alongside recompute_by_page's (FU-AAS-PRODUCTION-USES-TEST-SEAM).
-                $pat = \CUScanner\Scanner\UrlPattern::from_url( (string) ( $pages_raw[ $idx ]['url'] ?? '' ) );
+                $pat = \DrSpeedAIAS\Scanner\UrlPattern::from_url( (string) ( $pages_raw[ $idx ]['url'] ?? '' ) );
                 $row['ratchet_recovered'] = (int) ( $merger->recovered_by_pattern[ $pat ] ?? 0 );
             }
             unset( $row );
@@ -2993,10 +2993,10 @@ class ScannerAjax {
      */
     public function get_badge_state(): void {
         $this->check();
-        $state = ( new \CUScanner\MenuBadge() )->run_polling_check_and_get_state();
+        $state = ( new \DrSpeedAIAS\MenuBadge() )->run_polling_check_and_get_state();
 
         // 1.4.11 — also return a `result` snapshot when state is 'green' so the
-        // JS poller can populate cu_scanner_result in localStorage. Without
+        // JS poller can populate drspeed_aias_result in localStorage. Without
         // this the badge appears but operator-returning-to-AAS sees the default
         // Step 1 screen because no localStorage entry exists (scanner.js init
         // at admin/js/scanner.js:1349 reads localStorage to restore Step 4,
@@ -3007,7 +3007,7 @@ class ScannerAjax {
         // writes res.data.result verbatim to localStorage (menu-badge.js).
         $result = null;
         if ( $state === 'green' ) {
-            $stored = get_option( 'aias_last_result', null );
+            $stored = get_option( 'drspeed_aias_last_result', null );
             if ( is_array( $stored ) && ! empty( $stored['job_id'] ) ) {
                 $result = $stored;
             }
@@ -3017,7 +3017,7 @@ class ScannerAjax {
     }
 
     public function export_history(): void {
-        check_ajax_referer( 'cu_scanner_nonce', 'nonce' );
+        check_ajax_referer( 'drspeed_aias_nonce', 'nonce' );
         if ( ! current_user_can( 'manage_options' ) ) {
             wp_die( 'Forbidden', '', [ 'response' => 403 ] );
         }
@@ -3030,7 +3030,7 @@ class ScannerAjax {
             return; // unreachable in prod; reachable under test seam
         }
         // ZIP primary path.
-        $tmp = wp_tempnam( 'cu-scanner-history' );
+        $tmp = wp_tempnam( 'drspeed-aias-history' );
         $missing = [];
         $history = new ScanHistory();
         if ( $this->build_zip( $tmp, $records, $history, $missing ) ) {
@@ -3125,7 +3125,7 @@ class ScannerAjax {
     public function outbox_enqueue(): void {
         $this->check();
         $intent = $this->intent_from_post();
-        $ok = \CUScanner\Scanner\Outbox::enqueue( $intent );
+        $ok = \DrSpeedAIAS\Scanner\Outbox::enqueue( $intent );
         if ( ! $ok ) {
             wp_send_json_error( [ 'message' => 'A scan request is already queued locally for this site.' ] );
             return;
@@ -3145,7 +3145,7 @@ class ScannerAjax {
      */
     public function outbox_tick(): void {
         $this->check();
-        \CUScanner\Scanner\Outbox::dispatch(); // runs only if due (internally guarded)
-        wp_send_json_success( \CUScanner\Scanner\Outbox::outbox_state_for_user( (int) get_current_user_id() ) );
+        \DrSpeedAIAS\Scanner\Outbox::dispatch(); // runs only if due (internally guarded)
+        wp_send_json_success( \DrSpeedAIAS\Scanner\Outbox::outbox_state_for_user( (int) get_current_user_id() ) );
     }
 }

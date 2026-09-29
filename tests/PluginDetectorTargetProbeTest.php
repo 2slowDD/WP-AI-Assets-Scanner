@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\PluginDetector;
+use DrSpeedAIAS\Scanner\PluginDetector;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 

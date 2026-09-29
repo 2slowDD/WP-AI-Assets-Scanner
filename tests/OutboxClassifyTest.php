@@ -1,8 +1,8 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\Outbox;
-use CUScanner\Api\HttpException;
+use DrSpeedAIAS\Scanner\Outbox;
+use DrSpeedAIAS\Api\HttpException;
 use WP_Mock\Tools\TestCase;
 
 class OutboxClassifyTest extends TestCase {

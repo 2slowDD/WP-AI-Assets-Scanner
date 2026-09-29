@@ -1,8 +1,8 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\MenuBadge;
-use CUScanner\ScanHistory;
+use DrSpeedAIAS\MenuBadge;
+use DrSpeedAIAS\ScanHistory;
 use Mockery;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
@@ -23,7 +23,7 @@ class MenuBadgeTest extends TestCase {
 
     public function test_no_history_returns_null_badge_state(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [] );
 
         $badge = new MenuBadge();
@@ -34,7 +34,7 @@ class MenuBadgeTest extends TestCase {
 
     public function test_only_queued_scans_returns_null(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [ [ 'job_id' => 'aaa', 'status' => 'queued' ] ] );
 
         $badge = new MenuBadge();
@@ -45,24 +45,37 @@ class MenuBadgeTest extends TestCase {
 
     public function test_complete_unseen_returns_green(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [ [ 'job_id' => 'newjobid', 'status' => 'complete' ] ] );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_last_seen_scan_id', '' )
+            ->with( 'drspeed_aias_last_seen_scan_id', '' )
             ->andReturn( '' );
 
         $badge = new MenuBadge();
         $this->assertSame( 'green', $badge->get_badge_state() );
     }
 
+    // Found on a clean WordPress with WP_DEBUG (1.9.4): a history record without a job_id
+    // raised "Undefined array key" on every admin page. It is skipped, never read.
+    public function test_record_without_job_id_is_skipped_without_a_warning(): void {
+        WP_Mock::userFunction( 'get_option' )
+            ->with( 'drspeed_aias_history', [] )
+            ->andReturn( [ [ 'status' => 'complete' ], [ 'job_id' => 'olderjob', 'status' => 'failed' ] ] );
+        WP_Mock::userFunction( 'get_option' )
+            ->with( 'drspeed_aias_last_seen_scan_id', '' )
+            ->andReturn( '' );
+
+        $this->assertSame( 'red', ( new MenuBadge() )->get_badge_state() );
+    }
+
     // --- AC-MB-7: failed-unseen → red ---
 
     public function test_failed_unseen_returns_red(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [ [ 'job_id' => 'failed1', 'status' => 'failed' ] ] );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_last_seen_scan_id', '' )
+            ->with( 'drspeed_aias_last_seen_scan_id', '' )
             ->andReturn( '' );
 
         $badge = new MenuBadge();
@@ -73,10 +86,10 @@ class MenuBadgeTest extends TestCase {
 
     public function test_complete_seen_returns_null(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [ [ 'job_id' => 'samejobid', 'status' => 'complete' ] ] );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_last_seen_scan_id', '' )
+            ->with( 'drspeed_aias_last_seen_scan_id', '' )
             ->andReturn( 'samejobid' );
 
         $badge = new MenuBadge();
@@ -88,13 +101,13 @@ class MenuBadgeTest extends TestCase {
     public function test_complete_after_failed_returns_green(): void {
         // History is newest-first (ScanHistory::create_record uses array_unshift).
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [
                 [ 'job_id' => 'newest', 'status' => 'complete' ],
                 [ 'job_id' => 'older',  'status' => 'failed' ],
             ] );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_last_seen_scan_id', '' )
+            ->with( 'drspeed_aias_last_seen_scan_id', '' )
             ->andReturn( '' );
 
         $badge = new MenuBadge();
@@ -105,10 +118,10 @@ class MenuBadgeTest extends TestCase {
 
     public function test_cancelled_only_returns_null(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [ [ 'job_id' => 'cancelled1', 'status' => 'cancelled' ] ] );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_last_seen_scan_id', '' )
+            ->with( 'drspeed_aias_last_seen_scan_id', '' )
             ->andReturn( '' );
 
         $badge = new MenuBadge();
@@ -119,14 +132,14 @@ class MenuBadgeTest extends TestCase {
 
     public function test_cancelled_between_complete_records_walks_past(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [
                 [ 'job_id' => 'newest',    'status' => 'complete' ],
                 [ 'job_id' => 'cancelled', 'status' => 'cancelled' ],
                 [ 'job_id' => 'older',     'status' => 'complete' ],
             ] );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_last_seen_scan_id', '' )
+            ->with( 'drspeed_aias_last_seen_scan_id', '' )
             ->andReturn( '' );
 
         $badge = new MenuBadge();
@@ -136,13 +149,13 @@ class MenuBadgeTest extends TestCase {
     public function test_cancelled_blocks_no_walks_to_older_failed(): void {
         // Newest is cancelled (non-triggering); next is failed (triggers red).
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [
                 [ 'job_id' => 'cancelled1', 'status' => 'cancelled' ],
                 [ 'job_id' => 'older_fail', 'status' => 'failed' ],
             ] );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_last_seen_scan_id', '' )
+            ->with( 'drspeed_aias_last_seen_scan_id', '' )
             ->andReturn( '' );
 
         $badge = new MenuBadge();
@@ -153,14 +166,14 @@ class MenuBadgeTest extends TestCase {
 
     public function test_mark_seen_updates_option_when_changed(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [ [ 'job_id' => 'latest', 'status' => 'complete' ] ] );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_last_seen_scan_id', '' )
+            ->with( 'drspeed_aias_last_seen_scan_id', '' )
             ->andReturn( 'older' );
         WP_Mock::userFunction( 'update_option' )
             ->once()
-            ->with( 'aias_last_seen_scan_id', 'latest' );
+            ->with( 'drspeed_aias_last_seen_scan_id', 'latest' );
 
         $badge = new MenuBadge();
         $badge->mark_seen_on_main_page();
@@ -170,10 +183,10 @@ class MenuBadgeTest extends TestCase {
 
     public function test_mark_seen_skips_update_when_unchanged(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [ [ 'job_id' => 'same', 'status' => 'complete' ] ] );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_last_seen_scan_id', '' )
+            ->with( 'drspeed_aias_last_seen_scan_id', '' )
             ->andReturn( 'same' );
         // update_option must NOT be called.
         WP_Mock::userFunction( 'update_option' )->times( 0 );
@@ -194,17 +207,17 @@ class MenuBadgeTest extends TestCase {
     public function test_filter_heartbeat_no_transient_skips_railway_poll(): void {
         WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 0 );
         WP_Mock::userFunction( 'get_transient' )
-            ->with( 'cu_scanner_job_0' )
+            ->with( 'drspeed_aias_job_0' )
             ->andReturn( false );
         // Badge-state path still runs after the early return.
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [] );
 
         $badge  = new MenuBadge();
         $result = $badge->filter_heartbeat( [], [] );
 
-        $this->assertNull( $result['aias_badge'] );
+        $this->assertNull( $result['drspeed_aias_badge'] );
     }
 
     public function test_filter_heartbeat_malformed_transient_skips_railway_poll(): void {
@@ -212,16 +225,16 @@ class MenuBadgeTest extends TestCase {
         // Verifies the second early-return clause in check_active_job_completion.
         WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 0 );
         WP_Mock::userFunction( 'get_transient' )
-            ->with( 'cu_scanner_job_0' )
+            ->with( 'drspeed_aias_job_0' )
             ->andReturn( [ 'job_token' => 'abc', 'railway_url' => 'https://example' ] );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_history', [] )
+            ->with( 'drspeed_aias_history', [] )
             ->andReturn( [] );
 
         $badge  = new MenuBadge();
         $result = $badge->filter_heartbeat( [], [] );
 
-        $this->assertNull( $result['aias_badge'] );
+        $this->assertNull( $result['drspeed_aias_badge'] );
     }
 
     // --- Task 5: characterization test — drives the full `complete` branch via injected seams ---
@@ -249,7 +262,7 @@ class MenuBadgeTest extends TestCase {
         WP_Mock::userFunction( 'get_transient' )->andReturn( $state );
         WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 7 );
 
-        $ajax = Mockery::mock( \CUScanner\Admin\ScannerAjax::class );
+        $ajax = Mockery::mock( \DrSpeedAIAS\Admin\ScannerAjax::class );
         $ajax->shouldReceive( 'do_build_result' )->once()->with( 'J', 'TOK' )->andReturn( [] );
 
         $this->makeBadge( [ 'status' => 'complete' ], $ajax )->check_active_job_completion();
@@ -323,9 +336,9 @@ class MenuBadgeTest extends TestCase {
         $state = [ 'job_id' => 'J', 'job_token' => 'TOK', 'bypass_token' => 'BYP', 'railway_url' => 'https://r' ];
         WP_Mock::userFunction( 'get_transient' )->andReturn( $state );
         WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 7 );
-        WP_Mock::userFunction( 'delete_transient' )->once()->with( 'cu_scanner_job_7' );
+        WP_Mock::userFunction( 'delete_transient' )->once()->with( 'drspeed_aias_job_7' );
 
-        $ajax = Mockery::mock( \CUScanner\Admin\ScannerAjax::class );
+        $ajax = Mockery::mock( \DrSpeedAIAS\Admin\ScannerAjax::class );
         $ajax->shouldReceive( 'do_build_result' )->once()->with( 'J', 'TOK', 4 )->andReturn( [] );  // charged_count=X
 
         $this->makeBadge( [ 'status' => 'paused_exhausted', 'completed' => 4, 'total' => 10 ], $ajax )
@@ -339,11 +352,11 @@ class MenuBadgeTest extends TestCase {
         $job = [ 'job_id' => 'J', 'job_token' => 'TOK', 'railway_url' => 'https://r',
                  'user_id' => 7, 'armed_at' => 1_900_000_000 ];
         WP_Mock::userFunction( 'wp_set_current_user' )->once()->with( 7 );
-        WP_Mock::userFunction( 'delete_transient' )->once()->with( 'cu_scanner_job_7' );
+        WP_Mock::userFunction( 'delete_transient' )->once()->with( 'drspeed_aias_job_7' );
         WP_Mock::userFunction( 'wp_clear_scheduled_hook' )->once();
         WP_Mock::userFunction( 'wp_schedule_single_event' )->never();      // terminal → no reschedule
 
-        $ajax = Mockery::mock( \CUScanner\Admin\ScannerAjax::class );
+        $ajax = Mockery::mock( \DrSpeedAIAS\Admin\ScannerAjax::class );
         $ajax->shouldReceive( 'do_build_result' )->once()->with( 'J', 'TOK', 4 )->andReturn( [] );
 
         $this->makeBadge( [ 'status' => 'paused_exhausted', 'completed' => 4, 'total' => 10 ], $ajax )
@@ -378,7 +391,7 @@ class MenuBadgeTest extends TestCase {
         WP_Mock::userFunction( 'wp_next_scheduled' )->andReturn( true );        // arm guard short-circuits (Task 7 adds arming)
         WP_Mock::userFunction( 'set_transient' )->once()
             ->andReturnUsing( function ( $k, $v, $ttl ) {
-                $this->assertSame( 'cu_scanner_job_7', $k );
+                $this->assertSame( 'drspeed_aias_job_7', $k );
                 $this->assertSame( 'BYP', $v['bypass_token'], 'full payload preserved' );
                 $this->assertGreaterThanOrEqual( 1800, $ttl );
                 $this->assertLessThanOrEqual( 1800 + 300 + 2, $ttl );
@@ -394,20 +407,20 @@ class MenuBadgeTest extends TestCase {
     public function test_r3_rebuild_handler_registered_ungated(): void {
         // Prove the registration is OUTSIDE the is_admin() gate: with is_admin()=false
         // (the cron / front-end context), Plugin::init() must still add the cron callback,
-        // otherwise the scheduled cu_scanner_r3_rebuild event would have no handler.
+        // otherwise the scheduled drspeed_aias_r3_rebuild event would have no handler.
         WP_Mock::userFunction( 'plugin_basename' )->andReturn( 'dr-speed-ai-assets-scanner/dr-speed-ai-assets-scanner.php' );
         WP_Mock::userFunction( 'is_admin' )->andReturn( false );
         // The handler is registered as an instance callback [ new MenuBadge(), 'run_r3_rebuild' ].
         // WP_Mock keys plain-object callbacks by spl_object_hash (unpredictable), so match any
         // MenuBadge instance via its AnyInstance matcher.
         WP_Mock::expectActionAdded(
-            'cu_scanner_r3_rebuild',
-            [ new \WP_Mock\Matcher\AnyInstance( \CUScanner\MenuBadge::class ), 'run_r3_rebuild' ],
+            'drspeed_aias_r3_rebuild',
+            [ new \WP_Mock\Matcher\AnyInstance( \DrSpeedAIAS\MenuBadge::class ), 'run_r3_rebuild' ],
             10,
             1
         );
 
-        ( new \CUScanner\Plugin() )->init();
+        ( new \DrSpeedAIAS\Plugin() )->init();
         $this->assertConditionsMet();
     }
 }

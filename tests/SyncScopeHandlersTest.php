@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Admin\ScannerAjax;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -62,7 +62,7 @@ class SyncScopeHandlersTest extends TestCase {
     }
 
     private function stub( array $json, string $job = 'job-1' ): void {
-        $this->options[ 'cu_scanner_json_' . $job ] = json_encode( $json );
+        $this->options[ 'drspeed_aias_json_' . $job ] = json_encode( $json );
         $_POST['job_id'] = $job;
         WP_Mock::userFunction( 'check_ajax_referer' )->andReturn( true );
         WP_Mock::userFunction( 'current_user_can' )->with( 'manage_options' )->andReturn( true );
@@ -258,7 +258,7 @@ class SyncScopeHandlersTest extends TestCase {
         $created_ids    = $this->captured['created_rule_ids'];
         $created_groups = $this->captured['created_group_ids'];
         $this->assertCount( 2, $created_groups, 'Sync created both scanner groups on an empty CU' );
-        $manifest = $this->options['aias_last_push_sync_undo'];
+        $manifest = $this->options['drspeed_aias_last_push_sync_undo'];
         $this->assertSame( $created_ids, $manifest['rule_ids'] );
         $this->assertSame( $created_groups, $manifest['created_group_ids'] );
 

@@ -278,10 +278,10 @@ assert.ok(!/already optimi[sz]ed|already applied/i.test(all),
   const writers = { 'scanner.js': read('scanner.js'), 'menu-badge.js': read('menu-badge.js') };
 
   for (const [name, src] of Object.entries(writers)) {
-    const idx = src.indexOf("localStorage.setItem('cu_scanner_result'") >= 0
-      ? src.indexOf("localStorage.setItem('cu_scanner_result'")
-      : src.indexOf("localStorage.setItem( 'cu_scanner_result'");
-    assert.ok(idx > 0, name + ': could not locate the cu_scanner_result write');
+    const idx = src.indexOf("localStorage.setItem('drspeed_aias_result'") >= 0
+      ? src.indexOf("localStorage.setItem('drspeed_aias_result'")
+      : src.indexOf("localStorage.setItem( 'drspeed_aias_result'");
+    assert.ok(idx > 0, name + ': could not locate the drspeed_aias_result write');
     const close = [src.indexOf('}) );', idx), src.indexOf('}));', idx)].filter((n) => n > 0);
     assert.ok(close.length, name + ': could not find the end of the persisted object literal');
     const block = src.slice(idx, Math.min.apply(null, close));

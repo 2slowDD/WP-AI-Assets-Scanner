@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Admin\ScannerAjax;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -21,12 +21,12 @@ class ScannerAjaxTest extends TestCase {
         // can retry (otherwise the still-active reservation strands → post-cancel 409).
         $this->mockCheck();
         WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 5 );
-        WP_Mock::userFunction( 'get_transient' )->with( 'cu_scanner_job_5' )->andReturn( [
+        WP_Mock::userFunction( 'get_transient' )->with( 'drspeed_aias_job_5' )->andReturn( [
             'job_id'      => 'job-abc',
             'job_token'   => 'tok-xyz',
             'railway_url' => 'https://cu-scanner-railway-production.up.railway.app',
         ] );
-        WP_Mock::userFunction( 'get_option' )->with( 'cu_scanner_api_key', '' )->andReturn( 'test-key' );
+        WP_Mock::userFunction( 'get_option' )->with( 'drspeed_aias_api_key', '' )->andReturn( 'test-key' );
         WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( function ( string $url, ?int $component = null ) {
             $parts = parse_url( $url );
             if ( null === $component ) { return $parts; }
@@ -56,17 +56,17 @@ class ScannerAjaxTest extends TestCase {
         $m = new \ReflectionMethod( ScannerAjax::class, 'friendly_error' );
         $m->setAccessible( true );
 
-        $r409 = $m->invoke( null, new \CUScanner\Api\HttpException( 'HTTP 409: scan_already_active', 409 ), 'raw-detail' );
+        $r409 = $m->invoke( null, new \DrSpeedAIAS\Api\HttpException( 'HTTP 409: scan_already_active', 409 ), 'raw-detail' );
         $this->assertSame( 'scan_already_active', $r409['error'] );
         $this->assertFalse( $r409['retryable'] );
         $this->assertStringContainsStringIgnoringCase( 'already', $r409['message'] );
 
-        $r503 = $m->invoke( null, new \CUScanner\Api\HttpException( 'HTTP 503: queue_full', 503 ), 'raw-detail' );
+        $r503 = $m->invoke( null, new \DrSpeedAIAS\Api\HttpException( 'HTTP 503: queue_full', 503 ), 'raw-detail' );
         $this->assertArrayNotHasKey( 'error', $r503 );          // no friendly code for non-409
         $this->assertSame( 'raw-detail', $r503['message'] );    // fallback detail preserved
         $this->assertTrue( $r503['retryable'] );                // 5xx is retryable (Phase O)
 
-        $r402 = $m->invoke( null, new \CUScanner\Api\HttpException( 'Insufficient credits', 402 ), 'no-credits' );
+        $r402 = $m->invoke( null, new \DrSpeedAIAS\Api\HttpException( 'Insufficient credits', 402 ), 'no-credits' );
         $this->assertArrayNotHasKey( 'error', $r402 );
         $this->assertFalse( $r402['retryable'] );                // 402 terminal
     }
@@ -75,7 +75,7 @@ class ScannerAjaxTest extends TestCase {
         $this->mockCheck();
         WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 1 );
         WP_Mock::userFunction( 'get_transient' )
-            ->with( 'cu_scanner_job_1' )
+            ->with( 'drspeed_aias_job_1' )
             ->andReturn( false );
         WP_Mock::userFunction( 'wp_send_json_error' )
             ->once()
@@ -89,7 +89,7 @@ class ScannerAjaxTest extends TestCase {
         $this->mockCheck();
         WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 1 );
         WP_Mock::userFunction( 'get_transient' )
-            ->with( 'cu_scanner_job_1' )
+            ->with( 'drspeed_aias_job_1' )
             ->andReturn( [
                 'job_id'       => 'abc123',
                 'job_token'    => 'tok456',
@@ -112,15 +112,15 @@ class ScannerAjaxTest extends TestCase {
         $this->mockCheck();
         WP_Mock::userFunction( 'is_plugin_active' )->andReturn( false );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_api_key', '' )->andReturn( 'test-key' );
+            ->with( 'drspeed_aias_api_key', '' )->andReturn( 'test-key' );
         WP_Mock::userFunction( 'get_home_url' )->andReturn( 'https://example.com' );
         WP_Mock::userFunction( 'wp_parse_url' )->andReturn( 'example.com' );
         // CDN detection: transient cache-hit → Detector::detect() returns null; get_acknowledged_cdn stub silences cdn_notice path.
         WP_Mock::userFunction( 'get_transient' )
-            ->with( 'cu_scanner_cdn_detected' )
+            ->with( 'drspeed_aias_cdn_detected' )
             ->andReturn( '' );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_cdn_exemption_ack', '' )
+            ->with( 'drspeed_aias_cdn_exemption_ack', '' )
             ->andReturn( '' );
         WP_Mock::userFunction( 'wp_remote_get' )
             ->andReturn( new \WP_Error( 'http_failure', 'Connection refused' ) );
@@ -140,15 +140,15 @@ class ScannerAjaxTest extends TestCase {
         $this->mockCheck();
         WP_Mock::userFunction( 'is_plugin_active' )->andReturn( false );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_api_key', '' )->andReturn( 'test-key' );
+            ->with( 'drspeed_aias_api_key', '' )->andReturn( 'test-key' );
         WP_Mock::userFunction( 'get_home_url' )->andReturn( 'https://example.com' );
         WP_Mock::userFunction( 'wp_parse_url' )->andReturn( 'example.com' );
         // CDN detection: transient cache-hit → Detector::detect() returns null; get_acknowledged_cdn stub silences cdn_notice path.
         WP_Mock::userFunction( 'get_transient' )
-            ->with( 'cu_scanner_cdn_detected' )
+            ->with( 'drspeed_aias_cdn_detected' )
             ->andReturn( '' );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_cdn_exemption_ack', '' )
+            ->with( 'drspeed_aias_cdn_exemption_ack', '' )
             ->andReturn( '' );
         WP_Mock::userFunction( 'wp_remote_get' )->andReturn( [ 'response' => [ 'code' => 200 ] ] );
         WP_Mock::userFunction( 'wp_remote_retrieve_response_code' )->andReturn( 200 );
@@ -173,10 +173,10 @@ class ScannerAjaxTest extends TestCase {
             return max( 0, (int) $value );
         } );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_api_key', '' )
+            ->with( 'drspeed_aias_api_key', '' )
             ->andReturn( 'cusk_Freekey_10' );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_railway_url', '' )
+            ->with( 'drspeed_aias_railway_url', '' )
             ->andReturn( '' );
         WP_Mock::userFunction( 'get_home_url' )->andReturn( 'https://www.example.com' );
         WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( function ( string $url, ?int $component = null ) {
@@ -215,11 +215,11 @@ class ScannerAjaxTest extends TestCase {
             return (string) ( $response['body'] ?? '' );
         } );
         WP_Mock::userFunction( 'update_option' )
-            ->with( 'aias_railway_url', 'https://cu-scanner-railway-production.up.railway.app' )
+            ->with( 'drspeed_aias_railway_url', 'https://cu-scanner-railway-production.up.railway.app' )
             ->once();
         WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 11 );
         WP_Mock::userFunction( 'set_transient' )
-            ->with( 'cu_scanner_pending_token_11', 'plain-token', 3600 )
+            ->with( 'drspeed_aias_pending_token_11', 'plain-token', 3600 )
             ->once();
 
         $captured = null;
@@ -246,10 +246,10 @@ class ScannerAjaxTest extends TestCase {
             return max( 0, (int) $value );
         } );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_api_key', '' )
+            ->with( 'drspeed_aias_api_key', '' )
             ->andReturn( 'cusk_Freekey_10' );
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'aias_railway_url', '' )
+            ->with( 'drspeed_aias_railway_url', '' )
             ->andReturn( 'https://cu-scanner-railway-production.up.railway.app' );
         WP_Mock::userFunction( 'get_home_url' )->andReturn( 'https://www.example.com' );
         WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( function ( string $url, ?int $component = null ) {
@@ -286,7 +286,7 @@ class ScannerAjaxTest extends TestCase {
         } );
         WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 11 );
         WP_Mock::userFunction( 'set_transient' )
-            ->with( 'cu_scanner_pending_token_11', 'plain-token', 3600 )
+            ->with( 'drspeed_aias_pending_token_11', 'plain-token', 3600 )
             ->once();
         WP_Mock::userFunction( 'wp_send_json_success' )->once();
 
@@ -453,7 +453,7 @@ class ScannerAjaxTest extends TestCase {
     public function test_ratchet_enabled_defaults_on_in_beta(): void {
         // Default-ON (beta): absent option → get_option returns the `true` default.
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_ratchet_enabled', true )
+            ->with( 'drspeed_aias_ratchet_enabled', true )
             ->andReturn( true );
 
         $this->assertTrue( ( new ScannerAjax() )->__test_ratchet_enabled() );
@@ -463,7 +463,7 @@ class ScannerAjaxTest extends TestCase {
     public function test_ratchet_enabled_opt_out_when_option_false(): void {
         // Opt-out kill switch: option set to a falsy value → disabled.
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_ratchet_enabled', true )
+            ->with( 'drspeed_aias_ratchet_enabled', true )
             ->andReturn( false );
 
         $this->assertFalse( ( new ScannerAjax() )->__test_ratchet_enabled() );
@@ -590,7 +590,7 @@ class ScannerAjaxTest extends TestCase {
         ( new ScannerAjax() )->__test_persist_r_orig( $cu_json, $pages_raw );
         $this->assertConditionsMet();
 
-        $this->assertSame( 'cu_scanner_r_orig_7', $captured_key );
+        $this->assertSame( 'drspeed_aias_r_orig_7', $captured_key );
         $this->assertSame( HOUR_IN_SECONDS, $captured_ttl );
         $this->assertIsArray( $captured_data );
         $this->assertArrayHasKey( 'urls', $captured_data );
@@ -606,7 +606,7 @@ class ScannerAjaxTest extends TestCase {
      */
     public function test_b2_no_persist_when_ratchet_disabled(): void {
         WP_Mock::userFunction( 'get_option' )
-            ->with( 'cu_scanner_ratchet_enabled', true )
+            ->with( 'drspeed_aias_ratchet_enabled', true )
             ->andReturn( false );
 
         $pages_raw = [
@@ -629,14 +629,14 @@ class ScannerAjaxTest extends TestCase {
         $ajax = new ScannerAjax();
 
         // Marker present for this job → gate TRUE even though no page is billing-stamped.
-        WP_Mock::userFunction( 'get_transient' )->with( 'cu_scanner_et_rescan_job-et' )->andReturn( 1 );
+        WP_Mock::userFunction( 'get_transient' )->with( 'drspeed_aias_et_rescan_job-et' )->andReturn( 1 );
         $this->assertTrue(
             $ajax->__test_resolve_is_et_rescan( $unstamped, 'job-et' ),
             'marker set + unstamped pages → gate TRUE (the fix)'
         );
 
         // No marker → a normal scan; gate stays false.
-        WP_Mock::userFunction( 'get_transient' )->with( 'cu_scanner_et_rescan_job-normal' )->andReturn( false );
+        WP_Mock::userFunction( 'get_transient' )->with( 'drspeed_aias_et_rescan_job-normal' )->andReturn( false );
         $this->assertFalse(
             $ajax->__test_resolve_is_et_rescan( $unstamped, 'job-normal' ),
             'no marker + unstamped pages → gate false (normal scan)'
@@ -648,8 +648,8 @@ class ScannerAjaxTest extends TestCase {
      * rescan, so the (often degraded) rescan result cannot clobber the baseline R_orig.
      */
     public function test_b4_no_persist_for_marked_et_rescan(): void {
-        WP_Mock::userFunction( 'get_option' )->with( 'cu_scanner_ratchet_enabled', true )->andReturn( true );
-        WP_Mock::userFunction( 'get_transient' )->with( 'cu_scanner_et_rescan_job-et' )->andReturn( 1 );
+        WP_Mock::userFunction( 'get_option' )->with( 'drspeed_aias_ratchet_enabled', true )->andReturn( true );
+        WP_Mock::userFunction( 'get_transient' )->with( 'drspeed_aias_et_rescan_job-et' )->andReturn( 1 );
 
         $unstamped = [ [ 'url' => 'https://s.com/p', 'status' => 'done', 'assets' => [] ] ];
         $ajax = new ScannerAjax();
@@ -664,7 +664,7 @@ class ScannerAjaxTest extends TestCase {
      * submit-side marker and the build-side lookup can never drift (bypass_map lesson).
      */
     public function test_b4_marker_key_shape_and_intent_predicate(): void {
-        $this->assertSame( 'cu_scanner_et_rescan_abc', ScannerAjax::et_rescan_marker_key( 'abc' ) );
+        $this->assertSame( 'drspeed_aias_et_rescan_abc', ScannerAjax::et_rescan_marker_key( 'abc' ) );
         $this->assertTrue(  ScannerAjax::intent_requests_extra_time( [ 'extra_time_urls' => [ 'https://s.com/p' ] ] ) );
         $this->assertFalse( ScannerAjax::intent_requests_extra_time( [ 'extra_time_urls' => [] ] ) );
         $this->assertFalse( ScannerAjax::intent_requests_extra_time( [] ) );
@@ -776,7 +776,7 @@ class ScannerAjaxTest extends TestCase {
         ];
 
         // Build R_et via RatchetMerger::merge (the same path the production code takes).
-        $merger       = new \CUScanner\Scanner\RatchetMerger();
+        $merger       = new \DrSpeedAIAS\Scanner\RatchetMerger();
         $merged_rules = $merger->merge( $r_orig['rules'], $rescan_pages );
 
         // Confirm orig-h (benign) is restored in merged rules.
@@ -879,10 +879,10 @@ class ScannerAjaxTest extends TestCase {
         ];
 
         // Run merge — this populates recovered_by_pattern.
-        $merger = new \CUScanner\Scanner\RatchetMerger();
+        $merger = new \DrSpeedAIAS\Scanner\RatchetMerger();
         $merger->merge( $r_orig_rules, $rescan_pages );
 
-        // Simulate pages_payload as built by AIAS_Scan_Status::build_pages.
+        // Simulate pages_payload as built by DRSPEED_AIAS_Scan_Status::build_pages.
         $pages_payload = [
             [
                 'n'            => 1,
@@ -1023,11 +1023,11 @@ class ScannerAjaxTest extends TestCase {
     }
 
     /**
-     * AC-DG-1 — the AAS debug gate is OFF by default (CU_SCANNER_DEBUG undefined in test env).
+     * AC-DG-1 — the AAS debug gate is OFF by default (DRSPEED_AIAS_DEBUG undefined in test env).
      */
     public function test_ac_dg_1_debug_gate_off_by_default(): void {
         require_once dirname( __DIR__ ) . '/includes/debug.php';
-        $this->assertFalse( aias_debug_enabled(), 'CU_SCANNER_DEBUG undefined → gate false' );
+        $this->assertFalse( drspeed_aias_debug_enabled(), 'DRSPEED_AIAS_DEBUG undefined → gate false' );
     }
 
     /**
@@ -1140,7 +1140,7 @@ class ScannerAjaxTest extends TestCase {
             [ 'url' => 'https://example.com/b/', 'kept_protection' => [
                 [ 'id' => 'turnstile', 'display_name' => 'Cloudflare Turnstile', 'handles' => [ 'h|script' ] ] ] ],
         ];
-        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+        $out = \DrSpeedAIAS\Admin\ScannerAjax::aggregate_kept_protection( $pages );
         // DISTINCT-HANDLE semantics: the SAME composite handle 'h|script' on two pages is
         // ONE script kept, not two — one script kept on two pages is one script.
         $this->assertSame( 1, $out['count'] );
@@ -1163,7 +1163,7 @@ class ScannerAjaxTest extends TestCase {
                 [ 'id' => 'gravityforms', 'display_name' => 'Gravity Forms',
                   'handles' => [ 'gform_json|script' ] ] ] ],
         ];
-        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+        $out = \DrSpeedAIAS\Admin\ScannerAjax::aggregate_kept_protection( $pages );
         $this->assertSame( 2, $out['count'] ); // 2 distinct composites, NOT 3 handle occurrences / 2 page entries
         $this->assertSame( [ 'Gravity Forms' ], $out['vendors'] );
     }
@@ -1179,7 +1179,7 @@ class ScannerAjaxTest extends TestCase {
             [ 'url' => 'https://example.com/x/', 'kept_protection' => [ [ 'display_name' => 123 ] ] ],
             [ 'url' => 'https://example.com/y/' ], // absent
         ];
-        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+        $out = \DrSpeedAIAS\Admin\ScannerAjax::aggregate_kept_protection( $pages );
         $this->assertSame( 0, $out['count'] );   // NO handles anywhere ⇒ malformed entries never raise the count
         $this->assertSame( [], $out['vendors'] ); // and contribute no vendor string
     }
@@ -1202,7 +1202,7 @@ class ScannerAjaxTest extends TestCase {
                   // a third key and a phantom kept script the note could never name.
                   'handles' => [ 'h|script', '', 'h|style' ] ] ] ],
         ];
-        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+        $out = \DrSpeedAIAS\Admin\ScannerAjax::aggregate_kept_protection( $pages );
         // explode( '|', … )[0] would collapse both to 'h' and report 1.
         $this->assertSame( 2, $out['count'] );
         $this->assertSame( [ 'Vendor' ], $out['vendors'] );
@@ -1225,7 +1225,7 @@ class ScannerAjaxTest extends TestCase {
             [ 'url' => 'https://example.com/a/', 'kept_protection' => [
                 [ 'id' => 'lone', 'display_name' => 'LoneVendor', 'handles' => 'junk' ] ] ],
         ];
-        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+        $out = \DrSpeedAIAS\Admin\ScannerAjax::aggregate_kept_protection( $pages );
         $this->assertSame( 0, $out['count'] );              // nothing countable
         $this->assertSame( [ 'LoneVendor' ], $out['vendors'] ); // ...but still nameable
     }
@@ -1252,7 +1252,7 @@ class ScannerAjaxTest extends TestCase {
                 [ 'display_name' => 'Vendor', 'handles' => [ 123, [ 'nested' ], null, true ] ],
             ] ],
         ];
-        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+        $out = \DrSpeedAIAS\Admin\ScannerAjax::aggregate_kept_protection( $pages );
         $this->assertSame( 1, $out['count'] );
         $this->assertSame( [ 'Vendor' ], $out['vendors'] );
     }
@@ -1300,7 +1300,7 @@ class ScannerAjaxTest extends TestCase {
 
     /** AC-1 shape — the headline is 9 and every label carries its own count and category. */
     public function test_aggregate_reports_every_keep_not_just_protection(): void {
-        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( [ $this->r20ReferencePage() ] );
+        $out = \DrSpeedAIAS\Admin\ScannerAjax::aggregate_kept_protection( [ $this->r20ReferencePage() ] );
 
         $this->assertSame( 9, $out['count'], 'headline spans both fields' );
         $this->assertSame(
@@ -1320,7 +1320,7 @@ class ScannerAjaxTest extends TestCase {
 
     /** AC-9 — one assertion that catches the whole cross-label collision class. */
     public function test_aggregate_row_counts_sum_to_the_headline(): void {
-        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( [
+        $out = \DrSpeedAIAS\Admin\ScannerAjax::aggregate_kept_protection( [
             $this->r20ReferencePage(),
             [ 'url' => 'https://example.test/other/', 'kept_known_assets' => [
                 // Same composite under a DIFFERENT label. The producer resolves collisions, but
@@ -1338,7 +1338,7 @@ class ScannerAjaxTest extends TestCase {
 
     /** AC-12 — a label that contributed no countable handle must not render as "(0)". */
     public function test_aggregate_omits_zero_count_labels_but_still_names_the_vendor(): void {
-        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( [
+        $out = \DrSpeedAIAS\Admin\ScannerAjax::aggregate_kept_protection( [
             [ 'url' => 'https://example.test/', 'kept_protection' => [
                 [ 'display_name' => 'Cloudflare Turnstile', 'handles' => [ 'cf|script' ] ],
                 [ 'display_name' => 'Nameless Vendor' ], // valid name, no usable handle
@@ -1360,7 +1360,7 @@ class ScannerAjaxTest extends TestCase {
                     [ 'gform_gravityforms|script', 'gform_json|script' ] ),
             ] ];
         }
-        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+        $out = \DrSpeedAIAS\Admin\ScannerAjax::aggregate_kept_protection( $pages );
         $this->assertSame( 2, $out['count'] );
         $this->assertSame( [ [ 'label' => 'Gravity Forms', 'count' => 2, 'category' => 'form' ] ], $out['rows'] );
     }
@@ -1370,7 +1370,7 @@ class ScannerAjaxTest extends TestCase {
         $pages = [ [ 'url' => 'https://example.test/', 'kept_protection' => [
             [ 'display_name' => 'Cloudflare Turnstile', 'handles' => [ 'cf-challenge|script' ] ],
         ] ] ];
-        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+        $out = \DrSpeedAIAS\Admin\ScannerAjax::aggregate_kept_protection( $pages );
 
         $this->assertSame( 1, $out['count'] );
         $this->assertSame( [ 'Cloudflare Turnstile' ], $out['vendors'] );
@@ -1386,7 +1386,7 @@ class ScannerAjaxTest extends TestCase {
      * the rows do not sum to the headline; every real worker entry carries a display_name.
      */
     public function test_aggregate_nameless_entry_counts_but_cannot_become_a_row(): void {
-        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( [
+        $out = \DrSpeedAIAS\Admin\ScannerAjax::aggregate_kept_protection( [
             [ 'url' => 'https://example.test/', 'kept_known_assets' => [
                 [ 'id' => 'mystery', 'category' => 'analytics', 'handles' => [ 'mystery|script' ] ],
             ] ],
@@ -1398,7 +1398,7 @@ class ScannerAjaxTest extends TestCase {
 
     /** D5 / Rule 1 — kept_known_assets is untrusted worker data, same as kept_protection. */
     public function test_aggregate_known_assets_survives_hostile_shapes(): void {
-        $out = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( [
+        $out = \DrSpeedAIAS\Admin\ScannerAjax::aggregate_kept_protection( [
             [ 'url' => 'https://example.test/', 'kept_known_assets' => 'not-an-array' ],
             [ 'url' => 'https://example.test/2/', 'kept_known_assets' => [
                 'not-an-entry',

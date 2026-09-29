@@ -21,9 +21,9 @@ define( 'ABSPATH', __DIR__ );
 
 require __DIR__ . '/../admin/class-scanner-ajax.php';
 
-use CUScanner\Admin\ScannerAjax;
+use DrSpeedAIAS\Admin\ScannerAjax;
 
-function aias_assert( $cond, string $msg ): void {
+function drspeed_aias_assert( $cond, string $msg ): void {
     if ( ! $cond ) { throw new RuntimeException( "FAIL: {$msg}" ); }
 }
 
@@ -44,11 +44,11 @@ $pages_sent = [
 $map = ScannerAjax::build_bypass_map( $pages_sent );
 
 // ---- build side: map keyed by the exact final scan URL; empty-suffix URL excluded ----
-aias_assert( isset( $map[ $internal_url ] ), 'internal URL must be in the map' );
-aias_assert( isset( $map[ $external_url ] ), 'EXTERNAL URL must be in the map (the whole point of the review fix)' );
-aias_assert( ! isset( $map[ $noopt_url ] ), 'URL with empty suffixes must be ABSENT (fail-closed)' );
-aias_assert( $map[ $internal_url ] === [ 'nowprocket', 'nowpcu' ], 'internal suffixes preserved verbatim' );
-aias_assert( $map[ $external_url ] === [ 'LSCWP_CTRL=before_optm' ], 'external suffixes preserved verbatim' );
+drspeed_aias_assert( isset( $map[ $internal_url ] ), 'internal URL must be in the map' );
+drspeed_aias_assert( isset( $map[ $external_url ] ), 'EXTERNAL URL must be in the map (the whole point of the review fix)' );
+drspeed_aias_assert( ! isset( $map[ $noopt_url ] ), 'URL with empty suffixes must be ABSENT (fail-closed)' );
+drspeed_aias_assert( $map[ $internal_url ] === [ 'nowprocket', 'nowpcu' ], 'internal suffixes preserved verbatim' );
+drspeed_aias_assert( $map[ $external_url ] === [ 'LSCWP_CTRL=before_optm' ], 'external suffixes preserved verbatim' );
 
 // ---- result side: worker echoes pages[].url VERBATIM. Rows arrive in a DIFFERENT
 // order, reindexed (filter_real_pages array_values), with NO bypass_suffixes field —
@@ -63,20 +63,20 @@ $pages_raw = [
 $stamped = ScannerAjax::stamp_bypass_suffixes( $pages_raw, $map );
 
 // External row MUST now carry its suffix — this is the regression the review fix closes.
-aias_assert( ( $stamped[0]['bypass_suffixes'] ?? null ) === [ 'LSCWP_CTRL=before_optm' ], 'EXTERNAL result row must be stamped from the persisted map' );
+drspeed_aias_assert( ( $stamped[0]['bypass_suffixes'] ?? null ) === [ 'LSCWP_CTRL=before_optm' ], 'EXTERNAL result row must be stamped from the persisted map' );
 // noopt row: no suffix ever applied → must remain unstamped.
-aias_assert( ! isset( $stamped[1]['bypass_suffixes'] ), 'noopt row must stay unstamped (fail-closed no note)' );
+drspeed_aias_assert( ! isset( $stamped[1]['bypass_suffixes'] ), 'noopt row must stay unstamped (fail-closed no note)' );
 // Internal row MUST carry its suffix (regression parity with the old same-host behavior).
-aias_assert( ( $stamped[2]['bypass_suffixes'] ?? null ) === [ 'nowprocket', 'nowpcu' ], 'internal result row must be stamped' );
+drspeed_aias_assert( ( $stamped[2]['bypass_suffixes'] ?? null ) === [ 'nowprocket', 'nowpcu' ], 'internal result row must be stamped' );
 // A row whose URL never appeared in the map → unstamped.
-aias_assert( ! isset( $stamped[3]['bypass_suffixes'] ), 'unknown URL must stay unstamped (fail-closed)' );
+drspeed_aias_assert( ! isset( $stamped[3]['bypass_suffixes'] ), 'unknown URL must stay unstamped (fail-closed)' );
 
 // ---- defensive: dirty map (non-string leaves, non-array value) must not crash/leak ----
 $dirty_map = [ $internal_url => [ 'nowprocket', 123, null, 'nowpcu' ], $external_url => 'not-an-array' ];
 $dirty_raw = [ [ 'url' => $internal_url ], [ 'url' => $external_url ] ];
 $dirty_out = ScannerAjax::stamp_bypass_suffixes( $dirty_raw, $dirty_map );
-aias_assert( ( $dirty_out[0]['bypass_suffixes'] ?? null ) === [ 'nowprocket', 'nowpcu' ], 'non-string leaves filtered out' );
-aias_assert( ! isset( $dirty_out[1]['bypass_suffixes'] ), 'non-array map value ignored (fail-closed)' );
+drspeed_aias_assert( ( $dirty_out[0]['bypass_suffixes'] ?? null ) === [ 'nowprocket', 'nowpcu' ], 'non-string leaves filtered out' );
+drspeed_aias_assert( ! isset( $dirty_out[1]['bypass_suffixes'] ), 'non-array map value ignored (fail-closed)' );
 
 // build side also filters non-string leaves and drops all-empty-after-filter entries.
 $dirty_pages = [
@@ -86,12 +86,12 @@ $dirty_pages = [
     'not-an-array',                                                    // non-array page → skipped
 ];
 $dirty_built = ScannerAjax::build_bypass_map( $dirty_pages );
-aias_assert( $dirty_built === [ 'https://x.test/a' => [ 'ok' ] ], 'build_bypass_map filters leaves, drops empty/urlless/non-array entries' );
+drspeed_aias_assert( $dirty_built === [ 'https://x.test/a' => [ 'ok' ] ], 'build_bypass_map filters leaves, drops empty/urlless/non-array entries' );
 
 // ---- absent/empty map → no stamping at all (transient expired / background rebuild) ----
 $none = ScannerAjax::stamp_bypass_suffixes( $pages_raw, [] );
 foreach ( $none as $r ) {
-    aias_assert( ! isset( $r['bypass_suffixes'] ), 'empty map stamps nothing (fail-closed)' );
+    drspeed_aias_assert( ! isset( $r['bypass_suffixes'] ), 'empty map stamps nothing (fail-closed)' );
 }
 
 echo "bypass-suffix-map persist ok\n";

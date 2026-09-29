@@ -1,5 +1,5 @@
 <?php
-namespace CUScanner\Scanner;
+namespace DrSpeedAIAS\Scanner;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -48,8 +48,8 @@ class BypassHandler {
 	];
 
 	// Misuse logging is throttled site-wide: without this, every junk token
-	// rewrites the entire aias_pending_events option via EventEmitter::emit().
-	private const MISUSE_THROTTLE_KEY = 'aias_bypass_misuse_throttle';
+	// rewrites the entire drspeed_aias_pending_events option via EventEmitter::emit().
+	private const MISUSE_THROTTLE_KEY = 'drspeed_aias_bypass_misuse_throttle';
 	private const MISUSE_THROTTLE_TTL = 600;
 
 	/** @var callable|null Injected token validator for testing. */
@@ -180,7 +180,7 @@ class BypassHandler {
 	 */
 	private static function log_misuse(): void {
 		// Throttled: an unthrottled path here means every junk token rewrites
-		// the whole aias_pending_events option on every request.
+		// the whole drspeed_aias_pending_events option on every request.
 		if ( false !== get_transient( self::MISUSE_THROTTLE_KEY ) ) {
 			return;
 		}
@@ -212,6 +212,6 @@ class BypassHandler {
 	}
 
 	private static function is_debug_build(): bool {
-		return aias_debug_enabled();
+		return drspeed_aias_debug_enabled();
 	}
 }

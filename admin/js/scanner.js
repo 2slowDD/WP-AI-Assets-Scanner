@@ -1,13 +1,13 @@
 (function () {
     'use strict';
 
-    const SCANNER_JS_VERSION = '1.0.11.13';
+    const SCANNER_JS_VERSION = '1.0.11.14';
     console.log( '[AI Assets Scanner] scanner.js v' + SCANNER_JS_VERSION + ' loaded' );
 
-    const ajax    = cuScanner.ajaxUrl;
-    const nonce   = cuScanner.nonce;
-    const siteUrl = cuScanner.siteUrl || window.location.origin;
-    const initialUndoLastPushSyncState = (cuScanner && cuScanner.lastPushSyncUndo) ? cuScanner.lastPushSyncUndo : { available: false };
+    const ajax    = drspeedAias.ajaxUrl;
+    const nonce   = drspeedAias.nonce;
+    const siteUrl = drspeedAias.siteUrl || window.location.origin;
+    const initialUndoLastPushSyncState = (drspeedAias && drspeedAias.lastPushSyncUndo) ? drspeedAias.lastPushSyncUndo : { available: false };
 
     // --- State ---
     let discoveredUrls = [];   // full set returned by server
@@ -137,7 +137,7 @@
         const label = document.getElementById('cu-step-label');
         if (label) label.innerHTML = STEP_LABELS[n] || '';
 
-        const app = document.getElementById('cu-scanner-app');
+        const app = document.getElementById('drspeed-aias-app');
         if (app) app.setAttribute('data-current-step', String(n));
 
         // Update pips
@@ -264,7 +264,7 @@
         });
     }
 
-    // FU-NEW-2 Phase 6 — Inline spinner for cu_scanner_probe_target_stack.
+    // FU-NEW-2 Phase 6 — Inline spinner for drspeed_aias_probe_target_stack.
     // Returns { hide(), signal } — signal is an AbortSignal wired to a Cancel button
     // so the operator can abort the probe mid-flight (spec §9). Probe typically
     // completes in 1-3s; cancel UX exists for slow upstream cases.
@@ -359,7 +359,7 @@
 
     /**
      * FU-NEW-2 Phase 6 — Render an outcome-specific dialog from
-     * cu_scanner_probe_target_stack result. Returns Promise<boolean>:
+     * drspeed_aias_probe_target_stack result. Returns Promise<boolean>:
      * true = continue with scan, false = cancel. Dialog content per spec §6.3.
      *
      * FDEG Plan B Task 4 — the blocking modal below is the WAF bail-BEFORE-credits
@@ -460,7 +460,7 @@
             (r.security_stacks || []).forEach(function (id) { if (ids.indexOf(id) === -1) ids.push(id); });
         });
         if (!ids.length) return null;
-        const names = (typeof cuReasonCopy === 'object' && cuReasonCopy && cuReasonCopy.stack_names) || {};
+        const names = (typeof drspeedAiasReasonCopy === 'object' && drspeedAiasReasonCopy && drspeedAiasReasonCopy.stack_names) || {};
         const wrap = document.createElement('div');
         wrap.className = 'cu-security-stack-block';
         const h = document.createElement('p');
@@ -496,9 +496,9 @@
                 + 'host adds an exception.';
             wrap.appendChild(hn);
         }
-        if (typeof cuReasonCopy === 'object' && cuReasonCopy && cuReasonCopy.settings_url) {
+        if (typeof drspeedAiasReasonCopy === 'object' && drspeedAiasReasonCopy && drspeedAiasReasonCopy.settings_url) {
             const a = document.createElement('a');
-            a.setAttribute('href', cuReasonCopy.settings_url);
+            a.setAttribute('href', drspeedAiasReasonCopy.settings_url);
             a.setAttribute('target', '_blank');
             a.textContent = 'Open the exemption instructions';
             wrap.appendChild(a);
@@ -519,8 +519,8 @@
             const dialog = document.createElement('dialog');
             dialog.className = 'cu-local-stack-dialog';
 
-            const names       = (typeof cuReasonCopy === 'object' && cuReasonCopy && cuReasonCopy.stack_names) || {};
-            const settingsUrl = (typeof cuReasonCopy === 'object' && cuReasonCopy && cuReasonCopy.settings_url) || '';
+            const names       = (typeof drspeedAiasReasonCopy === 'object' && drspeedAiasReasonCopy && drspeedAiasReasonCopy.stack_names) || {};
+            const settingsUrl = (typeof drspeedAiasReasonCopy === 'object' && drspeedAiasReasonCopy && drspeedAiasReasonCopy.settings_url) || '';
 
             dialog.innerHTML =
                 '<div class="cu-probe-dialog-body">' +
@@ -567,7 +567,7 @@
                 if (p.anchor) {
                     li.appendChild(document.createTextNode(' '));
                     const a = document.createElement('a');
-                    a.setAttribute('href', 'admin.php?page=cu-scanner-settings#' + p.anchor);
+                    a.setAttribute('href', 'admin.php?page=drspeed-aias-settings#' + p.anchor);
                     a.textContent = 'Open settings';
                     li.appendChild(a);
                 }
@@ -715,12 +715,12 @@
     }
 
     function detectPlugins() {
-        post('cu_scanner_detect_plugins').then(res => {
+        post('drspeed_aias_detect_plugins').then(res => {
             if (!res.success) return;
             const warnings = document.getElementById('cu-plugin-warnings');
             const d = res.data;
             availableBalance = (typeof d.balance === 'number') ? d.balance : null;
-            const app = document.getElementById('cu-scanner-app');
+            const app = document.getElementById('drspeed-aias-app');
             if (app && app.getAttribute('data-current-step') === '4') {
                 setResultText('cu-metric-balance', availableBalance === null ? '\u2014' : Math.max(0, availableBalance));
             }
@@ -919,7 +919,7 @@
         document.getElementById('cu-url-list-area').style.display = 'none';
         document.getElementById('cu-sonar-anim').style.display = 'flex';
 
-        post('cu_scanner_discover_pages', {
+        post('drspeed_aias_discover_pages', {
             excluded_urls: document.getElementById('cu-excluded-urls').value.split('\n').filter(Boolean),
         }).then(res => {
             // Hide sonar anim
@@ -938,7 +938,7 @@
             activeFilter   = 'all';
             discoveryRan   = true; // a real discovery completed — mixed-mode include URLs now MERGE, not replace
             clearEtCarryOver();    // FU-AAS-ET-VIEW-PERSIST — a fresh discovery exits the ET carry-over view
-            sessionStorage.removeItem('cu_scanner_rescan_requeue'); // clear stale "Scan again" dormant-origin flag on re-discover (parity with clearEtCarryOver)
+            sessionStorage.removeItem('drspeed_aias_rescan_requeue'); // clear stale "Scan again" dormant-origin flag on re-discover (parity with clearEtCarryOver)
 
             syncIncludedUrls();
             renderUrlList();
@@ -1109,12 +1109,12 @@
     }
 
     // FU-AAS-ET-VIEW-PERSIST — snapshot/clear the post-scan ET carry-over view so it survives
-    // WP-admin navigation (mirrors the Step-4 cu_scanner_result restore). saveEtCarryOver()
+    // WP-admin navigation (mirrors the Step-4 drspeed_aias_result restore). saveEtCarryOver()
     // no-ops outside that view (etCarryOver gate), so it is safe to call from updateCreditBadge().
     function saveEtCarryOver() {
         if (!etCarryOver) return;
         try {
-            localStorage.setItem('cu_scanner_et_carry_over', JSON.stringify({
+            localStorage.setItem('drspeed_aias_et_carry_over', JSON.stringify({
                 discoveredUrls: discoveredUrls,
                 groupedUrls:    groupedUrls,
                 selectedUrls:   selectedUrls,
@@ -1126,7 +1126,7 @@
     function clearEtCarryOver() {
         etCarryOver = false;
         etCarriedUrls = []; // FU-AAS-SUFFIX-DROP-ON-RESOLVE — leaving the carry-over view restores normal resolution
-        try { localStorage.removeItem('cu_scanner_et_carry_over'); } catch (_e) {}
+        try { localStorage.removeItem('drspeed_aias_et_carry_over'); } catch (_e) {}
     }
 
     function updateGroupCheckbox(type) {
@@ -1306,14 +1306,14 @@
     }
 
     /**
-     * Poll cu_scanner_outbox_tick every 30 s.
+     * Poll drspeed_aias_outbox_tick every 30 s.
      * Terminal states (dispatched / failed / none) stop the interval.
      * Guard: does nothing if an interval is already running.
      */
     function startOutboxTick() {
         if (outboxTickTimer !== null) return; // already ticking
         outboxTickTimer = setInterval(function () {
-            post('cu_scanner_outbox_tick', {}).then(function (res) {
+            post('drspeed_aias_outbox_tick', {}).then(function (res) {
                 if (!res.success) return; // server error — keep ticking
                 const d = res.data || {};
                 const state = d.state || 'none';
@@ -1334,7 +1334,7 @@
                     scanJobToken  = d.job_token  || null;
                     railwayUrl    = d.railway_url || null;
                     lastPageIndex = 0;
-                    sessionStorage.setItem('cu_scanner_active_job', JSON.stringify({
+                    sessionStorage.setItem('drspeed_aias_active_job', JSON.stringify({
                         job_id:      scanJobId,
                         job_token:   scanJobToken,
                         railway_url: railwayUrl,
@@ -1359,7 +1359,7 @@
 
     /**
      * Helper: build the outbox intent payload from the current scan state.
-     * Must include the same fields that cu_scanner_submit_job sends so the
+     * Must include the same fields that drspeed_aias_submit_job sends so the
      * server's intent_from_post() can reconstruct the scan.
      */
     // All handler-local values (bypassPerUrl, stackSummary, consentGiven) are passed in
@@ -1453,7 +1453,7 @@
 
         // FU-NEW-2 Phase 6 — target-stack-aware bypass routing for external URLs.
         // Replaces the simple external-URL confirm() with a probe + outcome-specific dialog.
-        // Probe runs BEFORE cu_scanner_reserve_job — does NOT consume credit by construction.
+        // Probe runs BEFORE drspeed_aias_reserve_job — does NOT consume credit by construction.
         const externalUrls = selectedUrls.filter(isExternalUrl);
         let targetBypassPerUrl = {};
         let targetStackSummary = null;
@@ -1484,7 +1484,7 @@
             let probeResult;
             try {
                 probeResult = await post(
-                    'cu_scanner_probe_target_stack',
+                    'drspeed_aias_probe_target_stack',
                     { urls: externalUrls },
                     { signal: spinnerCtl.signal }
                 );
@@ -1523,7 +1523,7 @@
         // FU-ANTIBLOCK-2 (spec §3.4) — same-site pre-scan warning. Fires at most
         // once per Start-Scan, AFTER the external probe modal (AC-6b ordering).
         const hasSameSite = selectedUrls.some(function (u) { return !isExternalUrl(u); });
-        const ls = (typeof cuLocalStack === 'object' && cuLocalStack) || {};
+        const ls = (typeof drspeedAiasLocalStack === 'object' && drspeedAiasLocalStack) || {};
         const cdnUnacked = ls.cdn && ls.cdn !== ls.acknowledged;
         const secPlugins = ls.security_plugins || [];
         // "Don't show this again" — browser-local suppression of the same-site warning
@@ -1532,7 +1532,7 @@
         try { localStackSuppressed = window.localStorage.getItem('cu_suppress_local_stack_warn') === '1'; } catch (e) {}
         if (hasSameSite && !localStackSuppressed && (cdnUnacked || secPlugins.length > 0)) {
             const proceed = await showLocalStackDialog(ls, cdnUnacked, secPlugins);
-            if (!proceed) return; // Cancel aborts BEFORE cu_scanner_reserve_job (AC-6b)
+            if (!proceed) return; // Cancel aborts BEFORE drspeed_aias_reserve_job (AC-6b)
         }
 
         // FU-AAS-SUFFIX-DROP-ON-RESOLVE — carried-over ET URLs are scanned byte-identically;
@@ -1564,14 +1564,14 @@
         // handler's scope (routeToOutbox is nested here) and are passed as params —
         // buildOutboxPayload is at IIFE scope and cannot read these block-scoped lets.
         function routeToOutbox( jobToken ) {
-            post('cu_scanner_outbox_enqueue', buildOutboxPayload( pageCount, etCount, etSelected, jobToken, targetBypassPerUrl, targetStackSummary, classCConsentGiven ))
+            post('drspeed_aias_outbox_enqueue', buildOutboxPayload( pageCount, etCount, etSelected, jobToken, targetBypassPerUrl, targetStackSummary, classCConsentGiven ))
                 .then(function () {
                     showOutboxBanner();
                     startOutboxTick();
                 });
         }
 
-        post('cu_scanner_reserve_job', { page_count: pageCount, extra_time_count: etCount })
+        post('drspeed_aias_reserve_job', { page_count: pageCount, extra_time_count: etCount })
             .then(res => {
                 if (!res.success) {
                     // res.data is now {message, retryable} — defensive: handle legacy string too.
@@ -1586,7 +1586,7 @@
                     return;
                 }
                 const job_token = res.data.job_token;
-                post('cu_scanner_submit_job', {
+                post('drspeed_aias_submit_job', {
                     // AC-RC-8a — scan the resolved URL, carry the original submitted URL.
                     // submitted_urls[] is index-aligned with urls[] (both mapped from the
                     // same selectedUrls array in the same order).
@@ -1608,12 +1608,12 @@
                                 selectedUrls.length
                             );
                             if (!consented) {
-                                post('cu_scanner_handle_failure');
+                                post('drspeed_aias_handle_failure');
                                 showStep(1);
                                 return;
                             }
                             classCConsentGiven = '1'; // carry consent into any later outbox enqueue (incl. a retry network-failure)
-                            const retry = await post('cu_scanner_submit_job', {
+                            const retry = await post('drspeed_aias_submit_job', {
                                 // AC-RC-8a — same resolved/submitted threading as above.
                                 urls: selectedUrls.map(u => resolvedByUrl[u] || u),
                                 submitted_urls: selectedUrls,
@@ -1627,7 +1627,7 @@
                                 // res.data is now {message, retryable} — defensive: handle legacy string too.
                                 const retryable = retry.data && retry.data.retryable === true;
                                 const msg       = (retry.data && retry.data.message) ? retry.data.message : retry.data;
-                                post('cu_scanner_handle_failure');
+                                post('drspeed_aias_handle_failure');
                                 if (retryable) {
                                     routeToOutbox( job_token );
                                 } else {
@@ -1642,7 +1642,7 @@
                             // res.data is now {message, retryable} — defensive: handle legacy string too.
                             const retryable = res2.data && res2.data.retryable === true;
                             const msg       = (res2.data && res2.data.message) ? res2.data.message : res2.data;
-                            post('cu_scanner_handle_failure');
+                            post('drspeed_aias_handle_failure');
                             if (retryable) {
                                 routeToOutbox( job_token );
                             } else {
@@ -1658,11 +1658,11 @@
                         // FU-AAS-YELLOW-S0A0-ROWS — a "Scan again" rescan reuses the 429 dormant
                         // button state: mark this job as a re-queue so restoreStep4 disables Push
                         // (Sync-only) when CU rules already exist. Mirrors reQueueRemainder (:1832).
-                        if ( sessionStorage.getItem('cu_scanner_rescan_requeue') ) {
-                            localStorage.setItem('cu_scanner_requeue_' + scanJobId, '1');
-                            sessionStorage.removeItem('cu_scanner_rescan_requeue');
+                        if ( sessionStorage.getItem('drspeed_aias_rescan_requeue') ) {
+                            localStorage.setItem('drspeed_aias_requeue_' + scanJobId, '1');
+                            sessionStorage.removeItem('drspeed_aias_rescan_requeue');
                         }
-                        sessionStorage.setItem( 'cu_scanner_active_job', JSON.stringify({
+                        sessionStorage.setItem( 'drspeed_aias_active_job', JSON.stringify({
                             job_id:      scanJobId,
                             job_token:   scanJobToken,
                             railway_url: railwayUrl,
@@ -1672,7 +1672,7 @@
                     })
                     .catch(() => {
                         // Network error on submit — retryable (canonical outage case).
-                        post('cu_scanner_handle_failure');
+                        post('drspeed_aias_handle_failure');
                         routeToOutbox( job_token );
                     });
             })
@@ -1695,7 +1695,7 @@
     // beginScanPolling() — called on new-scan-start paths ONLY: main submit, reQueueRemainder, and (1.8.6)
     // the outbox tick's 'dispatched' branch — a queued submit that starts late is still a new scan.
     // Clears the Step-3 URL table so rows from a previous (longer) scan don't linger, then starts polling.
-    // Do NOT call from the resume-after-reload path (cu_scanner_check_job / restoreOutboxState) —
+    // Do NOT call from the resume-after-reload path (drspeed_aias_check_job / restoreOutboxState) —
     // those paths legitimately repopulate the table from the worker's pages[] array.
     function beginScanPolling() {
         document.getElementById('cu-pages-tbody').innerHTML = '';
@@ -1787,7 +1787,7 @@
             .then(r => r.json())
             .then(data => { handleStatusUpdate(data); })
             .catch(() => {
-                post('cu_scanner_poll_status', { job_id: scanJobId, job_token: scanJobToken, from: lastPageIndex })
+                post('drspeed_aias_poll_status', { job_id: scanJobId, job_token: scanJobToken, from: lastPageIndex })
                     .then(res => { if (res.success) handleStatusUpdate(res.data); });
             });
     }
@@ -1815,7 +1815,7 @@
 
         if (data.status === 'cancelled_timeout') {
             stopPolling();
-            sessionStorage.removeItem('cu_scanner_active_job');
+            sessionStorage.removeItem('drspeed_aias_active_job');
             showQueueBanner(null, null, data.message || 'Your scan was cancelled after waiting 3 hours in queue. Credits have been returned. Please try again later.');
             return;
         }
@@ -1829,11 +1829,11 @@
 
         if (data.status === 'killed') {
             stopPolling();
-            sessionStorage.removeItem('cu_scanner_active_job');
+            sessionStorage.removeItem('drspeed_aias_active_job');
             // FU-7 — also update the plugin's local ScanHistory record so the
             // History tab no longer shows this scan as in_progress/queued.
             // Fire-and-forget; UI banner is the user-visible signal regardless.
-            post('cu_scanner_handle_killed');
+            post('drspeed_aias_handle_killed');
             // Killed = admin kill: charged 0, no rules delivered → no build_result.
             // Route through the unified terminal-incomplete handler for the banner.
             handleTerminalIncomplete({
@@ -1848,7 +1848,7 @@
 
         if (data.status === 'paused_exhausted') {
             stopPolling();
-            sessionStorage.removeItem('cu_scanner_active_job');
+            sessionStorage.removeItem('drspeed_aias_active_job');
             // Charged partial: worker already finalized source='partial' (X pages).
             // Deliver the X-page rules + the honest banner via the existing path.
             buildResult({ status: 'paused_exhausted', completed: completed, total: total,
@@ -1904,7 +1904,7 @@
 
         if (data.status === 'complete' || data.status === 'failed') {
             stopPolling();
-            sessionStorage.removeItem('cu_scanner_active_job');
+            sessionStorage.removeItem('drspeed_aias_active_job');
             if (data.status === 'complete') {
                 buildResult();
             } else if (completed >= total) {
@@ -1925,7 +1925,7 @@
                     // built === false means build_result returned res.success === false
                     // (do_build_result threw "No coverage data" — nothing was delivered).
                     if (!built) {
-                        post('cu_scanner_handle_failure').then(() => {
+                        post('drspeed_aias_handle_failure').then(() => {
                             showStep(1);
                             alert('Scan failed. Credits have been released. You may retry the scan.');
                         });
@@ -1933,7 +1933,7 @@
                 });
             } else {
                 // completed === 0 → pre-submit fatal / zero delivered. Existing path.
-                post('cu_scanner_handle_failure').then(() => {
+                post('drspeed_aias_handle_failure').then(() => {
                     showStep(1);
                     alert('Scan failed. Credits have been released. You may retry the scan.');
                 });
@@ -2108,7 +2108,7 @@
         // status is known; a complete scan sends '' (PHP maps it to null). Server-side
         // whitelist: user_cancel|failed|paused_exhausted|killed.
         const terminalSource = (terminalInfo && terminalInfo.status) ? terminalInfo.status : '';
-        return post('cu_scanner_build_result', { job_id: scanJobId, job_token: scanJobToken, charged_count: chargedCount, terminal_source: terminalSource })
+        return post('drspeed_aias_build_result', { job_id: scanJobId, job_token: scanJobToken, charged_count: chargedCount, terminal_source: terminalSource })
             .then(res => {
                 if (!res.success) {
                     // For a terminal-incomplete partial, an error here means nothing was
@@ -2143,7 +2143,7 @@
                     cuRulesActive: d.cu_rules_active,
                     keptProtectionSummary: d.kept_protection_summary
                 });
-                localStorage.setItem( 'cu_scanner_result', JSON.stringify({
+                localStorage.setItem( 'drspeed_aias_result', JSON.stringify({
                     job_id:        scanJobId,
                     safe_count:    d.safe_count,
                     agg_count:     d.aggressive_count,
@@ -2161,7 +2161,7 @@
                     // Persisted alongside the other result-truth fields: without this the
                     // restored Step 4 would silently fall back to the "please rescan" copy.
                     cu_rules_active:  d.cu_rules_active,
-                    // Same UNRENAMED name as the PHP payload, the aias_last_result option and
+                    // Same UNRENAMED name as the PHP payload, the drspeed_aias_last_result option and
                     // menu-badge.js's writer. Absent (not zero) when nothing was kept. Without
                     // this the kept-protection note shows after a live scan and vanishes on the
                     // next page load.
@@ -2242,9 +2242,9 @@
             : submitted.filter(function (u) { return !doneSet.has(cleanUrl(u)); });
 
         // --- Persist to localStorage ---
-        // Key is 'cu_scanner_partial' (un-namespaced). The spec calls for
-        // 'cu_scanner_partial_{user_id}' but cuScanner exposes no user_id to JS;
-        // the sibling key 'cu_scanner_result' is also un-namespaced \u2014 staying
+        // Key is 'drspeed_aias_partial' (un-namespaced). The spec calls for
+        // 'drspeed_aias_partial_{user_id}' but drspeedAias exposes no user_id to JS;
+        // the sibling key 'drspeed_aias_result' is also un-namespaced \u2014 staying
         // consistent keeps this task scanner.js-only (no PHP changes needed).
         var partialPayload = {
             job_id:        scanJobId,
@@ -2258,7 +2258,7 @@
         // (restorePartialBanner sets currentPartialInfo to this same shape). (1.7.43b fix.)
         currentPartialInfo = partialPayload;
         try {
-            localStorage.setItem('cu_scanner_partial', JSON.stringify(partialPayload));
+            localStorage.setItem('drspeed_aias_partial', JSON.stringify(partialPayload));
         } catch (_e) { /* localStorage unavailable \u2014 banner still renders live */ }
 
         // --- Render banner (uses persisted payload so reload-restore uses same path) ---
@@ -2327,7 +2327,7 @@
 
         var html;
         if (status === 'killed') {
-            html = '<div class="notice notice-warning inline aias-partial-banner">' +
+            html = '<div class="notice notice-warning inline drspeed-aias-partial-banner">' +
                 '<p><strong>&#9888; Your scan was stopped by an administrator.</strong> ' +
                 '<strong>You were not charged.</strong></p>' +
                 '<p><button type="button" class="button" id="cu-partial-retry-btn">' +
@@ -2335,7 +2335,7 @@
                 '</button></p>' +
                 '</div>';
         } else if (status === 'paused_exhausted') {
-            html = '<div class="notice notice-warning inline aias-partial-banner">' +
+            html = '<div class="notice notice-warning inline drspeed-aias-partial-banner">' +
                 '<p><strong>&#9888; Scan stopped after repeated origin throttling/blocking.</strong> ' +
                 'Your origin repeatedly rate-limited or blocked the scanner (e.g. HTTP 429 / 403 / 5xx). ' +
                 'You were charged for the ' + esc(String(completed)) + ' completed page' +
@@ -2348,7 +2348,7 @@
             var reason = (status === 'user_cancel')
                 ? 'You cancelled this scan.'
                 : 'Your scan was interrupted before it finished.';
-            html = '<div class="notice notice-warning inline aias-partial-banner">' +
+            html = '<div class="notice notice-warning inline drspeed-aias-partial-banner">' +
                 '<p><strong>&#9888; Scan stopped at page ' + esc(String(completed)) +
                 ' of ' + esc(String(total)) + '.</strong> ' +
                 esc(reason) + ' You were charged for the ' +
@@ -2417,7 +2417,7 @@
             // Reserve credits for N pages (no extra-time on re-queue).
             var resRes;
             try {
-                resRes = await post('cu_scanner_reserve_job', { page_count: N, extra_time_count: 0 });
+                resRes = await post('drspeed_aias_reserve_job', { page_count: N, extra_time_count: 0 });
             } catch (_e) {
                 // Network error on reserve — retryable path mirrors main flow.
                 // No outbox integration here (no targetBypassPerUrl / classCConsent scope).
@@ -2454,9 +2454,9 @@
 
             var subRes;
             try {
-                subRes = await post('cu_scanner_submit_job', submitPayload);
+                subRes = await post('drspeed_aias_submit_job', submitPayload);
             } catch (_e) {
-                post('cu_scanner_handle_failure');
+                post('drspeed_aias_handle_failure');
                 alert('Network error submitting re-queue. Please try again.');
                 return;
             }
@@ -2465,22 +2465,22 @@
             if (!subRes.success && subRes.data && subRes.data.error === 'class_c_consent_required') {
                 var consented = await showConsentDialog(subRes.data.class_c_active || [], N);
                 if (!consented) {
-                    post('cu_scanner_handle_failure');
+                    post('drspeed_aias_handle_failure');
                     showStep(1);
                     return;
                 }
                 var retryPayload = Object.assign({}, submitPayload, { class_c_consent_given: '1' });
                 try {
-                    subRes = await post('cu_scanner_submit_job', retryPayload);
+                    subRes = await post('drspeed_aias_submit_job', retryPayload);
                 } catch (_e) {
-                    post('cu_scanner_handle_failure');
+                    post('drspeed_aias_handle_failure');
                     alert('Network error submitting re-queue. Please try again.');
                     return;
                 }
                 if (!subRes.success) {
                     var retryMsg      = (subRes.data && subRes.data.message) ? subRes.data.message : subRes.data;
                     var retryRetryable = subRes.data && subRes.data.retryable === true;
-                    post('cu_scanner_handle_failure');
+                    post('drspeed_aias_handle_failure');
                     if (!retryRetryable) {
                         showStep(1);
                         submitErrorAlert(subRes.data, retryMsg);
@@ -2494,7 +2494,7 @@
             if (!subRes.success) {
                 var subMsg      = (subRes.data && subRes.data.message) ? subRes.data.message : subRes.data;
                 var subRetryable = subRes.data && subRes.data.retryable === true;
-                post('cu_scanner_handle_failure');
+                post('drspeed_aias_handle_failure');
                 if (!subRetryable) {
                     showStep(1);
                     submitErrorAlert(subRes.data, subMsg);
@@ -2509,15 +2509,15 @@
             scanJobToken  = subRes.data.job_token;
             railwayUrl    = subRes.data.railway_url;
             lastPageIndex = 0;
-            sessionStorage.setItem('cu_scanner_active_job', JSON.stringify({
+            sessionStorage.setItem('drspeed_aias_active_job', JSON.stringify({
                 job_id:      scanJobId,
                 job_token:   scanJobToken,
                 railway_url: railwayUrl,
             }));
             // Task 9 marker — set AFTER reserve returns the new job_id.
-            localStorage.setItem('cu_scanner_requeue_' + scanJobId, '1');
+            localStorage.setItem('drspeed_aias_requeue_' + scanJobId, '1');
             // Clear the persisted remainder so a reload no longer shows the old banner.
-            localStorage.removeItem('cu_scanner_partial');
+            localStorage.removeItem('drspeed_aias_partial');
             beginScanPolling();
         } finally {
             reQueueRemainder._inFlight = false;
@@ -3042,8 +3042,8 @@
         var refundEl = document.getElementById('cu-result-refund');
         if ( refundEl ) { refundEl.textContent = buildRefundLine({ creditsRefunded: creditsRefunded }); }
         const dlBtn = document.getElementById('cu-btn-download');
-        dlBtn.href = ajax + '?action=cu_scanner_download_json&job_id=' + jobId + '&nonce=' + nonce;
-        dlBtn.setAttribute('download', 'cu-scanner-' + jobId + '.json');
+        dlBtn.href = ajax + '?action=drspeed_aias_download_json&job_id=' + jobId + '&nonce=' + nonce;
+        dlBtn.setAttribute('download', 'drspeed-aias-' + jobId + '.json');
 
         const pushBtn    = document.getElementById('cu-btn-push');
         const syncBtn    = document.getElementById('cu-btn-sync');
@@ -3057,7 +3057,7 @@
         if ( busyLine ) { busyLine.textContent = ''; }
 
         // G6: re-queue partial scans must not clobber already-pushed rules.
-        const isRequeue = !!localStorage.getItem('cu_scanner_requeue_' + jobId);
+        const isRequeue = !!localStorage.getItem('drspeed_aias_requeue_' + jobId);
         const syncOnly  = isRequeue && !!hasActiveCuRules;
         // FU \u2014 a completed scan that produced 0 rules (0 safe + 0 aggressive) has nothing to
         // push or sync; both buttons stay dormant.
@@ -3153,7 +3153,7 @@
 
         // Consume the re-queue marker now that the result screen has rendered.
         if (isRequeue) {
-            localStorage.removeItem('cu_scanner_requeue_' + jobId);
+            localStorage.removeItem('drspeed_aias_requeue_' + jobId);
         }
 
         // Subsystem D-4: render broken-banner if pages were blocked.
@@ -3386,13 +3386,13 @@
             var origUrl = submittedByResolved[ p.url ];
             // FU-ABSENT-SAFE B2 — visible note when this row's scan URL received an
             // optimizer-bypass suffix (p.bypass_suffixes threaded server-side by
-            // AIAS_Scan_Status::build_pages()). Gated on non-empty so a miss renders
+            // DRSPEED_AIAS_Scan_Status::build_pages()). Gated on non-empty so a miss renders
             // no note at all (fail-closed, never a false positive).
             var bypassNote = ( p.bypass_suffixes && p.bypass_suffixes.length )
                 ? ' <span class="cu-bypass-note">optimizer detected — scanned with ?' + cuEscHtml( p.bypass_suffixes.join( '&' ) ) + '</span>'
                 : '';
             // FU-VFM-MASKING — legacy-row guard: rows restored from pre-release storage
-            // (aias_last_result / localStorage cu_scanner_result, both surfaces per AC-M7b)
+            // (drspeed_aias_last_result / localStorage drspeed_aias_result, both surfaces per AC-M7b)
             // lack this key entirely; an unguarded .length would throw and break the
             // restored Step-4 render. List joined ONCE and shared with the tooltip so the
             // note and tooltip can never drift (spec §3.2.2, r3-n3).
@@ -3402,7 +3402,7 @@
                 : '';
             // A2c — per-row "kept protection" chip: which pages the A2 summary's "N protection
             // scripts kept" actually landed on. p.kept_protection is threaded server-side by
-            // AIAS_Scan_Status::build_pages() (D5-validated there); Array.isArray also covers
+            // DRSPEED_AIAS_Scan_Status::build_pages() (D5-validated there); Array.isArray also covers
             // rows restored from pre-A2c storage, which lack the key entirely.
             //
             // Ruling R19 — this region is already an escaped-string -> host.innerHTML pipeline,
@@ -3412,7 +3412,7 @@
             // the array is read ONLY for its non-empty length, and nothing inside it —
             // display_name, handles, anything — is ever interpolated into this markup.
             // R20 — the chip now carries THAT ROW'S OWN count and covers non-protection keeps.
-            // kept_count is computed server-side in AIAS_Scan_Status::build_pages() so the client
+            // kept_count is computed server-side in DRSPEED_AIAS_Scan_Status::build_pages() so the client
             // keeps one plain `> 0` test instead of a second copy of the note's predicate.
             //
             // This IS an HTML sink, so the number is Number()-coerced before interpolation
@@ -3491,7 +3491,7 @@
             } );
         } );
         // FU-KEPT-BADGE-HOVER-INFO — native tooltip naming THIS ROW's kept assets, from the
-        // producer-derived kept_breakdown (AIAS_Scan_Status::build_pages(), same composite
+        // producer-derived kept_breakdown (DRSPEED_AIAS_Scan_Status::build_pages(), same composite
         // unit as the chip's own number). The labels are worker strings — untrusted — so
         // they reach the DOM ONLY via the title PROPERTY, which never parses as HTML; they
         // are never concatenated into the innerHTML pipeline above (ruling R19 — and note
@@ -3570,9 +3570,9 @@
         if ( blockedM > 0 ) bits.push( 'Mobile scanner blocked on '  + blockedM + ' of ' + total + ' pages.' );
 
         // FU-ANTIBLOCK-1 — copy comes from PHP single source (class-broken-banner.php
-        // export_copy_map via cuReasonCopy). Defensive defaults keep the banner
+        // export_copy_map via drspeedAiasReasonCopy). Defensive defaults keep the banner
         // functional (raw keys) if localization is absent (AC-4).
-        const REASON_COPY = (typeof cuReasonCopy === 'object' && cuReasonCopy) || {};
+        const REASON_COPY = (typeof drspeedAiasReasonCopy === 'object' && drspeedAiasReasonCopy) || {};
         const PHRASES     = REASON_COPY.phrases || {};
         const CATEGORIES  = REASON_COPY.categories || {};
         // PHP-side fallback key kept from the old literal:
@@ -3587,7 +3587,7 @@
         const reasonClause = phrases.length ? ' (' + phrases.map(esc).join(', ') + ')' : '';
 
         // Per-reason action copy — must match class-broken-banner.php
-        // (reason_category + action_clause, now sourced from cuReasonCopy.categories
+        // (reason_category + action_clause, now sourced from drspeedAiasReasonCopy.categories
         // instead of a duplicated local map/function). Mixed-category reasons fall
         // back to the generic 'bot' clause, matching the PHP-side fallback.
         const categories = [...new Set( Object.keys(reasons).map(reasonCategory) )];
@@ -3617,7 +3617,7 @@
                 // ranks cloudflare above host, so a mixed scan resolves here — denying
                 // the origin would be positively false for the origin-limited pages.
                 action  = 'Cloudflare rate-limited the scan. Whoever manages your Cloudflare — you, your host, or your agency — needs to allowlist the scanner.' + TAIL;
-                cdnLink = ' If you manage the Cloudflare account yourself, set up the one-time scanner exemption — <a href="admin.php?page=cu-scanner-settings#cu-cloudflare-waf-bypass">open AI Assets Scanner settings</a>.';
+                cdnLink = ' If you manage the Cloudflare account yourself, set up the one-time scanner exemption — <a href="admin.php?page=drspeed-aias-settings#cu-cloudflare-waf-bypass">open AI Assets Scanner settings</a>.';
             } else if ( attr === 'host' ) {
                 // No settings link by design. The "will not help here" sentence is
                 // LOAD-BEARING: without it a user who already has a working CDN
@@ -3625,7 +3625,7 @@
                 action = 'Your host\'s server rate-limited the scan. A CDN or WAF exemption will not help here. Wait a few minutes between scans, or ask your host to raise the rate limit during scans.' + TAIL;
             } else {
                 action  = 'The scan was rate-limited. Wait a few minutes between scans.' + TAIL;
-                cdnLink = ' If a CDN or WAF sits in front of your site, ask whoever manages it to allowlist the scanner; otherwise check your own server\'s rate limits — <a href="admin.php?page=cu-scanner-settings#cu-cloudflare-waf-bypass">open AI Assets Scanner settings</a>.';
+                cdnLink = ' If a CDN or WAF sits in front of your site, ask whoever manages it to allowlist the scanner; otherwise check your own server\'s rate limits — <a href="admin.php?page=drspeed-aias-settings#cu-cloudflare-waf-bypass">open AI Assets Scanner settings</a>.';
             }
         } else if ( categories.length === 1 && categories[0] === 'error' ) {
             action = 'Your server returned an error or didn\'t respond. The rules from the unblocked device (if any) are complete and safe to apply. Try again later, or check site health.';
@@ -3634,29 +3634,29 @@
             // Mixed rate+bot scan: keep the exemption pointer, but ownership-neutral —
             // on client sites the CDN is frequently host- or agency-managed.
             if ( categories.includes('rate') ) {
-                cdnLink = ' Behind Cloudflare or another CDN? Ask whoever manages it to allowlist the scanner — <a href="admin.php?page=cu-scanner-settings#cu-cloudflare-waf-bypass">open AI Assets Scanner settings</a>.';
+                cdnLink = ' Behind Cloudflare or another CDN? Ask whoever manages it to allowlist the scanner — <a href="admin.php?page=drspeed-aias-settings#cu-cloudflare-waf-bypass">open AI Assets Scanner settings</a>.';
             }
         }
 
         const copy = bits.map(esc).join(' ') + reasonClause + ' ' + esc(action);
 
         area.innerHTML =
-            '<div class="notice notice-warning inline aias-broken-banner" data-scan-id="' + esc(scanId) + '">' +
+            '<div class="notice notice-warning inline drspeed-aias-broken-banner" data-scan-id="' + esc(scanId) + '">' +
             '<p><strong>\u26a0 Some pages couldn\'t be fully scanned</strong></p>' +
             '<p>' + copy + cdnLink + '</p>' +
-            '<p><button type="button" class="button aias-dismiss-banner">Got it \u2014 don\'t show again for this scan</button></p>' +
+            '<p><button type="button" class="button drspeed-aias-dismiss-banner">Got it \u2014 don\'t show again for this scan</button></p>' +
             '</div>';
     }
 
     // Dismiss banner via AJAX (event delegation \u2014 banner is injected dynamically).
-    document.getElementById('cu-scanner-app').addEventListener('click', function(e) {
-        if ( !e.target.classList.contains('aias-dismiss-banner') ) return;
-        const banner = e.target.closest('.aias-broken-banner');
+    document.getElementById('drspeed-aias-app').addEventListener('click', function(e) {
+        if ( !e.target.classList.contains('drspeed-aias-dismiss-banner') ) return;
+        const banner = e.target.closest('.drspeed-aias-broken-banner');
         if ( !banner ) return;
         const scanId = banner.dataset.scanId || '';
-        const nonceBanner = (typeof aiasBannerL10n !== 'undefined') ? aiasBannerL10n.nonce : '';
+        const nonceBanner = (typeof drspeedAiasBannerL10n !== 'undefined') ? drspeedAiasBannerL10n.nonce : '';
         jQuery.post( ajax, {
-            action:       'aias_dismiss_banner',
+            action:       'drspeed_aias_dismiss_banner',
             scan_id:      scanId,
             _ajax_nonce:  nonceBanner,
         }, function() {
@@ -3666,7 +3666,7 @@
 
     // R3 Stage C — Stop & keep results now (paused banner). A NEW handler: it
     // does NOT re-fire the cancel button's generic confirm. It clears the live
-    // countdown, then reuses the cancel BODY (cu_scanner_cancel_job →
+    // countdown, then reuses the cancel BODY (drspeed_aias_cancel_job →
     // user_cancel partial). Billing-safe vs a later zombie resume (C5/SaaS 409).
     function stopAndKeep() {
         if (stopAndKeep._inFlight) return;
@@ -3680,10 +3680,10 @@
         stopAndKeep._inFlight = true;
         stopPolling();
         if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
-        post('cu_scanner_cancel_job').then(function (res) {
+        post('drspeed_aias_cancel_job').then(function (res) {
             stopAndKeep._inFlight = false;
             if (res && res.success) {
-                sessionStorage.removeItem('cu_scanner_active_job');
+                sessionStorage.removeItem('drspeed_aias_active_job');
                 var completedPages = (res.data && res.data.pages_completed) || completedNow;
                 buildResult({ status: 'user_cancel', completed: completedPages, total: totalPages,
                               pages: [], selectedUrls: selectedUrls.slice() }).then(function (built) {
@@ -3727,9 +3727,9 @@
         // FU-AAS-CANCEL-RELEASE-RESILIENCE: only tear down local state on a confirmed cancel.
         // If the backend was unreachable (retryable), the scan is still running server-side —
         // keep the active-job state, resume tracking, and let the user retry the cancel.
-        post('cu_scanner_cancel_job').then((res) => {
+        post('drspeed_aias_cancel_job').then((res) => {
             if (res && res.success) {
-                sessionStorage.removeItem('cu_scanner_active_job');
+                sessionStorage.removeItem('drspeed_aias_active_job');
                 // Task 5 — user_cancel charged partial: deliver the X-page rules +
                 // Step-4, then route through the unified handler for the partial banner.
                 // pages source: progressPages (from the confirm-fetch status above) —
@@ -3821,7 +3821,7 @@
     // has active rules to overwrite; an empty CU pushes immediately (no dialog).
     function cuDoPush( btn, confirmed ) {
         const release = lockSyncPush( btn, 'Pushing to Code Unloader… This can take a while for large rule sets.' );
-        post('cu_scanner_push_to_cu', { job_id: scanJobId, confirmed: confirmed ? 1 : 0 }).finally( release ).then(res => {
+        post('drspeed_aias_push_to_cu', { job_id: scanJobId, confirmed: confirmed ? 1 : 0 }).finally( release ).then(res => {
             const el = document.getElementById('cu-push-result');
             if (res.success && res.data && res.data.needs_confirm) {
                 if (window.confirm('This will save and overwrite your existing Code Unloader rules. Continue?')) {
@@ -3852,7 +3852,7 @@
     document.getElementById('cu-btn-sync').addEventListener('click', function () {
         const btn = this;
         const release = lockSyncPush( btn, 'Syncing with Code Unloader… This can take a while for large rule sets.' );
-        post('cu_scanner_sync_to_cu', { job_id: scanJobId }).finally( release ).then(res => {
+        post('drspeed_aias_sync_to_cu', { job_id: scanJobId }).finally( release ).then(res => {
             const el = document.getElementById('cu-push-result');
             if (res.success) {
                 const d = res.data;
@@ -3905,7 +3905,7 @@
                 el.innerHTML = '<div class="notice notice-info"><p>Undoing the last Push/Sync...</p></div>';
             }
 
-            post('cu_scanner_undo_last_push_sync').then(function (res) {
+            post('drspeed_aias_undo_last_push_sync').then(function (res) {
                 if (res.success) {
                     const d = res.data || {};
                     if (el) {
@@ -3934,17 +3934,17 @@
     // stored result and reload to a fresh Step 1 (buttons don't navigate natively). ---
     document.querySelectorAll('#step-4 .cu-btn-run-another').forEach(function (btn) {
         btn.addEventListener('click', function () {
-            localStorage.removeItem('cu_scanner_result');
-            localStorage.removeItem('cu_scanner_et_carry_over'); // FU-AAS-ET-VIEW-PERSIST — reset to a fresh Step 1
+            localStorage.removeItem('drspeed_aias_result');
+            localStorage.removeItem('drspeed_aias_et_carry_over'); // FU-AAS-ET-VIEW-PERSIST — reset to a fresh Step 1
             // 1.7.44b — "Run Another Scan" = discard ALL partial state and start over.
-            // Without this, cu_scanner_partial survives the reload and restorePartialBanner
+            // Without this, drspeed_aias_partial survives the reload and restorePartialBanner
             // re-renders the (now un-dismissable) banner on every load. Also drop any stale
             // re-queue markers so they can't mis-flag a brand-new scan as a re-queue.
-            localStorage.removeItem('cu_scanner_partial');
+            localStorage.removeItem('drspeed_aias_partial');
             Object.keys(localStorage).forEach(function (k) {
-                if (k.indexOf('cu_scanner_requeue_') === 0) { localStorage.removeItem(k); }
+                if (k.indexOf('drspeed_aias_requeue_') === 0) { localStorage.removeItem(k); }
             });
-            window.location.href = '?page=cu-scanner';
+            window.location.href = '?page=drspeed-aias';
         });
     });
 
@@ -3955,8 +3955,8 @@
         btn.addEventListener('click', function () {
             var urls = Array.from(cuUrlListState.etChecked);
             if (!urls.length) { return; }
-            sessionStorage.setItem('cu_scanner_rescan_et', JSON.stringify(urls));
-            window.location.href = '?page=cu-scanner';
+            sessionStorage.setItem('drspeed_aias_rescan_et', JSON.stringify(urls));
+            window.location.href = '?page=drspeed-aias';
         });
     });
 
@@ -3974,14 +3974,14 @@
                 return p && p.status_class === 'ok' && Number(p.safe) === 0 && Number(p.aggressive) === 0;
             }).map(function (p) { return p.url; });
             if (!urls.length) { return; }
-            sessionStorage.setItem('cu_scanner_rescan_single', JSON.stringify(urls));
-            window.location.href = '?page=cu-scanner';
+            sessionStorage.setItem('drspeed_aias_rescan_single', JSON.stringify(urls));
+            window.location.href = '?page=drspeed-aias';
         });
     });
 
     // --- Init: restore Step 4 if a completed result is stored ---
     (function () {
-        const stored = localStorage.getItem('cu_scanner_result');
+        const stored = localStorage.getItem('drspeed_aias_result');
         if (!stored) return;
         try {
             const d = JSON.parse(stored);
@@ -3999,22 +3999,22 @@
                 keptProtectionSummary: d.kept_protection_summary
             });
         } catch (_e) {
-            localStorage.removeItem('cu_scanner_result');
+            localStorage.removeItem('drspeed_aias_result');
         }
     }());
 
     // --- Init: restore partial-failure banner on page reload ---
-    // Runs AFTER the cu_scanner_result restore above (Step-4 wins when both exist).
+    // Runs AFTER the drspeed_aias_result restore above (Step-4 wins when both exist).
     // If a partial was stored by handleTerminalIncomplete, re-render the banner so
     // the re-queue/retry button survives a page reload. Task 7 clears this key on
     // successful re-queue submit.
     (function restorePartialBanner() {
-        if (localStorage.getItem('cu_scanner_result')) return; // Step-4 result wins
-        var raw = localStorage.getItem('cu_scanner_partial');
+        if (localStorage.getItem('drspeed_aias_result')) return; // Step-4 result wins
+        var raw = localStorage.getItem('drspeed_aias_partial');
         if (!raw) return;
         var p;
-        try { p = JSON.parse(raw); } catch (_e) { localStorage.removeItem('cu_scanner_partial'); return; }
-        if (!p || !p.status) { localStorage.removeItem('cu_scanner_partial'); return; }
+        try { p = JSON.parse(raw); } catch (_e) { localStorage.removeItem('drspeed_aias_partial'); return; }
+        if (!p || !p.status) { localStorage.removeItem('drspeed_aias_partial'); return; }
         currentPartialInfo = p;
         renderPartialBanner(p);
         showStep(4);
@@ -4025,13 +4025,13 @@
     // checked ET URLs into Step 1 in Discover/merge mode (discoveryRan=true), each
     // selected, each with Extra Time PRE-CHECKED, badge = count×2, ready for Start Scan.
     (function primeRescanEt() {
-        var raw = sessionStorage.getItem('cu_scanner_rescan_et');
+        var raw = sessionStorage.getItem('drspeed_aias_rescan_et');
         if (!raw) return;
-        sessionStorage.removeItem('cu_scanner_rescan_et');
+        sessionStorage.removeItem('drspeed_aias_rescan_et');
         var etUrls = []; try { etUrls = JSON.parse(raw) || []; } catch (e) { return; }
         if (!etUrls.length) return;
         // Stale Step-4 result would bounce the user back to Step 4 on a later reload; clear it.
-        localStorage.removeItem('cu_scanner_result');
+        localStorage.removeItem('drspeed_aias_result');
         discoveredUrls = etUrls;
         groupedUrls    = { page: [], post: [], other: [], included: etUrls };
         selectedUrls   = etUrls.slice();
@@ -4048,18 +4048,18 @@
         showStep(1);
     }());
 
-    // --- Rescan-noopt prime (FU-AAS-YELLOW-S0A0-ROWS item 2) — consumes cu_scanner_rescan_single,
+    // --- Rescan-noopt prime (FU-AAS-YELLOW-S0A0-ROWS item 2) — consumes drspeed_aias_rescan_single,
     // now fed by the "Rescan 0-Results URLs" bulk button (one or many S:0 A:0 URLs). Mirrors
     // primeRescanEt but with NO Extra Time, and sets the requeue-origin flag so the completed rescan
     // reuses the existing Push-dormant button state (Sync-only when CU rules already exist). Runs
     // before restoreEtCarryOver so its etCarryOver=true wins. ---
     (function primeRescanSingle() {
-        var raw = sessionStorage.getItem('cu_scanner_rescan_single');
+        var raw = sessionStorage.getItem('drspeed_aias_rescan_single');
         if (!raw) return;
-        sessionStorage.removeItem('cu_scanner_rescan_single');
+        sessionStorage.removeItem('drspeed_aias_rescan_single');
         var urls = []; try { urls = JSON.parse(raw) || []; } catch (e) { return; }
         if (!urls.length) return;
-        localStorage.removeItem('cu_scanner_result');         // clear stale Step-4 bounce
+        localStorage.removeItem('drspeed_aias_result');         // clear stale Step-4 bounce
         discoveredUrls = urls;
         groupedUrls    = { page: [], post: [], other: [], included: urls };
         selectedUrls   = urls.slice();
@@ -4070,7 +4070,7 @@
         discoveryRan   = true;
         etCarryOver    = true;
         // Dormant-origin flag: survives a pre-Start reload; consumed at the Start-Scan seam (:1282).
-        sessionStorage.setItem('cu_scanner_rescan_requeue', '1');
+        sessionStorage.setItem('drspeed_aias_rescan_requeue', '1');
         renderUrlList();
         updateCreditBadge();
         document.getElementById('cu-url-list-area').style.display = 'block';
@@ -4083,10 +4083,10 @@
     // (etCarryOver already true) wins; a stored Step-4 result also takes precedence.
     (function restoreEtCarryOver() {
         if (etCarryOver) return;                                // primeRescanEt already built it
-        if (localStorage.getItem('cu_scanner_result')) return;  // Step-4 result wins
-        var raw = localStorage.getItem('cu_scanner_et_carry_over');
+        if (localStorage.getItem('drspeed_aias_result')) return;  // Step-4 result wins
+        var raw = localStorage.getItem('drspeed_aias_et_carry_over');
         if (!raw) return;
-        var d; try { d = JSON.parse(raw); } catch (e) { localStorage.removeItem('cu_scanner_et_carry_over'); return; }
+        var d; try { d = JSON.parse(raw); } catch (e) { localStorage.removeItem('drspeed_aias_et_carry_over'); return; }
         if (!d || !Array.isArray(d.discoveredUrls) || !d.discoveredUrls.length) return;
         discoveredUrls = d.discoveredUrls;
         groupedUrls    = (d.groupedUrls && typeof d.groupedUrls === 'object') ? d.groupedUrls : { page: [], post: [], other: [], included: d.discoveredUrls };
@@ -4114,7 +4114,7 @@
     // localStorage directly (module scanJobId may be unset when this evaluates).
     function resultAlreadyShownFor(jobId) {
       try {
-        var raw = localStorage.getItem('cu_scanner_result');
+        var raw = localStorage.getItem('drspeed_aias_result');
         if (!raw || !jobId) return false;
         var d = JSON.parse(raw);
         return !!(d && d.job_id && String(d.job_id) === String(jobId));
@@ -4136,21 +4136,21 @@
     }
 
     (function checkForActiveJob() {
-      // FU-MAINPAGE-SCAN-RUNNING: the SERVER transient (cu_scanner_job_<user>) is the
+      // FU-MAINPAGE-SCAN-RUNNING: the SERVER transient (drspeed_aias_job_<user>) is the
       // source of truth. A fresh-tab / closed-tab reopen mid-scan has no tab-local
       // sessionStorage but the scan is still active — so consult check_job
-      // unconditionally (scanner.js is enqueued only on toplevel_page_cu-scanner).
-      const stored = sessionStorage.getItem('cu_scanner_active_job');
-      if (stored) { try { JSON.parse(stored); } catch (_) { sessionStorage.removeItem('cu_scanner_active_job'); } }
-      post('cu_scanner_check_job').then(res => {
-        if (!res || !res.success) { sessionStorage.removeItem('cu_scanner_active_job'); return; }
+      // unconditionally (scanner.js is enqueued only on toplevel_page_drspeed-aias).
+      const stored = sessionStorage.getItem('drspeed_aias_active_job');
+      if (stored) { try { JSON.parse(stored); } catch (_) { sessionStorage.removeItem('drspeed_aias_active_job'); } }
+      post('drspeed_aias_check_job').then(res => {
+        if (!res || !res.success) { sessionStorage.removeItem('drspeed_aias_active_job'); return; }
         // Precedence (§4): a completed result for the SAME job is already shown → stale transient, don't override.
-        if (resultAlreadyShownFor(res.data.job_id)) { sessionStorage.removeItem('cu_scanner_active_job'); return; }
+        if (resultAlreadyShownFor(res.data.job_id)) { sessionStorage.removeItem('drspeed_aias_active_job'); return; }
         scanJobId     = res.data.job_id;
         scanJobToken  = res.data.job_token;
         railwayUrl    = res.data.railway_url;
         lastPageIndex = 0;
-        sessionStorage.setItem('cu_scanner_active_job', JSON.stringify({
+        sessionStorage.setItem('drspeed_aias_active_job', JSON.stringify({
           job_id: scanJobId, job_token: scanJobToken, railway_url: railwayUrl,
         }));
         showResumingNotice();
@@ -4161,10 +4161,10 @@
 
     // --- Phase O: Re-attach outbox on page load ---
     // If the server reports a queued or dispatched outbox entry (populated by PHP
-    // via the cuScanner.outbox localized value), restore the matching UI state so
+    // via the drspeedAias.outbox localized value), restore the matching UI state so
     // a page reload during an outage doesn't show an idle Step 1.
     (function restoreOutboxState() {
-        var ob = (typeof cuScanner !== 'undefined' && cuScanner.outbox) ? cuScanner.outbox : null;
+        var ob = (typeof drspeedAias !== 'undefined' && drspeedAias.outbox) ? drspeedAias.outbox : null;
         if (!ob || !ob.state) return;
 
         if (ob.state === 'queued') {
@@ -4175,7 +4175,7 @@
             scanJobToken  = ob.job_token  || null;
             railwayUrl    = ob.railway_url || null;
             lastPageIndex = 0;
-            sessionStorage.setItem('cu_scanner_active_job', JSON.stringify({
+            sessionStorage.setItem('drspeed_aias_active_job', JSON.stringify({
                 job_id:      scanJobId,
                 job_token:   scanJobToken,
                 railway_url: railwayUrl,

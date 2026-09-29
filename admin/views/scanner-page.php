@@ -1,5 +1,5 @@
 <?php if ( ! defined( 'ABSPATH' ) ) exit; ?>
-<div class="wrap" id="cu-scanner-app" data-current-step="1">
+<div class="wrap" id="drspeed-aias-app" data-current-step="1">
 <h1 class="screen-reader-text">AI Assets Scanner</h1>
 <h2 class="screen-reader-text cu-admin-notice-anchor">AI Assets Scanner notices</h2>
 <div class="cu-wrap">
@@ -7,10 +7,10 @@
     <!-- Header (step label updated by JS via data-step-label) -->
     <div class="cu-header">
         <img class="cu-header-logo"
-             src="<?php echo esc_url( AIAS_URL . 'admin/images/dr-speed-ai-assets-scanner-logo.png' ); ?>"
+             src="<?php echo esc_url( DRSPEED_AIAS_URL . 'admin/images/dr-speed-ai-assets-scanner-logo.png' ); ?>"
              alt="AI Assets Scanner" />
         <div class="cu-header-text">
-            <h2>AI Assets Scanner <small class="cu-header-version">v<?php echo esc_html( AIAS_VERSION ); ?></small></h2>
+            <h2>AI Assets Scanner <small class="cu-header-version">v<?php echo esc_html( DRSPEED_AIAS_VERSION ); ?></small></h2>
             <span class="cu-step-label" id="cu-step-label">Step 1 &mdash; Discover Pages</span>
         </div>
         <svg class="cu-header-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" width="36" height="36">
@@ -29,21 +29,21 @@
         </div>
     </div>
 
-    <div class="cu-scanner-layout">
-    <main class="cu-scanner-main">
+    <div class="drspeed-aias-layout">
+    <main class="drspeed-aias-main">
 
     <!-- Step 1: Discovery & Filtering -->
     <div id="step-1" class="cu-step cu-step--active cu-body">
         <?php
-        $aias_settings = new \CUScanner\Settings();
-        $aias_api_key  = $aias_settings->get_api_key();
-        if ( '' === $aias_api_key || $aias_settings->is_pending_free_key( $aias_api_key ) ) :
+        $drspeed_aias_settings = new \DrSpeedAIAS\Settings();
+        $drspeed_aias_api_key  = $drspeed_aias_settings->get_api_key();
+        if ( '' === $drspeed_aias_api_key || $drspeed_aias_settings->is_pending_free_key( $drspeed_aias_api_key ) ) :
             ?>
             <div class="notice notice-warning inline" id="cu-no-api-key-notice">
                 <p>
                     <strong><?php esc_html_e( 'No API key yet.', 'dr-speed-ai-assets-scanner' ); ?></strong>
                     <?php
-                    if ( '' === $aias_api_key ) {
+                    if ( '' === $drspeed_aias_api_key ) {
                         esc_html_e( 'Scans need an API key. Using the plugin for the first time, or reinstalled it? Click Validate your key in Settings: a new site gets a free key with starter credits, and a site that had a key before gets the same key and its remaining credits back.', 'dr-speed-ai-assets-scanner' );
                     } else {
                         esc_html_e( 'The free key request has not finished yet. Click Validate your key again in Settings.', 'dr-speed-ai-assets-scanner' );
@@ -51,7 +51,7 @@
                     ?>
                 </p>
                 <p>
-                    <a class="button button-primary" href="<?php echo esc_url( admin_url( 'admin.php?page=cu-scanner-settings#cu-free-key-optin' ) ); ?>"><?php esc_html_e( 'Validate your key in Settings', 'dr-speed-ai-assets-scanner' ); ?></a>
+                    <a class="button button-primary" href="<?php echo esc_url( admin_url( 'admin.php?page=drspeed-aias-settings#cu-free-key-optin' ) ); ?>"><?php esc_html_e( 'Validate your key in Settings', 'dr-speed-ai-assets-scanner' ); ?></a>
                     <?php esc_html_e( 'or enter a paid API key there.', 'dr-speed-ai-assets-scanner' ); ?>
                 </p>
             </div>
@@ -72,7 +72,7 @@
                 tool is active on this site, temporarily disable rate limiting and bot blocking &mdash;
                 otherwise the scanner may be blocked or return incomplete results.
                 If you use Cloudflare, a permanent WAF bypass rule in
-                <a href="<?php echo esc_url( admin_url( 'admin.php?page=cu-scanner-settings' ) ); ?>">Settings</a>
+                <a href="<?php echo esc_url( admin_url( 'admin.php?page=drspeed-aias-settings' ) ); ?>">Settings</a>
                 covers Cloudflare-issued blocks &mdash; but it does <strong>not</strong> raise your own
                 server's rate limit, so leave host-level throttling relaxed during the scan.</p>
             </div>
@@ -350,7 +350,7 @@
                 </section>
 
                 <section class="cu-speed-footer">
-                    <img src="<?php echo esc_url( AIAS_URL . 'admin/images/iconSA-256x256.png' ); ?>" alt="Speed Analyzer">
+                    <img src="<?php echo esc_url( DRSPEED_AIAS_URL . 'admin/images/iconSA-256x256.png' ); ?>" alt="Speed Analyzer">
                     <div><span class="cu-eyebrow">Measure the improvement</span><h3>Compare performance with Speed Analyzer</h3><p>Check how much the applied recommendations improved your pages.</p></div>
                     <a href="https://wordpress.org/plugins/speed-analyzer/" target="_blank" rel="noopener noreferrer" class="button button-secondary">Get Speed Analyzer</a>
                 </section>
@@ -398,7 +398,7 @@
             <h3 class="cu-sidebar-heading">Measure Your Gains</h3>
             <p class="cu-sidebar-text">Check by how much AI Assets Scanner improved your pages with our Speed Analyzer plugin.</p>
             <a href="https://wordpress.org/plugins/speed-analyzer/" target="_blank" rel="noopener noreferrer" class="cu-sidebar-sa-link">
-                <img src="<?php echo esc_url( AIAS_URL . 'admin/images/iconSA-256x256.png' ); ?>" alt="Speed Analyzer" class="cu-sidebar-sa-icon">
+                <img src="<?php echo esc_url( DRSPEED_AIAS_URL . 'admin/images/iconSA-256x256.png' ); ?>" alt="Speed Analyzer" class="cu-sidebar-sa-icon">
             </a>
             <a href="https://wordpress.org/plugins/speed-analyzer/" target="_blank" rel="noopener noreferrer" class="button button-secondary cu-sidebar-btn">
                 Get Speed Analyzer

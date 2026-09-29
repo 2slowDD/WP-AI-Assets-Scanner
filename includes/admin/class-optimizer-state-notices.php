@@ -1,8 +1,8 @@
 <?php
-namespace CUScanner\Admin;
+namespace DrSpeedAIAS\Admin;
 
-use CUScanner\Scanner\OptimizerBypassOrchestrator;
-use CUScanner\Scanner\OptimizerState;
+use DrSpeedAIAS\Scanner\OptimizerBypassOrchestrator;
+use DrSpeedAIAS\Scanner\OptimizerState;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -11,8 +11,8 @@ defined( 'ABSPATH' ) || exit;
  * admin-post action. Spec §6.2 + §6.3 + §5 manual restore path.
  */
 class OptimizerStateNotices {
-    public const FORCE_RESTORE_ACTION = 'aias_force_restore';
-    public const FORCE_RESTORE_NONCE  = 'aias_force_restore';
+    public const FORCE_RESTORE_ACTION = 'drspeed_aias_force_restore';
+    public const FORCE_RESTORE_NONCE  = 'drspeed_aias_force_restore';
 
     public static function init(): void {
         \add_action( 'admin_notices',                             [ self::class, 'render_banner' ] );
@@ -65,9 +65,9 @@ class OptimizerStateNotices {
 
         \wp_safe_redirect(
             \add_query_arg(
-                'aias_force_restore',
+                'drspeed_aias_force_restore',
                 'done',
-                \admin_url( 'admin.php?page=cu-scanner' )
+                \admin_url( 'admin.php?page=drspeed-aias' )
             )
         );
         exit;

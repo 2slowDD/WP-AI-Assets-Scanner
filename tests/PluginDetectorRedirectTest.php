@@ -1,8 +1,8 @@
 <?php
 // tests/PluginDetectorRedirectTest.php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\PluginDetector;
+use DrSpeedAIAS\Scanner\PluginDetector;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -203,7 +203,7 @@ class PluginDetectorRedirectTest extends TestCase {
 
     /**
      * The host detection key for https://host.com:443, built by the SAME builder the
-     * production code uses. Never a hardcoded 'cu_scanner_target_stack_v<N>_' literal:
+     * production code uses. Never a hardcoded 'drspeed_aias_target_stack_v<N>_' literal:
      * this guard spent a schema bump silently green because it hardcoded `_v2_`
      * (FU-AAS-DEAD-GUARD-HARDCODED-CACHE-KEY).
      */
@@ -684,12 +684,12 @@ class PluginDetectorRedirectTest extends TestCase {
      * return everything error_log() actually wrote. The ini setting is restored and the
      * temp file removed even if $fn throws.
      *
-     * CU_SCANNER_DEBUG can never be un-defined once set, and ScannerAjaxTest's AC-DG-1
+     * DRSPEED_AIAS_DEBUG can never be un-defined once set, and ScannerAjaxTest's AC-DG-1
      * asserts the gate is OFF in the test env, so every caller of this helper must run
      * in a separate process (@runInSeparateProcess + @preserveGlobalState disabled).
      */
     private function capture_resolution_log( callable $fn ): string {
-        defined( 'CU_SCANNER_DEBUG' ) || define( 'CU_SCANNER_DEBUG', true );
+        defined( 'DRSPEED_AIAS_DEBUG' ) || define( 'DRSPEED_AIAS_DEBUG', true );
         WP_Mock::userFunction( 'wp_json_encode' )->andReturnUsing( fn( $data ) => json_encode( $data ) );
 
         $tmp      = tempnam( sys_get_temp_dir(), 'cu-resolution-log' );

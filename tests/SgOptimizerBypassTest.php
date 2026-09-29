@@ -1,7 +1,7 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use CUScanner\Scanner\Strategies\SgOptimizerBypass;
+use DrSpeedAIAS\Scanner\Strategies\SgOptimizerBypass;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
@@ -107,7 +107,7 @@ class SgOptimizerBypassTest extends TestCase {
     }
 
     public function test_factory_returns_sg_optimizer_strategy(): void {
-        $strategy = \CUScanner\Scanner\StrategyFactory::for_method( 'sg_optimizer' );
+        $strategy = \DrSpeedAIAS\Scanner\StrategyFactory::for_method( 'sg_optimizer' );
         $this->assertInstanceOf( SgOptimizerBypass::class, $strategy );
         $this->assertSame( 'sg_optimizer', $strategy->slug() );
     }

@@ -8,9 +8,9 @@
 
         $export.on('click', function (e) {
             e.preventDefault();
-            var url = cuScannerHistory.ajaxUrl
-                + '?action=cu_scanner_export_history'
-                + '&nonce=' + encodeURIComponent(cuScannerHistory.nonce);
+            var url = drspeedAiasHistory.ajaxUrl
+                + '?action=drspeed_aias_export_history'
+                + '&nonce=' + encodeURIComponent(drspeedAiasHistory.nonce);
             $export.prop('disabled', true);
             window.location.href = url;
             setTimeout(function () { $export.prop('disabled', false); }, 2000);
@@ -18,13 +18,13 @@
 
         $delete.on('click', function (e) {
             e.preventDefault();
-            if (!window.confirm(cuScannerHistory.deleteWarning)) {
+            if (!window.confirm(drspeedAiasHistory.deleteWarning)) {
                 return;
             }
             $delete.prop('disabled', true);
-            $.post(cuScannerHistory.ajaxUrl, {
-                action: 'cu_scanner_delete_history',
-                nonce:  cuScannerHistory.nonce
+            $.post(drspeedAiasHistory.ajaxUrl, {
+                action: 'drspeed_aias_delete_history',
+                nonce:  drspeedAiasHistory.nonce
             }).done(function () {
                 window.location.reload();
             }).fail(function (xhr) {

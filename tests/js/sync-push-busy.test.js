@@ -27,7 +27,7 @@ function setup(opts = {}) {
     fetch: (url, opt) => {
       const body = opt && opt.body;
       const action = body && typeof body.get === 'function' ? body.get('action') : '?';
-      if (action !== 'cu_scanner_sync_to_cu' && action !== 'cu_scanner_push_to_cu') {
+      if (action !== 'drspeed_aias_sync_to_cu' && action !== 'drspeed_aias_push_to_cu') {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
       }
       return new Promise((resolve, reject) => {
@@ -71,7 +71,7 @@ test('Sync success: busy while held; then the line empties, Push is released, Sy
   t.sync.click();
   await flush();
   assert.strictEqual(t.held.length, 1, 'one Sync request is in flight');
-  assert.strictEqual(t.held[0].action, 'cu_scanner_sync_to_cu');
+  assert.strictEqual(t.held[0].action, 'drspeed_aias_sync_to_cu');
   assertBusy(t, SYNC_BUSY, 'sync in flight');
   t.held[0].respond({ success: true, data: SYNC_OK });
   await flush();
@@ -124,7 +124,7 @@ test('Push success without a confirm: busy while held; then the line empties, Sy
   t.push.click();
   await flush();
   assert.strictEqual(t.held.length, 1, 'one Push request is in flight');
-  assert.strictEqual(t.held[0].action, 'cu_scanner_push_to_cu');
+  assert.strictEqual(t.held[0].action, 'drspeed_aias_push_to_cu');
   assert.strictEqual(t.held[0].confirmed, '0', 'the first Push is unconfirmed');
   assertBusy(t, PUSH_BUSY, 'push in flight');
   t.held[0].respond({ success: true, data: PUSH_OK });
@@ -220,7 +220,7 @@ test('A missing status line fails open: Sync still locks both buttons, posts, an
 // still out. With a re-scan marker and active CU rules the new render is G6 sync-only: Push disabled so
 // it cannot replace pushed rules. The stale request's release() must not undo that.
 function rerenderSyncOnly(t) {
-  t.h.sandbox.localStorage.setItem('cu_scanner_requeue_job-rq', '1');
+  t.h.sandbox.localStorage.setItem('drspeed_aias_requeue_job-rq', '1');
   t.h.sandbox.window.__cuTest.restoreStep4({
     jobId: 'job-rq', safeCount: 1, aggCount: 0, canPush: true, externalOnly: false,
     bannerData: {}, urlsScanned: 1, pages: [], scanId: 'scan-rq', hasActiveCuRules: true,

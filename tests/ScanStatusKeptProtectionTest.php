@@ -25,12 +25,12 @@ final class ScanStatusKeptProtectionTest extends TestCase {
      * key-absent call build_pages() directly, on purpose.
      */
     private function rows( $kept ): array {
-        return AIAS_Scan_Status::build_pages( [ $this->page( [ 'kept_protection' => $kept ] ) ], [] );
+        return DRSPEED_AIAS_Scan_Status::build_pages( [ $this->page( [ 'kept_protection' => $kept ] ) ], [] );
     }
 
     /** The key must exist on EVERY row — its absence is the whole defect this pins. */
     public function test_key_is_always_present_on_the_row(): void {
-        $rows = AIAS_Scan_Status::build_pages( [ $this->page( [] ) ], [] );
+        $rows = DRSPEED_AIAS_Scan_Status::build_pages( [ $this->page( [] ) ], [] );
         $this->assertArrayHasKey( 'kept_protection', $rows[0] );
     }
 
@@ -51,7 +51,7 @@ final class ScanStatusKeptProtectionTest extends TestCase {
 
     public function test_key_absent_legacy_row_yields_empty(): void {
         // A scan that predates the worker wire field entirely — the key is never set.
-        $rows = AIAS_Scan_Status::build_pages( [ $this->page( [] ) ], [] );
+        $rows = DRSPEED_AIAS_Scan_Status::build_pages( [ $this->page( [] ) ], [] );
         $this->assertSame( [], $rows[0]['kept_protection'] );
     }
 
@@ -64,7 +64,7 @@ final class ScanStatusKeptProtectionTest extends TestCase {
      * @param mixed $junk
      */
     public function test_non_array_value_yields_empty( $junk ): void {
-        $rows = AIAS_Scan_Status::build_pages( [ $this->page( [ 'kept_protection' => $junk ] ) ], [] );
+        $rows = DRSPEED_AIAS_Scan_Status::build_pages( [ $this->page( [ 'kept_protection' => $junk ] ) ], [] );
         $this->assertSame( [], $rows[0]['kept_protection'] );
     }
 
@@ -81,7 +81,7 @@ final class ScanStatusKeptProtectionTest extends TestCase {
 
     public function test_non_array_entries_are_filtered_without_warning(): void {
         $good = [ 'display_name' => 'Cloudflare', 'handles' => [ 'cf|script' ] ];
-        $rows = AIAS_Scan_Status::build_pages(
+        $rows = DRSPEED_AIAS_Scan_Status::build_pages(
             [ $this->page( [ 'kept_protection' => [ 'junk', 7, null, $good, false ] ] ) ],
             []
         );
@@ -89,7 +89,7 @@ final class ScanStatusKeptProtectionTest extends TestCase {
     }
 
     public function test_all_entries_junk_yields_empty(): void {
-        $rows = AIAS_Scan_Status::build_pages(
+        $rows = DRSPEED_AIAS_Scan_Status::build_pages(
             [ $this->page( [ 'kept_protection' => [ 'junk', 7, null ] ] ) ],
             []
         );
@@ -107,7 +107,7 @@ final class ScanStatusKeptProtectionTest extends TestCase {
     public function test_filtered_entries_are_reindexed_so_the_wire_shape_stays_a_json_array(): void {
         $a = [ 'display_name' => 'Cloudflare', 'handles' => [ 'cf|script' ] ];
         $b = [ 'display_name' => 'Akismet', 'handles' => [ 'ak|script' ] ];
-        $rows = AIAS_Scan_Status::build_pages(
+        $rows = DRSPEED_AIAS_Scan_Status::build_pages(
             [ $this->page( [ 'kept_protection' => [ $a, 'junk-in-the-middle', $b ] ] ) ],
             []
         );
@@ -125,7 +125,7 @@ final class ScanStatusKeptProtectionTest extends TestCase {
      */
     public function test_not_status_gated_partial_row_still_carries_the_field(): void {
         $kept = [ [ 'display_name' => 'Cloudflare', 'handles' => [ 'cf|script' ] ] ];
-        $rows = AIAS_Scan_Status::build_pages(
+        $rows = DRSPEED_AIAS_Scan_Status::build_pages(
             [ $this->page( [
                 'broken_devices'  => [ [ 'device' => 'mobile', 'reason' => 'tier1_http_rate_limit' ] ], // -> 'partial'
                 'kept_protection' => $kept,
@@ -139,7 +139,7 @@ final class ScanStatusKeptProtectionTest extends TestCase {
     /** Per-row independence: one page's payload must not leak onto its neighbours. */
     public function test_field_is_per_row_not_shared(): void {
         $kept = [ [ 'display_name' => 'Cloudflare', 'handles' => [ 'cf|script' ] ] ];
-        $rows = AIAS_Scan_Status::build_pages(
+        $rows = DRSPEED_AIAS_Scan_Status::build_pages(
             [
                 $this->page( [ 'url' => 'https://example.test/1', 'kept_protection' => $kept ] ),
                 $this->page( [ 'url' => 'https://example.test/2' ] ),
@@ -157,12 +157,12 @@ final class ScanStatusKeptProtectionTest extends TestCase {
     // to the scan-level count. Chip ⊆ note, always.
     //
     // These run BOTH real production predicates — ScannerAjax::aggregate_kept_protection()
-    // (the note gate, rendered on count > 0) and AIAS_Scan_Status::build_pages() (which feeds
+    // (the note gate, rendered on count > 0) and DRSPEED_AIAS_Scan_Status::build_pages() (which feeds
     // the chip gate) — over the seven payload shapes the A4 audit enumerated, four of which
     // used to produce a shield badge with no note anywhere to explain it.
     //
     // This is the ONLY thing coupling the two predicates: they live in different classes and
-    // cannot call each other (dependency direction — ScannerAjax depends on AIAS_Scan_Status,
+    // cannot call each other (dependency direction — ScannerAjax depends on DRSPEED_AIAS_Scan_Status,
     // never the reverse), so the coupling is executable rather than structural. If EITHER
     // predicate drifts, these red.
     // -----------------------------------------------------------------------------------
@@ -175,10 +175,10 @@ final class ScanStatusKeptProtectionTest extends TestCase {
     public function test_chip_and_note_agree_on_every_audited_payload_shape( $kept_protection, bool $expect_note ): void {
         $page = $this->page( [ 'kept_protection' => $kept_protection ] );
 
-        $summary = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( [ $page ] );
+        $summary = \DrSpeedAIAS\Admin\ScannerAjax::aggregate_kept_protection( [ $page ] );
         $note    = $summary['count'] > 0;
 
-        $rows = AIAS_Scan_Status::build_pages( [ $page ], [] );
+        $rows = DRSPEED_AIAS_Scan_Status::build_pages( [ $page ], [] );
         $chip = [] !== $rows[0]['kept_protection'];
 
         $this->assertSame( $expect_note, $note,
@@ -215,8 +215,8 @@ final class ScanStatusKeptProtectionTest extends TestCase {
             $this->page( [ 'url' => 'https://example.test/2',
                 'kept_protection' => [ [ 'display_name' => 'Cloudflare Turnstile' ] ] ] ),
         ];
-        $summary = \CUScanner\Admin\ScannerAjax::aggregate_kept_protection( $pages );
-        $rows    = AIAS_Scan_Status::build_pages( $pages, [] );
+        $summary = \DrSpeedAIAS\Admin\ScannerAjax::aggregate_kept_protection( $pages );
+        $rows    = DRSPEED_AIAS_Scan_Status::build_pages( $pages, [] );
 
         $this->assertSame( 1, $summary['count'], 'the note counts the one usable handle' );
         $this->assertNotSame( [], $rows[0]['kept_protection'], 'the contributing row keeps its chip' );
@@ -249,7 +249,7 @@ final class ScanStatusKeptProtectionTest extends TestCase {
 
     /** AC-10 — the whole point: keeps that are entirely non-protection still get a chip. */
     public function test_chip_renders_on_a_page_whose_keeps_are_entirely_non_protection(): void {
-        $rows = AIAS_Scan_Status::build_pages( [ $this->page( [
+        $rows = DRSPEED_AIAS_Scan_Status::build_pages( [ $this->page( [
             'kept_known_assets' => [
                 $this->knownAsset( 'fathom-analytics', 'Fathom Analytics', 'analytics', [ 'fathom|script' ] ),
                 $this->knownAsset( 'stripe-payments', 'Stripe payments', 'payment', [ 'stripe|script' ] ),
@@ -261,14 +261,14 @@ final class ScanStatusKeptProtectionTest extends TestCase {
 
     /** The key must exist on EVERY row — same silent-never-renders defect shape as kept_protection's. */
     public function test_kept_count_key_is_always_present_on_the_row(): void {
-        $rows = AIAS_Scan_Status::build_pages( [ $this->page( [] ) ], [] );
+        $rows = DRSPEED_AIAS_Scan_Status::build_pages( [ $this->page( [] ) ], [] );
         $this->assertArrayHasKey( 'kept_count', $rows[0] );
         $this->assertSame( 0, $rows[0]['kept_count'] );
     }
 
     /** The unit is composites, not entries. One entry carrying two handles counts 2. */
     public function test_kept_count_counts_composites_not_entries(): void {
-        $rows = AIAS_Scan_Status::build_pages( [ $this->page( [
+        $rows = DRSPEED_AIAS_Scan_Status::build_pages( [ $this->page( [
             'kept_known_assets' => [ $this->knownAsset(
                 'gravity-forms', 'Gravity Forms', 'form',
                 [ 'gform_gravityforms|script', 'gform_json|script' ]
@@ -283,7 +283,7 @@ final class ScanStatusKeptProtectionTest extends TestCase {
      * inflate a customer-facing number, so the dedupe is pinned rather than assumed.
      */
     public function test_kept_count_spans_both_fields_and_dedupes_the_composite(): void {
-        $rows = AIAS_Scan_Status::build_pages( [ $this->page( [
+        $rows = DRSPEED_AIAS_Scan_Status::build_pages( [ $this->page( [
             'kept_protection'   => [ [ 'display_name' => 'Turnstile', 'handles' => [ 'cf-challenge|script' ] ] ],
             'kept_known_assets' => [
                 $this->knownAsset( 'fathom-analytics', 'Fathom Analytics', 'analytics', [ 'fathom|script' ] ),
@@ -295,7 +295,7 @@ final class ScanStatusKeptProtectionTest extends TestCase {
 
     /** Junk from the untrusted worker payload must not fatal or inflate the count (Rule 1). */
     public function test_kept_count_ignores_junk_known_assets(): void {
-        $rows = AIAS_Scan_Status::build_pages( [ $this->page( [
+        $rows = DRSPEED_AIAS_Scan_Status::build_pages( [ $this->page( [
             'kept_known_assets' => 'not-an-array',
         ] ) ], [] );
         $this->assertSame( 0, $rows[0]['kept_count'] );

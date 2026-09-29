@@ -1,12 +1,12 @@
 <?php
-namespace CUScanner\Tests;
+namespace DrSpeedAIAS\Tests;
 
-use AIAS_Broken_Banner;
+use DRSPEED_AIAS_Broken_Banner;
 use WP_Mock;
 use WP_Mock\Tools\TestCase;
 
 /**
- * Tests for AIAS_Broken_Banner rendering + dismissal logic.
+ * Tests for DRSPEED_AIAS_Broken_Banner rendering + dismissal logic.
  */
 class BannerRenderingTest extends TestCase {
 
@@ -25,7 +25,7 @@ class BannerRenderingTest extends TestCase {
 	// -------------------------------------------------------------------------
 
 	public function test_no_banner_when_no_blocked_pages(): void {
-		$html = AIAS_Broken_Banner::render( [
+		$html = DRSPEED_AIAS_Broken_Banner::render( [
 			'scan_id'         => 'abc',
 			'pages_blocked'   => [ 'desktop' => 0, 'mobile' => 0 ],
 			'blocked_reasons' => [],
@@ -46,7 +46,7 @@ class BannerRenderingTest extends TestCase {
 		// predated it. Test-harness gap only, no production behaviour involved.
 		$this->stub_render_helpers();
 
-		$html = AIAS_Broken_Banner::render( [
+		$html = DRSPEED_AIAS_Broken_Banner::render( [
 			'scan_id'         => 'abc',
 			'pages_blocked'   => [ 'desktop' => 5, 'mobile' => 0 ],
 			'blocked_reasons' => [ 'tier2_cf_challenge' => 5 ],
@@ -74,14 +74,14 @@ class BannerRenderingTest extends TestCase {
 	// -------------------------------------------------------------------------
 
 	public function test_normalize_attribution_allowlists_known_values(): void {
-		foreach ( AIAS_Broken_Banner::ATTRIBUTION_ALLOWED as $member ) {
-			$this->assertSame( $member, AIAS_Broken_Banner::normalize_attribution( $member ) );
+		foreach ( DRSPEED_AIAS_Broken_Banner::ATTRIBUTION_ALLOWED as $member ) {
+			$this->assertSame( $member, DRSPEED_AIAS_Broken_Banner::normalize_attribution( $member ) );
 		}
 	}
 
 	public function test_normalize_attribution_rejects_everything_else(): void {
 		foreach ( [ '', null, 'garbage', '<script>alert(1)</script>', 'HOST', 0, [], true ] as $bad ) {
-			$this->assertSame( 'unknown', AIAS_Broken_Banner::normalize_attribution( $bad ) );
+			$this->assertSame( 'unknown', DRSPEED_AIAS_Broken_Banner::normalize_attribution( $bad ) );
 		}
 	}
 
@@ -92,7 +92,7 @@ class BannerRenderingTest extends TestCase {
 	public function test_rate_banner_names_cloudflare_and_keeps_link(): void {
 		$this->stub_render_helpers();
 
-		$html = AIAS_Broken_Banner::render( $this->rate_payload( 'cloudflare' ) );
+		$html = DRSPEED_AIAS_Broken_Banner::render( $this->rate_payload( 'cloudflare' ) );
 
 		$this->assertStringContainsString( 'Cloudflare rate-limited the scan', $html );
 		$this->assertStringContainsString( 'cu-cloudflare-waf-bypass', $html );
@@ -102,7 +102,7 @@ class BannerRenderingTest extends TestCase {
 	public function test_rate_banner_names_host_and_drops_the_cdn_link(): void {
 		$this->stub_render_helpers();
 
-		$html = AIAS_Broken_Banner::render( $this->rate_payload( 'host' ) );
+		$html = DRSPEED_AIAS_Broken_Banner::render( $this->rate_payload( 'host' ) );
 
 		$this->assertStringContainsString( "Your host's server rate-limited the scan", $html );
 		$this->assertStringContainsString( 'will not help here', $html );
@@ -116,7 +116,7 @@ class BannerRenderingTest extends TestCase {
 
 		foreach ( [ 'akamai', 'imperva', 'waf', 'unknown', 'garbage', null ] as $attr ) {
 			$label = null === $attr ? 'null' : (string) $attr;
-			$html  = AIAS_Broken_Banner::render( $this->rate_payload( $attr ) );
+			$html  = DRSPEED_AIAS_Broken_Banner::render( $this->rate_payload( $attr ) );
 
 			$this->assertStringContainsString( 'The scan was rate-limited', $html, "attr={$label}" );
 			$this->assertStringContainsString( 'cu-cloudflare-waf-bypass', $html, "attr={$label}" );
@@ -134,8 +134,8 @@ class BannerRenderingTest extends TestCase {
 			'total_pages'     => 3,
 		];
 
-		$without = AIAS_Broken_Banner::render( $base );
-		$with    = AIAS_Broken_Banner::render( $base + [ 'rate_limit_attribution' => 'cloudflare' ] );
+		$without = DRSPEED_AIAS_Broken_Banner::render( $base );
+		$with    = DRSPEED_AIAS_Broken_Banner::render( $base + [ 'rate_limit_attribution' => 'cloudflare' ] );
 
 		$this->assertSame( $without, $with );
 		$this->assertStringContainsString( 'returned an error', $without );
@@ -147,10 +147,10 @@ class BannerRenderingTest extends TestCase {
 
 	public function test_dismissed_banner_returns_empty_html(): void {
 		WP_Mock::userFunction( 'get_option' )
-			->with( AIAS_Broken_Banner::OPTION_DISMISSALS, [] )
+			->with( DRSPEED_AIAS_Broken_Banner::OPTION_DISMISSALS, [] )
 			->andReturn( [ 'abc' => true ] );
 
-		$html = AIAS_Broken_Banner::render( [
+		$html = DRSPEED_AIAS_Broken_Banner::render( [
 			'scan_id'         => 'abc',
 			'pages_blocked'   => [ 'desktop' => 5, 'mobile' => 0 ],
 			'blocked_reasons' => [ 'tier2_cf_challenge' => 5 ],
@@ -167,10 +167,10 @@ class BannerRenderingTest extends TestCase {
 		$called = false;
 		WP_Mock::userFunction( 'update_option' )
 			->once()
-			->with( AIAS_Broken_Banner::OPTION_DISMISSALS, [], false )
+			->with( DRSPEED_AIAS_Broken_Banner::OPTION_DISMISSALS, [], false )
 			->andReturnUsing( function () use ( &$called ) { $called = true; return true; } );
 
-		AIAS_Broken_Banner::on_submit_job();
+		DRSPEED_AIAS_Broken_Banner::on_submit_job();
 
 		$this->assertTrue( $called, 'update_option must be called to wipe dismissals' );
 	}
@@ -182,7 +182,7 @@ class BannerRenderingTest extends TestCase {
 
 	private function stub_render_helpers(): void {
 		WP_Mock::userFunction( 'get_option' )
-			->with( AIAS_Broken_Banner::OPTION_DISMISSALS, [] )
+			->with( DRSPEED_AIAS_Broken_Banner::OPTION_DISMISSALS, [] )
 			->andReturn( [] );
 		WP_Mock::userFunction( 'esc_attr' )->andReturnArg( 0 );
 		WP_Mock::userFunction( 'esc_html__' )->andReturnArg( 0 );
@@ -197,7 +197,7 @@ class BannerRenderingTest extends TestCase {
 	public function test_rate_limit_alone_uses_cadence_action_clause(): void {
 		$this->stub_render_helpers();
 
-		$html = AIAS_Broken_Banner::render( [
+		$html = DRSPEED_AIAS_Broken_Banner::render( [
 			'scan_id'         => 'abc',
 			'pages_blocked'   => [ 'desktop' => 2, 'mobile' => 0 ],
 			'blocked_reasons' => [ 'tier1_http_rate_limit' => 2 ],
@@ -219,7 +219,7 @@ class BannerRenderingTest extends TestCase {
 	public function test_server_error_alone_uses_retry_action_clause(): void {
 		$this->stub_render_helpers();
 
-		$html = AIAS_Broken_Banner::render( [
+		$html = DRSPEED_AIAS_Broken_Banner::render( [
 			'scan_id'         => 'abc',
 			'pages_blocked'   => [ 'desktop' => 1, 'mobile' => 1 ],
 			'blocked_reasons' => [ 'tier1_http_5xx' => 2 ],
@@ -233,7 +233,7 @@ class BannerRenderingTest extends TestCase {
 	public function test_mixed_reasons_falls_back_to_bot_protection_clause(): void {
 		$this->stub_render_helpers();
 
-		$html = AIAS_Broken_Banner::render( [
+		$html = DRSPEED_AIAS_Broken_Banner::render( [
 			'scan_id'         => 'abc',
 			'pages_blocked'   => [ 'desktop' => 3, 'mobile' => 0 ],
 			'blocked_reasons' => [
@@ -258,7 +258,7 @@ class BannerRenderingTest extends TestCase {
 	public function test_waf_challenge_shows_firewall_phrase_and_bot_action(): void {
 		$this->stub_render_helpers();
 
-		$html = AIAS_Broken_Banner::render( [
+		$html = DRSPEED_AIAS_Broken_Banner::render( [
 			'scan_id'         => 'waf-test',
 			'pages_blocked'   => [ 'desktop' => 1, 'mobile' => 0 ],
 			'blocked_reasons' => [ 'tier2_waf_challenge' => 1 ],
@@ -277,7 +277,7 @@ class BannerRenderingTest extends TestCase {
 	public function test_unknown_challenge_shows_unidentified_phrase_and_bot_action(): void {
 		$this->stub_render_helpers();
 
-		$html = AIAS_Broken_Banner::render( [
+		$html = DRSPEED_AIAS_Broken_Banner::render( [
 			'scan_id'         => 'unk-test',
 			'pages_blocked'   => [ 'desktop' => 1, 'mobile' => 0 ],
 			'blocked_reasons' => [ 'tier2_unknown_challenge' => 1 ],
