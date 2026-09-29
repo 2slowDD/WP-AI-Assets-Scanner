@@ -371,7 +371,20 @@ class PluginDetector {
         ],
     ];
 
+    /**
+     * is_plugin_active() and get_plugin_data() live in wp-admin/includes/plugin.php,
+     * which WordPress loads only for admin requests. detect_typed() also runs on the
+     * front end, when the scanning worker requests a page with a valid scan token
+     * (BypassHandler), and without this it was a fatal "call to undefined function".
+     */
+    public static function load_plugin_api(): void {
+        if ( ! function_exists( 'is_plugin_active' ) ) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+    }
+
     public function detect(): array {
+        self::load_plugin_api();
         $result = [ 'auto_bypass' => [], 'auto_bypass_labels' => [], 'soft_block' => [], 'soft_warn' => [], 'security_warn' => [], 'cu_missing' => false ];
 
         foreach ( self::AUTO_BYPASS as $file => [ $label, $params ] ) {
@@ -500,6 +513,7 @@ class PluginDetector {
      * @return array<string, array{name:string,class:?string,bypass_query:?string,disable_method:?string,warning:?string,target_headers:string[],target_body_markers:string[]}>
      */
     public function detect_typed(): array {
+        self::load_plugin_api();
         $out = [];
         foreach ( self::OPTIMIZERS as $file => $base ) {
             if ( ! is_plugin_active( $file ) ) {
@@ -552,9 +566,10 @@ class PluginDetector {
      * pre-scan check (spec §3.4). Admin-context only (is_plugin_active).
      */
     public static function active_security_warn_ids(): array {
+        self::load_plugin_api();
         $out = [];
         foreach ( self::SECURITY_WARN as $plugin_file => $row ) {
-            if ( function_exists( 'is_plugin_active' ) && is_plugin_active( $plugin_file ) ) {
+            if ( is_plugin_active( $plugin_file ) ) {
                 $out[] = [ 'label' => (string) $row[0], 'warning' => (string) $row[1], 'anchor' => $row[2] ?? null ];
             }
         }

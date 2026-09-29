@@ -28,6 +28,7 @@ class RulePusher {
     ) {}
 
     public function can_push(): bool {
+        PluginDetector::load_plugin_api();
         if ( ! is_plugin_active( self::CU_PLUGIN ) ) return false;
         return class_exists( $this->repo );
     }
