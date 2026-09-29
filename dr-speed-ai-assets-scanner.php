@@ -29,7 +29,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'DRSPEED_AIAS_VERSION', '1.9.4' );
-define( 'DRSPEED_AIAS_ASSET_VERSION', '1.9.4' );
+define( 'DRSPEED_AIAS_ASSET_VERSION', '1.9.4.1' );
 define( 'DRSPEED_AIAS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DRSPEED_AIAS_URL', plugin_dir_url( __FILE__ ) );
 define( 'DRSPEED_AIAS_WPSERVICE_BASE', 'https://wpservice.pro' );

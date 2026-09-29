@@ -112,6 +112,9 @@ final class JsCacheBustDriftTest extends TestCase {
 		// 1.9.4 — WordPress.org prefix review: localized globals, AJAX actions, handles and
 		// page slugs renamed to drspeed_aias / drspeedAias / drspeed-aias.
 		'1.9.4' => '8afbb8c06eca12b3fa0d21b7612b80cd9f8e15cc327c55950eb375976aa62b02',
+		// 1.9.4.1 (plugin still 1.9.4) — results headers wrap with the "?" inline; compact
+		// labelled grid for narrow results and history cards; history actions span the row.
+		'1.9.4.1' => '2beff0c1107e10d7d5d511ead976c823110f95d250b4eb07f106a091c36730a2',
 	);
 
 	/**

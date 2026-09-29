@@ -14,7 +14,7 @@ const { chromium } = require('playwright');
 const OUT = process.argv[2] || '.';
 const BASE = process.env.AUDIT_BASE || 'http://localhost:8088';
 const RESULT = process.env.AUDIT_RESULT ? require('fs').readFileSync(process.env.AUDIT_RESULT, 'utf8') : null;
-const widths = [1920, 1440, 1280, 1024, 900, 782, 600, 480, 390, 360];
+const widths = [1920, 1440, 1366, 1352, 1280, 1200, 1100, 1024, 900, 782, 600, 480, 390, 360];
 const pages = ['drspeed-aias', 'drspeed-aias-settings', 'drspeed-aias-history'].concat(RESULT ? ['STEP4'] : []);
 (async () => {
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
@@ -51,10 +51,42 @@ const pages = ['drspeed-aias', 'drspeed-aias-settings', 'drspeed-aias-history'].
           const boxRight = box ? box.getBoundingClientRect().right : vw;
           if (rect.width && (rect.right > vw + 1 || rect.right > boxRight + 1) && !el.closest('.screen-reader-text')) offenders.push((el.id ? '#' + el.id : el.tagName.toLowerCase() + '.' + [...el.classList].join('.')) + ' right=' + Math.round(rect.right));
           if ((el.matches('.button, button, input[type=submit]')) && el.scrollWidth > el.clientWidth + 1) offenders.push('CLIPPED ' + (el.id ? '#' + el.id : '.' + [...el.classList].join('.')) + ' ' + el.scrollWidth + '>' + el.clientWidth);
+          // Content spilling out of its own cell (overlapping the next column).
+          if (el.matches('th, td, .cu-th-inner') && cs.overflowX === 'visible' && el.scrollWidth > el.clientWidth + 1) offenders.push('SPILL ' + el.tagName.toLowerCase() + ' "' + el.textContent.trim().slice(0, 30) + '" ' + el.scrollWidth + '>' + el.clientWidth);
           if (/(auto|scroll)/.test(cs.overflowX) && el.scrollWidth > el.clientWidth + 1) scrollers.push((el.id ? '#' + el.id : '.' + [...el.classList].join('.')) + ' ' + el.scrollWidth + '>' + el.clientWidth);
         }
         return { docOverflow, offenders: offenders.slice(0, 6), scrollers };
       });
+      // Tooltips: open each help marker by keyboard focus, as a user would, and check its box.
+      const helps = await p.$$('.cu-wrap .cu-help');
+      for (const h of helps) {
+        if (!(await h.isVisible())) continue;
+        await h.scrollIntoViewIfNeeded(); await h.focus(); await p.waitForTimeout(60);
+        const t = await h.evaluate((el) => {
+          // The scanner shows help text in one viewport-level popover; other screens show the box in place.
+          const pop = document.querySelector('.cu-help-popover:not([hidden])');
+          const inPlace = el.querySelector('.cu-help-box');
+          const box = (pop && pop.getBoundingClientRect().width) ? pop : inPlace;
+          if (!box) return null;
+          const r = box.getBoundingClientRect(); const vw = document.documentElement.clientWidth; const vh = window.innerHeight;
+          if (!r.width) return 'TOOLTIP "' + el.textContent.trim().slice(0, 24) + '" did not open';
+          // The tooltip must not hide its own trigger.
+          const tr = el.getBoundingClientRect();
+          const coversTrigger = !(r.right <= tr.left || r.left >= tr.right || r.bottom <= tr.top || r.top >= tr.bottom);
+          if (coversTrigger) return 'TOOLTIP "' + box.textContent.trim().slice(0, 24) + '" covers its trigger';
+          if (r.bottom > vh + 1 || r.top < 0) return 'TOOLTIP "' + box.textContent.trim().slice(0, 24) + '" off-screen vertically';
+          // Clipped by an ancestor that hides overflow?
+          let clip = null;
+          for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+            const cs = getComputedStyle(a);
+            if (/(hidden|clip|auto|scroll)/.test(cs.overflowX + cs.overflowY)) { const ar = a.getBoundingClientRect(); if (r.left < ar.left - 1 || r.right > ar.right + 1 || r.top < ar.top - 1 || r.bottom > ar.bottom + 1) { clip = (a.id ? '#' + a.id : '.' + [...a.classList].join('.')); break; } }
+          }
+          const off = r.left < 0 || r.right > vw + 1;
+          return (off || clip) ? 'TOOLTIP "' + box.textContent.trim().slice(0, 24) + '" ' + (off ? 'off-screen [' + Math.round(r.left) + ',' + Math.round(r.right) + '] ' : '') + (clip ? 'clipped by ' + clip : '') : null;
+        });
+        if (t) r.offenders.push(t);
+        await h.evaluate((el) => el.blur());
+      }
       results.push({ w, slug, ...r });
       if ([1440, 1024, 782, 390].includes(w)) await p.screenshot({ path: `${OUT}/audit-${w}-${slug}.png`, fullPage: true });
     }

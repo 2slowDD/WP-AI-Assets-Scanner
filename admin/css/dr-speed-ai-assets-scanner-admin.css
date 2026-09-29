@@ -2456,36 +2456,45 @@
     #drspeed-aias-app .cu-header,
     .cu-admin-page .cu-header { grid-template-columns: auto minmax(0, 1fr) auto; }
 
-    /* Eight columns do not fit the card below this width: rows become labelled blocks. */
+    /* Eight columns do not fit the card below this width: each scan becomes a compact
+       card, values side by side with a small label above each, as many per row as fit. */
     .cu-admin-page .cu-history-table-card thead { display: none; }
     .cu-admin-page .cu-history-table-card table,
-    .cu-admin-page .cu-history-table-card tbody,
-    .cu-admin-page .cu-history-table-card tr { display: block; width: 100%; }
-    .cu-admin-page .cu-history-table-card tr { box-sizing: border-box; padding: 12px 16px; border-bottom: 1px solid #e3e9ef; }
+    .cu-admin-page .cu-history-table-card tbody { display: block; width: 100%; }
+    .cu-admin-page .cu-history-table-card tbody tr {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+        gap: 10px 16px;
+        box-sizing: border-box;
+        width: 100%;
+        padding: 14px 16px;
+        border-bottom: 1px solid #e3e9ef;
+    }
     .cu-admin-page .cu-history-table-card tr:not(.inline-edit-row):not(.no-items) td {
         display: block;
-        position: relative;
+        position: static;
         box-sizing: border-box;
         width: auto;
-        min-height: 22px;
-        padding: 4px 0 4px calc(30% + 10px);
+        min-width: 0;
+        padding: 0;
         border: 0;
-        overflow: visible;
     }
     .cu-admin-page .cu-history-table-card tr:not(.inline-edit-row):not(.no-items) td::before {
         content: attr(data-label);
-        position: absolute;
-        top: 6px;
-        left: 0;
-        width: 30%;
+        display: block;
+        position: static;
+        width: auto;
+        margin-bottom: 4px;
         color: #536276;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         font-size: 10px;
         font-weight: 600;
         letter-spacing: .04em;
         text-transform: uppercase;
     }
-
+    .cu-admin-page .cu-history-table-card td.cu-history-domain,
+    .cu-admin-page .cu-history-table-card td[data-label="Date"],
+    .cu-admin-page .cu-history-table-card td[data-label="Status"],
+    .cu-admin-page .cu-history-table-card td[data-label="Actions"] { grid-column: span 2; }
 }
 
 @media (max-width: 782px) {
@@ -2530,25 +2539,23 @@
     #drspeed-aias-app .cu-url-table { table-layout: auto; }
     #drspeed-aias-app .cu-url-table thead { display: none; }
     #drspeed-aias-app .cu-url-table,
-    #drspeed-aias-app .cu-url-table tbody,
-    #drspeed-aias-app .cu-url-table tr { display: block; width: 100%; }
-    #drspeed-aias-app .cu-url-table tr { box-sizing: border-box; padding: 10px 14px 10px 16px; border-bottom: 1px solid #e6ebef; }
-    #drspeed-aias-app .cu-url-table td {
-        display: block;
-        position: relative;
+    #drspeed-aias-app .cu-url-table tbody { display: block; width: 100%; }
+    /* Each URL is a compact card: the URL across the top, the values side by side
+       below it, each with a small label above. As many per row as fit. */
+    #drspeed-aias-app .cu-url-table tr {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+        gap: 8px 16px;
         box-sizing: border-box;
-        width: auto;
-        min-height: 22px;
-        padding: 4px 0 4px calc(30% + 10px);
-        border: 0;
-        overflow: visible;
+        width: 100%;
+        padding: 12px 14px 12px 16px;
+        border-bottom: 1px solid #e6ebef;
     }
+    #drspeed-aias-app .cu-url-table td { display: block; box-sizing: border-box; min-width: 0; padding: 0; border: 0; overflow: visible; }
     #drspeed-aias-app .cu-url-table td::before {
         content: attr(data-label);
-        position: absolute;
-        top: 6px;
-        left: 0;
-        width: 30%;
+        display: block;
+        margin-bottom: 4px;
         color: #536276;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         font-size: 10px;
@@ -2556,10 +2563,10 @@
         letter-spacing: .04em;
         text-transform: uppercase;
     }
-    /* The row number and URL read as the block's heading. */
     #drspeed-aias-app .cu-url-table td:first-child { display: none; }
-    #drspeed-aias-app .cu-url-table td.cu-url-cell { padding-left: 0; padding-bottom: 8px; }
+    #drspeed-aias-app .cu-url-table td.cu-url-cell { grid-column: 1 / -1; }
     #drspeed-aias-app .cu-url-table td.cu-url-cell::before { display: none; }
+    #drspeed-aias-app .cu-url-table td.cu-san { grid-column: span 2; }
 }
 
 /* 1.9.4 — the Sync / Push / Download buttons clipped their labels in a narrow
@@ -2573,4 +2580,17 @@
     /* The summary drops under the title without the indent, which did not fit next to the scan ID. */
     #drspeed-aias-app .cu-completion-heading p { left: 0; flex: 1 1 100%; min-width: 0; max-width: 100%; margin-left: 0; box-sizing: border-box; }
     .cu-admin-page .cu-history-status { white-space: normal; }
+}
+
+/* 1.9.4 — results-table headers: the "?" marker sat on top of the next column's text and
+   "Extra Time ?" was clipped around 1100-1440px. Headers may now wrap, and the marker
+   is part of the text line. */
+#drspeed-aias-app .cu-url-table thead th { height: auto; white-space: normal; }
+#drspeed-aias-app .cu-url-table .cu-th-inner { display: inline; white-space: normal; line-height: 1.35; }
+#drspeed-aias-app .cu-url-table thead th .cu-th-inner .cu-help {
+    position: static;
+    display: inline-flex;
+    margin: 0 0 0 4px;
+    vertical-align: -2px;
+    transform: none;
 }

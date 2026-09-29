@@ -28,6 +28,7 @@ WordPress.org review of 1.9.3 found two problems.
   - settings and history lacked the scanner's compact header, so "Powered by" pushed the page 34–64px wide on phones;
   - the scan summary kept a desktop `left: 10%` nudge on phones;
   - long history status badges did not wrap.
+- Follow-up in the same 1.9.4 (operator report, around 1400px and below): the results headers overflowed into each other; the "?" help marker sat on the next column's text and "Extra Time ?" was clipped. Headers now wrap with the marker inline. Narrow results and history cards no longer spend a full row per value: the values sit side by side in a compact labelled grid. The audit gained 1366/1352/1200/1100px widths, a cell-spill check, and a tooltip check that opens every help marker by keyboard focus (56 of 56 pass). The admin stylesheet's cache key moved to 1.9.4.1 so browsers that cached the first 1.9.4 files fetch the fix; the plugin version stays 1.9.4.
 - `ResponsiveLayoutTest` pins these causes.
 
 ### Migration
