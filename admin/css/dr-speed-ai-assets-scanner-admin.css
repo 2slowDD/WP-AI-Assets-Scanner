@@ -2538,7 +2538,7 @@
 #drspeed-aias-app .cu-url-table td.cu-san { white-space: normal; }
 #drspeed-aias-app .cu-url-table .cu-san-token { display: inline-block; margin: 0 2px 3px 0; }
 
-@container drspeed-aias-results (max-width: 760px) {
+@container drspeed-aias-results (max-width: 600px) {
     #drspeed-aias-app .cu-url-table { table-layout: auto; }
     #drspeed-aias-app .cu-url-table thead { display: none; }
     #drspeed-aias-app .cu-url-table,
@@ -2554,7 +2554,7 @@
         padding: 12px 14px 12px 16px;
         border-bottom: 1px solid #e6ebef;
     }
-    #drspeed-aias-app .cu-url-table td { display: block; flex: 0 1 auto; box-sizing: border-box; min-width: 0; padding: 0; border: 0; overflow: visible; }
+    #drspeed-aias-app .cu-url-table td { display: block; flex: 1 1 auto; box-sizing: border-box; min-width: 0; padding: 0; border: 0; overflow: visible; }
     #drspeed-aias-app .cu-url-table td::before {
         content: attr(data-label);
         display: block;
@@ -2596,3 +2596,46 @@
     vertical-align: -2px;
     transform: none;
 }
+
+/* 1.9.4 — the results table stays a table down to 601px of card width, its measured
+   minimum. With a 760px threshold the layout flipped table -> cards -> table -> cards as
+   the window narrowed, because the WordPress menu (160px, folded to 36px at 960px) and the
+   results sidebar change the card width independently of the window. Between 601 and 900px
+   the columns size to their content instead of the fixed desktop percentages. */
+@container drspeed-aias-results (min-width: 601px) and (max-width: 900px) {
+    #drspeed-aias-app .cu-url-table { table-layout: auto; }
+    #drspeed-aias-app .cu-url-table th:nth-child(n) { width: auto; }
+    #drspeed-aias-app .cu-url-table th,
+    #drspeed-aias-app .cu-url-table td { padding: 8px 5px; }
+    #drspeed-aias-app .cu-url-table td.cu-url-cell { min-width: 120px; }
+}
+
+/* The results sidebar (270px + 14px gap + borders = 286px) stays beside the results only
+   while that leaves the table its 601px minimum; otherwise it moves below. Keyed to the
+   space actually available, so it holds whatever state the WordPress menu is in. */
+#drspeed-aias-app #step-4 { container: drspeed-aias-step4 / inline-size; }
+@container drspeed-aias-step4 (max-width: 887px) {
+    #drspeed-aias-app .cu-results-shell { grid-template-columns: minmax(0, 1fr); }
+    #drspeed-aias-app .cu-results-guidance { position: static; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #drspeed-aias-app .cu-guidance-card { border-right: 1px solid #e2e8ee; }
+}
+/* ...and one column on phone widths, as the 782px media rule intends (this container rule
+   comes later in the file, so it must repeat that case or it would override it). */
+@container drspeed-aias-step4 (max-width: 720px) {
+    #drspeed-aias-app .cu-results-guidance { grid-template-columns: minmax(0, 1fr); }
+    #drspeed-aias-app .cu-guidance-card { border-right: 0; }
+}
+
+/* 1.9.4 — "Powered by" pushed past the header between 783 and 900px (folded admin menu). */
+@media (max-width: 900px) {
+    #drspeed-aias-app .cu-header-by,
+    .cu-admin-page .cu-header-by { display: none; }
+}
+
+/* 1.9.4 — the balance card shrank below its content (grid minmax(0, 1fr)) and its
+   "credits available" label spilled over the Refresh button at 783-961px. The row now
+   wraps: the buttons move below when there is no room, and the label may drop under the number. */
+.cu-admin-page .cu-balance-widget { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
+.cu-admin-page .cu-balance-card { flex: 1 1 200px; min-width: 0; }
+.cu-admin-page .cu-balance-widget .cu-balance-btn { flex: 0 0 auto; }
+.cu-admin-page .cu-balance-info { flex-wrap: wrap; row-gap: 2px; min-width: 0; }

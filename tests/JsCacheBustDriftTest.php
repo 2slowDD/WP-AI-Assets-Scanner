@@ -118,6 +118,11 @@ final class JsCacheBustDriftTest extends TestCase {
 		// 1.9.4.2 (plugin still 1.9.4) — scan summary no longer nudged under the Scan ID;
 		// narrow result cards flow their values at natural width.
 		'1.9.4.2' => 'de50b3bb8db95799b9906f33f13b650fa292fd1d42ee49dfe4ed95d97f3a441f',
+		// 1.9.4.3 (plugin still 1.9.4) — results stay a table down to 601px of card width and
+		// the results sidebar moves below by available width (no table/cards flip-flop);
+		// content-sized columns 601-900px; evenly spread card fields; wrapping balance row;
+		// "Powered by" hidden below 900px.
+		'1.9.4.3' => '61822795699fa8529d963dd4e48c5c7524926cd1cb228c1b1f381559fe0330fe',
 	);
 
 	/**

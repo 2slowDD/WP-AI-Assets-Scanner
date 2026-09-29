@@ -58,4 +58,24 @@ final class ResponsiveLayoutTest extends TestCase {
         // `left: 10%` slid the summary under the Scan ID on narrower cards (operator report, 1226px).
         $this->assertDoesNotMatchRegularExpression( '/\.cu-completion-heading p \{[^}]*left:\s*\d+%/', $this->css() );
     }
+
+    public function test_the_table_stays_a_table_down_to_its_measured_minimum(): void {
+        // A 760px threshold made the layout flip table/cards several times as the window narrowed.
+        $css = $this->css();
+        $this->assertStringContainsString( '@container drspeed-aias-results (max-width: 600px) {', $css );
+        $this->assertStringNotContainsString( '@container drspeed-aias-results (max-width: 760px)', $css );
+        $this->assertStringContainsString( '@container drspeed-aias-results (min-width: 601px) and (max-width: 900px) {', $css );
+    }
+
+    public function test_the_results_sidebar_moves_below_by_available_width(): void {
+        // Keyed to the window (1180px), the sidebar squeezed the table under its minimum
+        // between 1181 and 1210px. It now depends on the width actually available.
+        $css = $this->css();
+        $this->assertStringContainsString( '#drspeed-aias-app #step-4 { container: drspeed-aias-step4 / inline-size; }', $css );
+        $this->assertMatchesRegularExpression( '/@container drspeed-aias-step4 \(max-width: 887px\) \{\s*#drspeed-aias-app \.cu-results-shell \{ grid-template-columns: minmax\(0, 1fr\); \}/', $css );
+    }
+
+    public function test_the_balance_row_wraps_instead_of_overlapping(): void {
+        $this->assertStringContainsString( '.cu-admin-page .cu-balance-widget { display: flex; flex-wrap: wrap;', $this->css() );
+    }
 }

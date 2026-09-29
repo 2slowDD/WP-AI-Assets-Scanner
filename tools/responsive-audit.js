@@ -14,7 +14,7 @@ const { chromium } = require('playwright');
 const OUT = process.argv[2] || '.';
 const BASE = process.env.AUDIT_BASE || 'http://localhost:8088';
 const RESULT = process.env.AUDIT_RESULT ? require('fs').readFileSync(process.env.AUDIT_RESULT, 'utf8') : null;
-const widths = [1920, 1440, 1366, 1352, 1280, 1226, 1200, 1100, 1024, 900, 782, 600, 480, 390, 360];
+const widths = [1920, 1440, 1366, 1352, 1300, 1280, 1260, 1240, 1226, 1210, 1200, 1190, 1181, 1180, 1100, 1044, 1043, 1024, 1000, 961, 960, 900, 860, 820, 800, 790, 783, 782, 760, 740, 720, 700, 680, 660, 640, 600, 540, 480, 390, 360];
 const pages = ['drspeed-aias', 'drspeed-aias-settings', 'drspeed-aias-history'].concat(RESULT ? ['STEP4'] : []);
 (async () => {
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
@@ -85,7 +85,9 @@ const pages = ['drspeed-aias', 'drspeed-aias-settings', 'drspeed-aias-history'].
           const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left), oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
           if (ox > 2 && oy > 3) { const k = runs[i].text + '|' + runs[j].text; if (!seen.has(k)) { seen.add(k); offenders.push('TEXT-COLLIDE "' + runs[i].text + '" x "' + runs[j].text + '"'); } }
         }
-        return { docOverflow, offenders: offenders.slice(0, 8), scrollers };
+        const th = document.querySelector('#cu-result-url-list .cu-url-table thead');
+        const mode = th ? (getComputedStyle(th).display === 'none' ? 'cards' : 'table') : null;
+        return { docOverflow, offenders: offenders.slice(0, 8), scrollers, mode };
       });
       // Tooltips: open each help marker by keyboard focus, as a user would, and check its box.
       const helps = await p.$$('.cu-wrap .cu-help');
@@ -121,6 +123,12 @@ const pages = ['drspeed-aias', 'drspeed-aias-settings', 'drspeed-aias-history'].
       if ([1440, 1024, 782, 390].includes(w)) await p.screenshot({ path: `${OUT}/audit-${w}-${slug}.png`, fullPage: true });
     }
   }
+  // Layout stability: as the window narrows the results may switch table -> cards once,
+  // never back and forth (a flip-flop means a breakpoint tracks the wrong width).
+  const modes = results.filter((r) => r.slug === 'STEP4' && r.mode).map((r) => r.w + ':' + r.mode);
+  let switches = 0;
+  for (let i = 1; i < modes.length; i++) if (modes[i].split(':')[1] !== modes[i - 1].split(':')[1]) switches++;
+  if (switches > 1) results.push({ w: 0, slug: 'LAYOUT-FLIP', docOverflow: 0, offenders: ['results layout switches ' + switches + ' times: ' + modes.join(' ')], scrollers: [] });
   for (const r of results) {
     const bad = (typeof r.docOverflow === 'string') || r.docOverflow > 0 || r.offenders.length || r.scrollers.length;
     console.log(`${bad ? 'XX' : 'ok'} ${String(r.w).padStart(4)} ${r.slug.padEnd(22)} pageOverflow=${r.docOverflow}` + (r.offenders.length ? ' | overflow: ' + r.offenders.join(', ') : '') + (r.scrollers.length ? ' | inner scroll: ' + r.scrollers.join(', ') : ''));
