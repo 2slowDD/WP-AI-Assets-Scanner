@@ -11,7 +11,7 @@ umbrella *Dr. Speed | Performance Polyclinic*.
 ```
 
 - **✚ cross**: the pharmacy cross, in brand green. Decorative: `aria-hidden="true"`.
-- **Dr. Speed**: brand green, bold (700–800).
+- **Dr. Speed**: brand green, in the title's own weight (semibold, 600) — not bold. Bold made the name shout next to the product name.
 - **Divider**: 1px (2px in marketing art), white at 35% opacity.
 - **Product name**: near-white `#d6e4f2` (admin) / `#f1f6fb` (marketing), regular weight.
 - Screen readers read "Dr. Speed: AI Assets Scanner" (a visually hidden colon replaces the divider).

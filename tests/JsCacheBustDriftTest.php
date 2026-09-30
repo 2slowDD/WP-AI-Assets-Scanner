@@ -123,6 +123,8 @@ final class JsCacheBustDriftTest extends TestCase {
 		// content-sized columns 601-900px; evenly spread card fields; wrapping balance row;
 		// "Powered by" hidden below 900px.
 		'1.9.4.3' => '61822795699fa8529d963dd4e48c5c7524926cd1cb228c1b1f381559fe0330fe',
+		// 1.9.4.4 (plugin still 1.9.4) — "Dr. Speed" in the title's weight, not bold.
+		'1.9.4.4' => '3d9d95345999f07e63aa9ae69be6baba140c10f444938c4e21b554419446797f',
 	);
 
 	/**

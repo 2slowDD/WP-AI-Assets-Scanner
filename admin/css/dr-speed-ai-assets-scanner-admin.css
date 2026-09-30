@@ -2420,7 +2420,7 @@
 #drspeed-aias-app .cu-brand-cross,
 .cu-admin-page .cu-brand-cross { flex-shrink: 0; width: 20px; height: 20px; margin-right: 8px; color: #22c55e; }
 #drspeed-aias-app .cu-brand-name,
-.cu-admin-page .cu-brand-name { color: #22c55e; font-weight: 700; }
+.cu-admin-page .cu-brand-name { color: #22c55e; }
 #drspeed-aias-app .cu-brand-sep,
 .cu-admin-page .cu-brand-sep { display: inline-block; width: 1px; height: 1em; margin: 0 12px; background: rgba(255, 255, 255, .35); }
 #drspeed-aias-app .cu-brand-product,
