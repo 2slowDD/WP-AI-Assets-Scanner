@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name:       Dr. Speed: AI Assets Scanner
+ * Plugin Name:       Dr. Speed: AI Assets Scanner – Debloat & Dequeue Unused CSS/JS
  * Plugin URI:        https://github.com/2slowDD/WP-AI-Assets-Scanner
  * Description:       Scans your pages with an AI service and builds per-page rules to unload unused CSS and JavaScript.
  * Version:           1.9.5

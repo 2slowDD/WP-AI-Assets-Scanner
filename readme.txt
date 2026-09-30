@@ -1,6 +1,6 @@
-=== Dr. Speed: AI Assets Scanner ===
+=== Dr. Speed: AI Assets Scanner – Debloat & Dequeue Unused CSS/JS ===
 Contributors: dalibord
-Tags: asset manager, dequeue, unused css, unused javascript, performance
+Tags: performance, page speed, dequeue, unused css, unused javascript
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 8.0
@@ -8,13 +8,17 @@ Stable tag: 1.9.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Automatically find and verify unnecessary CSS and JavaScript. Debloat pages with per-page unload rules and one-click Code Unloader sync.
+Debloat WordPress: find unused CSS and JavaScript per page, dequeue them with verified unload rules, speed up your site. One-click Code Unloader sync.
 
 == Description ==
 
 Dr. Speed: AI Assets Scanner debloats WordPress by automatically finding unused CSS and JavaScript on individual pages. It scans desktop and mobile pages, VERIFIES asset-unloading candidates, and prepares per-page rules to dequeue unnecessary files.
 
-Unload files where they aren't needed to increase speed and reduce HTTP requests, page weight/bandwidth, and browser work. Review the results before applying rules.
+Unload files where they aren't needed to speed up pages and reduce HTTP requests, page weight, bandwidth, and browser work. Fewer scripts and stylesheets per page means better performance and page speed. Review the results before applying rules.
+
+= Debloat, dequeue, unload: what the scanner does for page speed =
+
+Most WordPress sites load every plugin's CSS and JavaScript on every page: a contact-form script on the blog, a slider stylesheet on checkout, a page-builder bundle on a plain post. AI Assets Scanner is an AI-assisted asset manager for exactly that problem. It finds the unused CSS and unused JavaScript files on each page, checks that removing them is safe, and gives you per-page dequeue rules. Applied with Code Unloader, those rules unload the files on the pages that do not need them, which is the fastest way to debloat a site without touching your theme or plugins.
 
 Official plugin homepage, features, and scan credits:
 [https://wpservice.pro/our-products/ai-assets-scanner/](https://wpservice.pro/our-products/ai-assets-scanner/)
@@ -50,8 +54,11 @@ The scanner does not add scripts or styles to ordinary visitor requests. Its fro
 
 = Help and support =
 
-For setup or scanning issues, include your plugin version, scan ID, and the displayed error:
-[https://wpservice.pro/contact/](https://wpservice.pro/contact/)
+Support is handled on the WordPress.org forum. For setup or scanning issues, include your plugin version, scan ID, and the displayed error:
+[https://wordpress.org/support/plugin/dr-speed-ai-assets-scanner/](https://wordpress.org/support/plugin/dr-speed-ai-assets-scanner/)
+
+If the plugin helps your site, a review helps others find it:
+[https://wordpress.org/support/plugin/dr-speed-ai-assets-scanner/reviews/](https://wordpress.org/support/plugin/dr-speed-ai-assets-scanner/reviews/)
 
 == Installation ==
 
@@ -63,6 +70,10 @@ For setup or scanning issues, include your plugin version, scan ID, and the disp
 6. Clear affected page caches and test desktop/mobile layouts, forms, and other interactions. Use **Undo last Push/Sync** if you need to revert the last application.
 
 == Frequently Asked Questions ==
+
+= How do I dequeue unused CSS and JavaScript in WordPress? =
+
+Run a scan, review the Safe and Aggressive recommendations, then apply them: with Code Unloader installed, click **Sync with Code Unloader** or **Push to Code Unloader**; without it, download the JSON rules and import them into your asset manager. The rules dequeue the listed files only on the pages where they are not needed.
 
 = Does AI Assets Scanner unload CSS and JavaScript by itself? =
 
@@ -76,7 +87,7 @@ Safe rules target assets not loaded on the scanned page. Aggressive rules target
 
 No. AI Assets Scanner targets whole files on specific pages. It complements caching, minification, and remove-unused-CSS tools that reduce selectors inside stylesheets. It does not disable entire plugins.
 
-= Will this improve PageSpeed or Core Web Vitals? =
+= Will this speed up my site and improve PageSpeed or Core Web Vitals? =
 
 Unloading unnecessary assets can improve frontend performance. Results depend on your theme, plugins, and other bottlenecks. Compare before-and-after tests; no particular PageSpeed or Core Web Vitals result is guaranteed.
 
