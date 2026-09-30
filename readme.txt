@@ -1,6 +1,6 @@
 === Dr. Speed: AI Assets Scanner – Debloat & Dequeue Unused CSS/JS ===
 Contributors: dalibord
-Tags: performance, page speed, dequeue, unused css, unused javascript
+Tags: performance, dequeue, unload unused css, optimize javascript, page speed
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 8.0
@@ -8,7 +8,7 @@ Stable tag: 1.9.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Debloat WordPress: find unused CSS and JavaScript per page, dequeue them with verified unload rules, speed up your site. One-click Code Unloader sync.
+Debloat WordPress: unload unused CSS and JavaScript per page, dequeue with verified rules, optimize CSS/JS loading. One-click Code Unloader sync.
 
 == Description ==
 
@@ -16,9 +16,9 @@ Dr. Speed: AI Assets Scanner debloats WordPress by automatically finding unused 
 
 Unload files where they aren't needed to speed up pages and reduce HTTP requests, page weight, bandwidth, and browser work. Fewer scripts and stylesheets per page means better performance and page speed. Review the results before applying rules.
 
-= Debloat, dequeue, unload: what the scanner does for page speed =
+= Unload unused CSS and JavaScript to optimize page speed =
 
-Most WordPress sites load every plugin's CSS and JavaScript on every page: a contact-form script on the blog, a slider stylesheet on checkout, a page-builder bundle on a plain post. AI Assets Scanner is an AI-assisted asset manager for exactly that problem. It finds the unused CSS and unused JavaScript files on each page, checks that removing them is safe, and gives you per-page dequeue rules. Applied with Code Unloader, those rules unload the files on the pages that do not need them, which is the fastest way to debloat a site without touching your theme or plugins.
+Most WordPress sites load every plugin's CSS and JavaScript on every page: a contact-form script on the blog, a slider stylesheet on checkout, a page-builder bundle on a plain post. AI Assets Scanner is an AI-assisted asset manager for exactly that problem. It finds the unused CSS and unused JavaScript files on each page, checks that removing them is safe, and gives you per-page dequeue rules. Applied with Code Unloader, those rules unload the files on the pages that do not need them, which is the fastest way to debloat a site and optimize CSS and JavaScript loading without touching your theme, your plugins, or the files themselves.
 
 Official plugin homepage, features, and scan credits:
 [https://wpservice.pro/our-products/ai-assets-scanner/](https://wpservice.pro/our-products/ai-assets-scanner/)
@@ -36,6 +36,7 @@ Use Sync to add recommendations while keeping your existing rules. Push replaces
 
 = What the scanner does =
 
+* **Unload unused CSS and JS per page:** the rules dequeue whole files where a page does not need them. Nothing is minified, rewritten, or deleted.
 * **Automatic discovery:** choose pages, posts, and custom post types from your sitemap or database.
 * **Desktop and mobile scans:** inspect page assets in a real browser and review page-level recommendations.
 * **Safe and Aggressive groups:** separate assets not loaded on a page from loaded assets that passed removal checks.
@@ -86,6 +87,10 @@ Safe rules target assets not loaded on the scanned page. Aggressive rules target
 = Is this the same as remove unused CSS, caching, or minification? =
 
 No. AI Assets Scanner targets whole files on specific pages. It complements caching, minification, and remove-unused-CSS tools that reduce selectors inside stylesheets. It does not disable entire plugins.
+
+= Can I optimize CSS and JavaScript loading without minifying? =
+
+Yes. Unloading whole files on the pages that do not use them removes their requests entirely, which minification and combining cannot do. Both can be used together: unload what a page never needs, then minify what remains.
 
 = Will this speed up my site and improve PageSpeed or Core Web Vitals? =
 
