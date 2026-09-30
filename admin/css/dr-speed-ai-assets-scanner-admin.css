@@ -2634,7 +2634,9 @@
 #drspeed-aias-app .cu-support-card { background: #fffdf3; border-color: #f0e6bf; }
 #drspeed-aias-app .cu-support-card + .cu-support-card { border-top: 1px solid #f0e6bf; }
 #drspeed-aias-app .cu-support-heading { margin: 0 0 8px; color: #26384d; font-size: 15px; font-weight: 600; }
-#drspeed-aias-app .cu-support-text { margin: 0 0 12px; color: #4a5a6d; font-size: 12px; line-height: 1.55; }
+/* `.cu-guidance-card p { margin: 0 }` (id + class + element) outranks a class rule, so the
+   selector below carries the element too: 10px between the text and the button. */
+#drspeed-aias-app .cu-guidance-card p.cu-support-text { margin: 0 0 10px; color: #4a5a6d; font-size: 12px; line-height: 1.55; }
 #drspeed-aias-app .cu-support-stars { display: inline-flex; gap: 1px; vertical-align: -4px; color: #ec7f2b; }
 #drspeed-aias-app .cu-support-star { width: 16px; height: 16px; flex-shrink: 0; }
 #drspeed-aias-app .cu-support-btn { width: auto; }
