@@ -12,11 +12,11 @@ Automatically find and verify unnecessary CSS and JavaScript. Debloat pages with
 
 == Description ==
 
-Dr. Speed: AI Assets Scanner helps you debloat WordPress by automatically finding unused CSS and JavaScript on individual pages. It scans desktop and mobile pages, VERIFIES asset-unloading candidates, and prepares per-page rules to dequeue unnecessary files.
+Dr. Speed: AI Assets Scanner debloats WordPress by automatically finding unused CSS and JavaScript on individual pages. It scans desktop and mobile pages, VERIFIES asset-unloading candidates, and prepares per-page rules to dequeue unnecessary files.
 
-Unload files where they are not needed to increase speed and reduce HTTP requests, page weight/bandwith and browser work. Review the results before applying rules.
+Unload files where they aren't needed to increase speed and reduce HTTP requests, page weight/bandwidth, and browser work. Review the results before applying rules.
 
-Official plugin homepage, features and scan credits:
+Official plugin homepage, features, and scan credits:
 [https://wpservice.pro/our-products/ai-assets-scanner/](https://wpservice.pro/our-products/ai-assets-scanner/)
 
 = Recommended companion: Code Unloader =
@@ -32,12 +32,12 @@ Use Sync to add recommendations while keeping your existing rules. Push replaces
 
 = What the scanner does =
 
-* **Automatic discovery:** choose pages, posts and custom post types from your sitemap or database.
+* **Automatic discovery:** choose pages, posts, and custom post types from your sitemap or database.
 * **Desktop and mobile scans:** inspect page assets in a real browser and review page-level recommendations.
 * **Safe and Aggressive groups:** separate assets not loaded on a page from loaded assets that passed removal checks.
-* **Protected assets:** safeguards retain detected payment, form, anti-spam, analytics and WordPress core assets and report what was kept.
+* **Protected assets:** safeguards retain detected payment, form, anti-spam, analytics, and WordPress core assets and report what was kept.
 * **Optimizer awareness:** detect supported tools such as WP Rocket, FlyingPress, LiteSpeed Cache, Autoptimize and Perfmatters, and report scan bypass status.
-* **History and exports:** review credit usage, re-download JSON rules and export scan history to ZIP.
+* **History and exports:** review credit usage, re-download JSON rules, and export scan history to ZIP.
 * **Access guidance:** configure Cloudflare/firewall access or HTTP Basic Auth for protected staging pages.
 
 = Free plugin, credit-based scanning service =
@@ -50,7 +50,7 @@ The scanner does not add scripts or styles to ordinary visitor requests. Its fro
 
 = Help and support =
 
-For setup or scanning issues, include your plugin version, scan ID and the displayed error:
+For setup or scanning issues, include your plugin version, scan ID, and the displayed error:
 [https://wpservice.pro/contact/](https://wpservice.pro/contact/)
 
 == Installation ==
@@ -60,25 +60,25 @@ For setup or scanning issues, include your plugin version, scan ID and the displ
 3. Open **Dr. Speed: AI Assets Scanner > Settings**. Click **Validate your key** to request starter credits or restore an existing free key, or save your purchased API key.
 4. Open the scanner, click **Discover Pages**, select the URLs and click **Start Scan**.
 5. Review the Safe and Aggressive recommendations. Use **Sync with Code Unloader**, **Push to Code Unloader**, or download the JSON file for manual import.
-6. Clear affected page caches and test desktop/mobile layouts, forms and other interactions. Use **Undo last Push/Sync** if you need to revert the last application.
+6. Clear affected page caches and test desktop/mobile layouts, forms, and other interactions. Use **Undo last Push/Sync** if you need to revert the last application.
 
 == Frequently Asked Questions ==
 
 = Does AI Assets Scanner unload CSS and JavaScript by itself? =
 
-Scans generate recommendations without applying changes. You can inspect results without Code Unloader; install it on the scanned site to apply rules with Push/Sync or import the exported JSON. Unloading stops files loading on selected pages; it does not delete them.
+Scans generate recommendations without applying changes. You can inspect results without Code Unloader; install it on the scanned site to apply rules with Push/Sync or import the exported JSON. Unloading stops files from loading on selected pages; it does not delete them.
 
 = What is the difference between Safe and Aggressive rules? =
 
 Safe rules target assets not loaded on the scanned page. Aggressive rules target loaded assets that passed the scanner's removal checks. Automated checks cannot cover every interaction or visitor state, so review the rules and test your pages after applying them.
 
-= Is this the same as remove unused CSS, caching or minification? =
+= Is this the same as remove unused CSS, caching, or minification? =
 
-No. AI Assets Scanner targets whole files on specific pages. It complements caching, minification and remove-unused-CSS tools that reduce selectors inside stylesheets. It does not disable entire plugins.
+No. AI Assets Scanner targets whole files on specific pages. It complements caching, minification, and remove-unused-CSS tools that reduce selectors inside stylesheets. It does not disable entire plugins.
 
 = Will this improve PageSpeed or Core Web Vitals? =
 
-Unloading unnecessary assets can improve frontend performance. Results depend on your theme, plugins and other bottlenecks. Compare before-and-after tests; no particular PageSpeed or Core Web Vitals result is guaranteed.
+Unloading unnecessary assets can improve frontend performance. Results depend on your theme, plugins, and other bottlenecks. Compare before-and-after tests; no particular PageSpeed or Core Web Vitals result is guaranteed.
 
 = My site is behind Cloudflare. Will scans be blocked? =
 
@@ -86,7 +86,7 @@ A firewall or rate limit can block scans. Settings provides guidance and a Cloud
 
 = What is removed when I delete the plugin? =
 
-The plugin's options, scan history, stored results, scheduled tasks and saved API key are removed from WordPress. Export your history first if you want to keep it.
+The plugin's options, scan history, stored results, scheduled tasks, and saved API key are removed from WordPress. Export your history first if you want to keep it.
 
 = I installed AI Assets Scanner from wpservice.pro before it was on WordPress.org. How do I switch? =
 
@@ -94,8 +94,8 @@ The WordPress.org edition lives in a different plugin folder, so WordPress sees 
 
 1. If you want to keep your scan history, open **Scan History** and click **Export to ZIP**.
 2. **Deactivate** the old AI Assets Scanner. Do not delete it yet.
-3. Install and activate **Dr. Speed: AI Assets Scanner** from **Plugins > Add New**. Your API key, credits and settings carry over.
-4. Remove the old plugin's folder, `wp-content/plugins/ai-assets-scanner`, with FTP or your host's file manager. Do not use the **Delete** link: the old version's delete routine erases the scanner secret, worker address and scan history that the new plugin now uses.
+3. Install and activate **Dr. Speed: AI Assets Scanner** from **Plugins > Add New**. Your API key, credits, and settings carry over.
+4. Remove the old plugin's folder, `wp-content/plugins/ai-assets-scanner`, with FTP or your host's file manager. Do not use the **Delete** link: the old version's delete routine erases the scanner secret, worker address, and scan history that the new plugin now uses.
 
 = I deleted and reinstalled the plugin. Where is my key? =
 
@@ -109,9 +109,9 @@ This plugin connects to two services run by WPservice.pro. Nothing is sent until
 
 * When you click **Validate your key**: your site's domain and the plugin version, to create a free API key (first install) or restore this site's existing one.
 * When you save or refresh your key: the API key and your site's domain, to check the key and read your credit balance.
-* When you start a scan: the number of pages, your domain and the API key, to reserve credits. Credits are charged or returned when the scan ends.
+* When you start a scan: the number of pages, your domain, and the API key, to reserve credits. Credits are charged or returned when the scan ends.
 * During a scan: status events tied to the scan ID, so the scan can be billed and supported. They contain the names of caching or optimization plugins detected on your site, whether each was paused for the scan, and hashed (unreadable) page paths.
-* If someone requests your site with an invalid scan token: one security event with a hashed IP address, user agent and path, sent at most once every 10 minutes.
+* If someone requests your site with an invalid scan token: one security event with a hashed IP address, user agent, and path, sent at most once every 10 minutes.
 
 **Scanning worker** (a server address given by the wpservice.pro API) renders your pages.
 
@@ -129,15 +129,16 @@ Privacy policy:[https://wpservice.pro/privacy-policy/](https://wpservice.pro/pri
 2. Scanning selected pages
 3. After scan screen with the option to push/sync findings with Code Unloader 
 4. New findings synced. 38 aggressive and 1 safe rule were unloaded from the scanned pages
+5. Settings - Validate your key before scanning (get a free API key)
 
 == Changelog ==
 
 = 1.9.4 =
 * Fixed a fatal error on WordPress versions before 7.0 when the scanner loaded a page with its scan token.
-* Every setting, option and hook now uses the plugin's own `drspeed_aias_` prefix. Your API key, settings and scan history move to the new names automatically on the first page load after updating.
+* Every setting, option, and hook now uses the plugin's own `drspeed_aias_` prefix. Your API key, settings, and scan history move to the new names automatically on the first page load after updating.
 * Fixed PHP warnings on the history page and in the menu badge for incomplete history records.
 * New Dr. Speed header on every screen: "Dr. Speed | AI Assets Scanner" with the tagline "Safely debloat your pages with one push of a button."
-* Every screen now fits any window width without a sideways scrollbar. On narrow screens the scan results and the scan history show each URL or scan as a labelled card, and buttons wrap their labels instead of cutting them off.
+* Every screen now fits any window width without a sideways scrollbar. On narrow screens, the scan results and the scan history show each URL or scan as a labelled card, and buttons wrap their labels instead of cutting them off.
 
 Earlier release history:
 [https://github.com/2slowDD/WP-AI-Assets-Scanner/blob/main/CHANGELOG.md](https://github.com/2slowDD/WP-AI-Assets-Scanner/blob/main/CHANGELOG.md)
