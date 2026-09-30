@@ -2,7 +2,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/2slowDD/WP-AI-Assets-Scanner/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/2slowDD/WP-AI-Assets-Scanner/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/LICENSE-GPLv2%2B-blue?style=for-the-badge)](LICENSE)
-![Version](https://img.shields.io/badge/VERSION-1.9.4-007cba?style=for-the-badge)
+![Version](https://img.shields.io/badge/VERSION-1.9.5-007cba?style=for-the-badge)
 ![WordPress](https://img.shields.io/badge/WORDPRESS-6.2%2B-21759b?style=for-the-badge)
 ![PHP](https://img.shields.io/badge/PHP-8.0%2B-777bb4?style=for-the-badge)
 

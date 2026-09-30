@@ -4,7 +4,7 @@ Tags: asset manager, dequeue, unused css, unused javascript, performance
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.9.4
+Stable tag: 1.9.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -133,6 +133,11 @@ Privacy policy:[https://wpservice.pro/privacy-policy/](https://wpservice.pro/pri
 
 == Changelog ==
 
+= 1.9.5 =
+* New Ratings & Reviews and Having issues? boxes at the bottom of the scanner sidebar, linking to the plugin's WordPress.org reviews and support forum.
+* The "Found a bug? Get in touch" links to wpservice.pro are gone; support is handled on WordPress.org.
+* "Dr. Speed" in the header is no longer bold.
+
 = 1.9.4 =
 * Fixed a fatal error on WordPress versions before 7.0 when the scanner loaded a page with its scan token.
 * Every setting, option, and hook now uses the plugin's own `drspeed_aias_` prefix. Your API key, settings, and scan history move to the new names automatically on the first page load after updating.
@@ -144,6 +149,9 @@ Earlier release history:
 [https://github.com/2slowDD/WP-AI-Assets-Scanner/blob/main/CHANGELOG.md](https://github.com/2slowDD/WP-AI-Assets-Scanner/blob/main/CHANGELOG.md)
 
 == Upgrade Notice ==
+
+= 1.9.5 =
+Support and reviews now go through WordPress.org; sidebar links added.
 
 = 1.9.4 =
 Fixes a fatal error on WordPress 6.x during scans. Settings move to new names automatically.

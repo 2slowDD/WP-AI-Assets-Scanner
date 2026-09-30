@@ -4,6 +4,15 @@ All notable changes to AI Assets Scanner are documented here.
 
 ---
 
+## 1.9.5 — 2026-09-30
+
+First release after WordPress.org approval (https://wordpress.org/plugins/dr-speed-ai-assets-scanner/).
+
+### Changed
+- **Support and reviews go through WordPress.org.** New "Ratings & Reviews" (five stars, brand orange `#ec7f2b`) and "Having issues?" boxes at the bottom of the step 4 guidance sidebar (the step 1 sidebar has been hidden since the 1.9.1 redesign), from a partial `admin/views/partials/support-links.php`. They link to the plugin's reviews page (`…/reviews/#new-post`) and support forum. The two "Found a bug? Get in touch" links to wpservice.pro/contact (Discover row, results footer) and their CSS are removed; `SupportLinksTest` fails if a wpservice.pro contact link returns.
+- "Dr. Speed" in the header takes the title's weight (600), not bold; BRANDING.md and the banner source follow.
+- readme.txt: operator's rewritten description, tags and a Screenshots section (five captions; the images live in the WordPress.org `assets/` directory).
+
 ## 1.9.4 — 2026-09-29
 
 WordPress.org review of 1.9.3 found two problems.

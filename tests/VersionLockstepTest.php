@@ -84,7 +84,7 @@ class VersionLockstepTest extends TestCase {
         $badge  = $this->capture_one( self::BADGE_RE, $readme, 'README.md shields.io VERSION badge' );
         $stable = $this->capture_one( self::STABLE_TAG_RE, $this->read_repo_file( 'readme.txt' ), 'readme.txt Stable tag' );
 
-        $this->assertSame( '1.9.4', $header, '1.9.4 renames every stored name to the drspeed_aias_ prefix' );
+        $this->assertSame( '1.9.5', $header, '1.9.5 adds the WordPress.org ratings and support boxes' );
 
         // Shape first: without it, three empty captures would "agree" and pass.
         foreach ( [ 'plugin header' => $header, 'DRSPEED_AIAS_VERSION define' => $define, 'README badge' => $badge, 'readme.txt Stable tag' => $stable ] as $where => $v ) {

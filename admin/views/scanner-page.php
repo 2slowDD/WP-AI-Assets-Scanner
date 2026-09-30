@@ -107,10 +107,6 @@
         <div class="cu-discover-row">
             <button id="cu-btn-discover" class="button button-primary">Discover Pages</button>
             <span class="description">or fill Include URLs below to scan specific pages</span>
-            <div class="cu-spacer"></div>
-            <span class="cu-contact-hint">Found a bug or want to get in touch?
-                <a href="https://wpservice.pro/contact/" target="_blank" rel="noopener" class="button button-secondary cu-contact-btn">Get in touch</a>
-            </span>
         </div>
 
         <!-- URL list area (hidden until discovery completes) -->
@@ -345,7 +341,6 @@
                             <button type="button" class="button button-secondary cu-btn-rescan-et" style="display:none">Rescan ET Candidates</button>
                             <button type="button" class="button button-secondary cu-btn-rescan-noopt-all" style="display:none">Rescan 0-Results URLs</button>
                         </div>
-                        <a href="https://wpservice.pro/contact/" target="_blank" rel="noopener" class="cu-results-contact">Found a bug? Get in touch</a>
                     </div>
                 </section>
 
@@ -388,6 +383,10 @@
                     <button type="button" id="cu-btn-undo-last-push-sync" class="button cu-undo-last-push-sync" disabled>Undo last Push/Sync</button>
                     <p>Revert the last applied changes. Available for 7 days after action.</p>
                 </div>
+                <?php
+                $drspeed_aias_support_card_class = 'cu-guidance-card';
+                include __DIR__ . '/partials/support-links.php';
+                ?>
             </aside>
         </div>
     </div>
