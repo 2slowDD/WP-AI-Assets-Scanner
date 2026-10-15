@@ -4,6 +4,11 @@ All notable changes to AI Assets Scanner are documented here.
 
 ---
 
+## 1.9.6 — 2026-10-15
+
+### Fixed
+- **"Error: undefined" on sites with a Class C optimizer, and a ghost charged scan.** `ScannerAjax::submit_job()` answered the consent gate with a bare `wp_send_json()` object (no `success`/`data` wrapper, which `scanner.js` reads) and only *after* the worker job was submitted: the consent dialog never opened, the JS fell into the generic failure, released the reservation — and the worker ran and charged the job. The gate now runs before the submit and replies through `wp_send_json_error()` with a message; no consent → no worker job, no charge (FU-AAS-CLASS-C-CONSENT-SHAPE). `ScannerAjaxTest` pins both directions.
+
 ## 1.9.5 — 2026-09-30
 
 First release after WordPress.org approval (https://wordpress.org/plugins/dr-speed-ai-assets-scanner/).
