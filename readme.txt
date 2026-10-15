@@ -4,7 +4,7 @@ Tags: performance, dequeue, unload unused css, optimize javascript, page speed
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.9.5
+Stable tag: 1.9.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -148,6 +148,9 @@ Privacy policy:[https://wpservice.pro/privacy-policy/](https://wpservice.pro/pri
 5. Settings - Validate your key before scanning (get a free API key)
 
 == Changelog ==
+
+= 1.9.6 =
+* Fixed a scan that failed with "Error: undefined" on sites running an optimizer the plugin cannot bypass automatically (for example SiteGround Optimizer, or an optimizer with minification on): the confirmation dialog now opens as intended, and until you confirm no scan is started and no credit is used. Before this fix the scan still ran in the background and used a credit while the screen showed the error.
 
 = 1.9.5 =
 * New Ratings & Reviews and Having issues? boxes at the bottom of the scanner sidebar, linking to the plugin's WordPress.org reviews and support forum.
