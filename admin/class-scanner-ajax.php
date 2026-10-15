@@ -763,14 +763,28 @@ class ScannerAjax {
         [ $payload, $detector_typed, $token ] = $this->build_submit_payload( $intent );
         $payload['job_token'] = $job_token; // late-bind (builder omits it).
 
+        // FU-AAS-CLASS-C-CONSENT-SHAPE (2026-10-15): the consent gate runs BEFORE the worker submit and
+        // answers in WordPress's {success:false, data:{…}} shape. Until 1.9.5 it ran AFTER submit_job() and
+        // replied with a bare wp_send_json() object: scanner.js reads res.data.error, so on every site with
+        // a Class C optimizer the consent dialog never opened, the JS fell into the generic failure
+        // ("Error: undefined"), released the reservation — while the worker job had already been created,
+        // so the customer was charged at completion for a scan their screen never showed.
+        // Now: no consent → no worker job, no charge; the consented retry submits exactly once.
+        $cc = $this->class_c_consent_payload( $detector_typed, $intent['class_c_consent_given'] );
+        if ( $cc !== null ) {
+            ( new BypassManager() )->delete_all_tokens(); // the consented retry mints its own token
+            wp_send_json_error( [
+                'error'          => 'class_c_consent_required',
+                'class_c_active' => $cc,
+                'message'        => __( 'An optimizer on this site cannot be bypassed automatically. Confirm in the dialog to continue, or cancel to keep your credit.', 'dr-speed-ai-assets-scanner' ),
+                'retryable'      => false,
+            ] );
+            return;
+        }
+
         try {
             $client = new RailwayClient( $railway_url, $api_key );
             $result = $client->submit_job( $payload );
-            $cc = $this->class_c_consent_payload( $detector_typed, $intent['class_c_consent_given'] );
-            if ( $cc !== null ) {
-                wp_send_json( [ 'ok' => false, 'error' => 'class_c_consent_required', 'class_c_active' => $cc ] );
-                return; // worker job already submitted — unchanged from today's submit-before-consent-gate ordering
-            }
             $out = $this->perform_submit_side_effects( $result, $intent, $detector_typed, $token, $railway_url, $job_token, (int) get_current_user_id(), $payload['pages'] ?? [] );
             wp_send_json_success( $out );
         } catch ( \RuntimeException $e ) {

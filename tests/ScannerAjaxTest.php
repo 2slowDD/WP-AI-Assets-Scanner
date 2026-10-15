@@ -1482,4 +1482,110 @@ class ScannerAjaxTest extends TestCase {
         $this->assertSame( [ 'http://site.test', 'https://site.test/about/' ], $out['groups']['page'] );
         $this->assertSame( [], $out['groups']['other'] );
     }
+
+    // ── FU-AAS-CLASS-C-CONSENT-SHAPE (2026-10-15) ───────────────────────────────────────────────
+    // Reported by a customer whose live site runs a Class C optimizer: "Error: undefined" at Step 2,
+    // credit reserved then released, no scan on screen — while the worker ran and charged the job.
+    // Cause: submit_job() answered the consent gate with a bare wp_send_json() object (no
+    // success/data wrapper, which scanner.js reads) and only AFTER the worker job was submitted.
+
+    /** Common $_POST + WP mocks for a submit_job() call. Returns the captured wp_send_json_error data by reference. */
+    private function mockSubmitEnv( array $extraPost = [] ): void {
+        $this->mockCheck();
+        $_POST['job_token']      = 'plain-token';
+        $_POST['urls']           = [ 'https://www.example.com/' ];
+        $_POST['submitted_urls'] = [ 'https://www.example.com/' ];
+        foreach ( $extraPost as $k => $v ) {
+            $_POST[ $k ] = $v;
+        }
+        WP_Mock::userFunction( 'wp_unslash' )->andReturnArg( 0 );
+        WP_Mock::userFunction( 'sanitize_text_field' )->andReturnArg( 0 );
+        WP_Mock::userFunction( 'sanitize_url' )->andReturnArg( 0 );
+        WP_Mock::userFunction( 'esc_url_raw' )->andReturnArg( 0 );
+        WP_Mock::userFunction( '__' )->andReturnArg( 0 );
+        WP_Mock::userFunction( 'wp_json_encode' )->andReturnUsing( fn( $v ) => json_encode( $v ) );
+        WP_Mock::userFunction( 'update_option' )->andReturn( true );
+        WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 11 );
+        WP_Mock::userFunction( 'get_option' )->with( 'drspeed_aias_api_key', '' )->andReturn( 'cusk_Freekey_10' );
+        WP_Mock::userFunction( 'get_option' )->with( 'drspeed_aias_railway_url', '' )->andReturn( 'https://cu-scanner-railway-production.up.railway.app' );
+        WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( function ( string $url, ?int $component = null ) {
+            $parts = parse_url( $url );
+            if ( null === $component ) {
+                return $parts;
+            }
+            $map = [ PHP_URL_SCHEME => 'scheme', PHP_URL_HOST => 'host', PHP_URL_PORT => 'port', PHP_URL_USER => 'user', PHP_URL_PASS => 'pass' ];
+            return $parts[ $map[ $component ] ?? '' ] ?? null;
+        } );
+        WP_Mock::userFunction( 'wp_remote_retrieve_response_code' )->andReturnUsing( fn( array $r ) => (int) ( $r['response']['code'] ?? 0 ) );
+        WP_Mock::userFunction( 'wp_remote_retrieve_body' )->andReturnUsing( fn( array $r ) => (string) ( $r['body'] ?? '' ) );
+    }
+
+    private function unsetSubmitPost(): void {
+        unset( $_POST['job_token'], $_POST['urls'], $_POST['submitted_urls'], $_POST['class_c_consent_given'] );
+    }
+
+    /**
+     * A ScannerAjax whose payload builder reports ONE Class C optimizer and whose side-effect runner is
+     * stubbed (ScanHistory / events / the bypass orchestrator are not under test here); the consent gate
+     * and the reply shape are real.
+     */
+    private function classCAjax( array &$sideEffectCalls ): ScannerAjax {
+        return new class( $sideEffectCalls ) extends ScannerAjax {
+            private array $calls;
+            public function __construct( array &$calls ) { $this->calls = &$calls; }
+            public function build_submit_payload( array $intent, ?string $bypass_token = null ): array {
+                $payload        = [ 'urls' => $intent['urls'], 'pages' => [ [ 'url' => 'https://www.example.com/' ] ] ];
+                $detector_typed = [ [ 'class' => 'C', 'name' => 'SiteGround Optimizer', 'disable_method' => 'sg-optimizer', 'warning' => 'minify stays on' ] ];
+                return [ $payload, $detector_typed, 'fixed-bypass-token' ];
+            }
+            public function perform_submit_side_effects( array $result, array $intent, array $detector_typed, string $bypass_token, string $railway_url, string $job_token, int $user_id, array $pages_sent = [] ): array {
+                $this->calls[] = $result;
+                return [ 'job_id' => $result['job_id'], 'job_token' => $job_token, 'railway_url' => $railway_url ];
+            }
+        };
+    }
+
+    public function test_submit_job_class_c_without_consent_replies_in_data_shape_and_submits_no_worker_job(): void {
+        $this->mockSubmitEnv();
+        WP_Mock::userFunction( 'wp_remote_post' )->never();          // the ghost job: no consent → no worker submit
+        WP_Mock::userFunction( 'wp_send_json' )->never();            // the old bare reply shape must not come back
+        WP_Mock::userFunction( 'wp_send_json_success' )->never();
+        $captured = null;
+        WP_Mock::userFunction( 'wp_send_json_error' )->once()->andReturnUsing( function ( $data ) use ( &$captured ) { $captured = $data; } );
+
+        $calls = [];
+        $this->classCAjax( $calls )->submit_job();
+        $this->unsetSubmitPost();
+
+        // scanner.js › "res2.data.error === 'class_c_consent_required'" and "res2.data.class_c_active" — the wrapper
+        // wp_send_json_error() adds puts this array under data, which is what the JS reads.
+        $this->assertIsArray( $captured );
+        $this->assertSame( 'class_c_consent_required', $captured['error'] );
+        $this->assertSame( 'sg-optimizer', $captured['class_c_active'][0]['slug'] );
+        $this->assertSame( 'SiteGround Optimizer', $captured['class_c_active'][0]['name'] );
+        $this->assertIsString( $captured['message'] );
+        $this->assertNotSame( '', $captured['message'] );              // never "Error: undefined" again
+        $this->assertFalse( $captured['retryable'] );
+        $this->assertSame( [], $calls, 'no side effects (no ScanHistory row, no transient) without consent' );
+    }
+
+    public function test_submit_job_class_c_with_consent_submits_exactly_one_worker_job(): void {
+        $this->mockSubmitEnv( [ 'class_c_consent_given' => '1' ] );
+        WP_Mock::userFunction( 'wp_remote_post' )->once()->andReturnUsing( function ( string $url ) {
+            return str_ends_with( $url, '/jobs' )
+                ? [ 'response' => [ 'code' => 200 ], 'body' => '{"job_id":"job-1"}' ]
+                : [ 'response' => [ 'code' => 404 ], 'body' => '{"message":"not found"}' ];
+        } );
+        WP_Mock::userFunction( 'wp_send_json' )->never();
+        WP_Mock::userFunction( 'wp_send_json_error' )->never();
+        $captured = null;
+        WP_Mock::userFunction( 'wp_send_json_success' )->once()->andReturnUsing( function ( $data ) use ( &$captured ) { $captured = $data; } );
+
+        $calls = [];
+        $this->classCAjax( $calls )->submit_job();
+        $this->unsetSubmitPost();
+
+        $this->assertSame( 'job-1', $captured['job_id'] );
+        $this->assertCount( 1, $calls, 'the consented retry runs the side effects exactly once' );
+    }
 }
