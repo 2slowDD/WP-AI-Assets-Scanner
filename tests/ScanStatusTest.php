@@ -171,4 +171,36 @@ final class ScanStatusTest extends TestCase {
         $r = DRSPEED_AIAS_Scan_Status::classify( $this->page([]) );
         $this->assertSame( 1, $r['credits'] );
     }
+    public function test_blocked_entries_keeps_first_reasoned_entry_per_device_and_skips_malformed(): void {
+        $page = [ 'status' => 'done', 'broken_devices' => [
+            [ 'device' => 'desktop', 'reason' => '' ],                 // empty reason → skipped
+            'garbage',                                                 // non-array → skipped
+            [ 'device' => 'mobile',  'reason' => 'tier2_cf_challenge' ],
+            [ 'device' => 'mobile',  'reason' => 'tier1_http_5xx' ],   // second mobile → ignored
+            [ 'device' => 'tablet',  'reason' => 'tier1_http_5xx' ],   // unknown device → skipped
+        ] ];
+        $e = DRSPEED_AIAS_Scan_Status::blocked_entries( $page );
+        $this->assertSame( [ 'mobile' ], array_keys( $e ) );
+        $this->assertSame( 'tier2_cf_challenge', $e['mobile']['reason'] );
+    }
+    public function test_error_kind_is_total(): void {
+        $this->assertSame( '', DRSPEED_AIAS_Scan_Status::error_kind( [ 'status' => 'done' ] ) );
+        $this->assertSame( '', DRSPEED_AIAS_Scan_Status::error_kind( [ 'status' => 'error', 'broken_devices' => [ [ 'device' => 'desktop', 'reason' => 'tier1_zero_bytes' ] ] ] ) );
+        $this->assertSame( 'unknown', DRSPEED_AIAS_Scan_Status::error_kind( [ 'status' => 'error' ] ) );
+    }
+    public function test_error_kind_precedence_and_allowlist(): void {
+        $this->assertSame( 'page_time_limit', DRSPEED_AIAS_Scan_Status::error_kind( [ 'status' => 'error', 'error_reason' => 'page_time_limit' ] ) );
+        $this->assertSame( 'analysis_failed', DRSPEED_AIAS_Scan_Status::error_kind( [ 'status' => 'error', 'error_reason' => 'analysis_failed' ] ) );
+        $this->assertSame( 'unknown', DRSPEED_AIAS_Scan_Status::error_kind( [ 'status' => 'error', 'error_reason' => 'garbage' ] ) );
+        $this->assertSame( 'unknown', DRSPEED_AIAS_Scan_Status::error_kind( [ 'status' => 'error', 'error_reason' => [ 'x' ] ] ) );   // Review Focus 1
+        $this->assertSame( 'unknown', DRSPEED_AIAS_Scan_Status::error_kind( [ 'status' => 'error', 'error_reason' => 42 ] ) );
+        $this->assertSame( 'off_site', DRSPEED_AIAS_Scan_Status::error_kind( [ 'status' => 'error', 'site_lock' => 'free_off_site', 'extra_time_lost' => true, 'error_reason' => 'page_time_limit' ] ) );
+        $this->assertSame( 'extra_time_lost', DRSPEED_AIAS_Scan_Status::error_kind( [ 'status' => 'error', 'extra_time_lost' => true, 'error_reason' => 'page_time_limit' ] ) );
+    }
+    public function test_stack_of_allowlists(): void {
+        $this->assertSame( 'siteground', DRSPEED_AIAS_Scan_Status::stack_of( [ 'stack' => 'siteground' ] ) );
+        $this->assertSame( '', DRSPEED_AIAS_Scan_Status::stack_of( [ 'stack' => 'garbage' ] ) );
+        $this->assertSame( '', DRSPEED_AIAS_Scan_Status::stack_of( [ 'stack' => [ 'siteground' ] ] ) );   // Review Focus 2
+        $this->assertSame( '', DRSPEED_AIAS_Scan_Status::stack_of( [] ) );
+    }
 }

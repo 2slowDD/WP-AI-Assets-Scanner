@@ -7,6 +7,51 @@ defined( 'ABSPATH' ) || exit;
  */
 class DRSPEED_AIAS_Scan_Status {
 
+	/** Security stacks the worker names on a zero-byte broken entry (namedSecurityStack enum, minus 'none'). */
+	const STACKS = [ 'cloudflare', 'akamai', 'imperva', 'siteground', 'sucuri', 'aws_waf', 'waf_generic' ];
+	/** Worker error_reason values the plugin understands. Anything else → 'unknown'. */
+	const ERROR_REASONS = [ 'page_time_limit', 'analysis_failed' ];
+
+	/**
+	 * Devices the worker marked blocked: first entry per device with a non-empty string reason.
+	 * Rule 1: broken_devices is third-party (Railway) input — is_array guards, string casts, device allowlist.
+	 *
+	 * @return array<string,array> keyed 'desktop'|'mobile'.
+	 */
+	public static function blocked_entries( array $page ): array {
+		$out = [];
+		$bd  = $page['broken_devices'] ?? null;
+		if ( ! is_array( $bd ) ) { return $out; }
+		foreach ( $bd as $entry ) {
+			if ( ! is_array( $entry ) ) { continue; }
+			$device = (string) ( $entry['device'] ?? '' );
+			$reason = is_string( $entry['reason'] ?? null ) ? $entry['reason'] : '';
+			if ( '' === $reason ) { continue; }
+			if ( ( 'desktop' === $device || 'mobile' === $device ) && ! isset( $out[ $device ] ) ) {
+				$out[ $device ] = $entry;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Why a reason-less error page failed. TOTAL: '' unless the page is status 'error' with no blocked entry.
+	 * Precedence off_site > extra_time_lost > error_reason (allowlisted) > unknown. Spec §3.2.1.
+	 */
+	public static function error_kind( array $page ): string {
+		if ( 'error' !== (string) ( $page['status'] ?? '' ) || [] !== self::blocked_entries( $page ) ) { return ''; }
+		if ( 'free_off_site' === (string) ( $page['site_lock'] ?? '' ) ) { return 'off_site'; }
+		if ( ! empty( $page['extra_time_lost'] ) ) { return 'extra_time_lost'; }
+		$reason = $page['error_reason'] ?? null;
+		return ( is_string( $reason ) && in_array( $reason, self::ERROR_REASONS, true ) ) ? $reason : 'unknown';
+	}
+
+	/** Allowlisted `stack` of a broken entry, or ''. */
+	public static function stack_of( array $entry ): string {
+		$s = $entry['stack'] ?? null;
+		return ( is_string( $s ) && in_array( $s, self::STACKS, true ) ) ? $s : '';
+	}
+
 	/**
 	 * @param array $page One Railway page: { url, status, broken_devices?[] }.
 	 * @return array{class:string,label:string,credits:int}
