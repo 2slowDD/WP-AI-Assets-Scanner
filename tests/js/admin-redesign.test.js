@@ -33,7 +33,8 @@ assert.strictEqual(h.els['cu-metric-aggressive'].textContent, '7', 'Aggressive m
 assert.strictEqual(h.els['cu-metric-credits'].textContent, '3', 'Credits metric sums net displayed row credits');
 assert.strictEqual(h.els['cu-metric-balance'].textContent, '49', 'Credit balance subtracts the displayed scan usage');
 assert.strictEqual(h.els['cu-complete-scan-id'].textContent, 'Scan ID: scan-redesign');
-assert.strictEqual(h.els['cu-results-success-count'].textContent, '1 of 3 successful', 'Page results title carries the live success count');
+// Errored-page copy spec: a `partial` row (one device blocked, the other done) counts as successful.
+assert.strictEqual(h.els['cu-results-success-count'].textContent, '2 of 3 successful', 'Page results title carries the live success count');
 assert.strictEqual(h.els['cu-ready-rule-total'].textContent, '11', 'sidebar totals every generated recommendation');
 assert.strictEqual(h.els['cu-ready-credits'].textContent, '3 credits were used', 'sidebar uses the displayed net credit total');
 assert.strictEqual(h.els['cu-cu-status-title'].textContent, 'Code Unloader is active', 'internal results show the integration state');

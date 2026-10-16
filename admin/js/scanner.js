@@ -2846,7 +2846,8 @@
         setResultText( 'cu-ready-rule-total', applySafe + applyAgg );
         setResultText( 'cu-ready-credits', credits + ' credit' + ( credits === 1 ? ' was' : 's were' ) + ' used' );
         var successful = resultPages.reduce( function ( total, page ) {
-            return total + ( page && page.status_class === 'ok' ? 1 : 0 );
+            // A `partial` page (one device blocked, the other done) still produced a result.
+            return total + ( page && ( page.status_class === 'ok' || page.status_class === 'partial' ) ? 1 : 0 );
         }, 0 );
         setResultText( 'cu-results-success-count', successful + ' of ' + urlCount + ' successful' );
         var balanceEl = document.getElementById( 'cu-ready-balance' );
@@ -3163,7 +3164,10 @@
         // Subsystem D-4: render broken-banner if pages were blocked.
         renderBrokenBanner( bannerData || {} );
 
-        // Per-URL results table (hidden when pages is empty/undefined).
+        // Per-URL results table (hidden when pages is empty/undefined). pushReady picks the
+        // partial-row line 1 ("ready to Push/Sync" vs "ready to download"); hasInternalRules is
+        // this function's restore-safe derivation, so live and restored screens agree.
+        cuUrlListState.pushReady = !! canPush && hasInternalRules;
         renderResultUrlList( pages, scanId, cuRulesActive );
 
         // Top "Run Another Scan" is redundant on a short results list. Hide it for
@@ -3459,10 +3463,28 @@
                 + bypassNote + keptChip + choffNote;
             var urlCell = '<span class="cu-url-primary">' + urlHtml + '</span>'
                 + ( urlMeta ? '<span class="cu-url-meta">' + urlMeta + '</span>' : '' );
+            // Errored-page copy spec — a `partial` row (one device blocked, the other done) leads
+            // with the SURVIVING device's outcome on line 1, status_label on line 2. survivor_device
+            // is worker-derived, so it is allowlisted here ('' or anything else → no line 1), and
+            // the device word and the template both go through cuEscHtml() before this innerHTML
+            // sink (ruling R19) — a hostile translation renders as text. Map values are read only
+            // when they are strings: an empty PHP map arrives as JSON [] and falls back per key to
+            // BANNER_COPY_DEFAULTS. effSafe/effAgg are the DISPLAYED counts (0 for all_already).
+            var statusHtml = cuEscHtml( p.status_label );
+            if ( p.status_class === 'partial' && ( p.survivor_device === 'desktop' || p.survivor_device === 'mobile' ) ) {
+                var copyMap = ( typeof drspeedAiasReasonCopy === 'object' && drspeedAiasReasonCopy ) ? drspeedAiasReasonCopy : {};
+                var rowTpls = copyMap.partial_row || {};
+                var devWords = copyMap.device || {};
+                var devKey = p.survivor_device === 'desktop' ? 'Desktop' : 'Mobile';
+                var devWord = cuEscHtml( typeof devWords[ devKey ] === 'string' ? devWords[ devKey ] : BANNER_COPY_DEFAULTS.device[ devKey ] );
+                var tplKey = ( effSafe + effAgg > 0 ) ? ( st.pushReady ? 'push' : 'download' ) : 'none';
+                var tpl = cuEscHtml( typeof rowTpls[ tplKey ] === 'string' ? rowTpls[ tplKey ] : BANNER_COPY_DEFAULTS.partial_row[ tplKey ] );
+                statusHtml = tpl.replace( '%s', function () { return devWord; } ) + '<br>' + statusHtml;
+            }
             return '<tr class="cu-row-' + cuEscHtml( p.status_class ) + ( noopt ? ' cu-row-noopt' : '' ) + '">'
                 + '<td data-label="#">' + cuEscHtml( p.n ) + '</td>'
                 + '<td class="cu-url-cell" data-label="URL">' + urlCell + '</td>'
-                + '<td data-label="Status"><span class="cu-row-status cu-row-status--' + esc( p.status_class ) + '">' + cuEscHtml( p.status_label ) + '</span></td>'
+                + '<td data-label="Status"><span class="cu-row-status cu-row-status--' + esc( p.status_class ) + '">' + statusHtml + '</span></td>'
                 // 0 when every rule on this page was already in CU — the page was credited back,
                 // so the gross page_credit() charge is not what the customer actually paid.
                 // page_credit() itself is deliberately untouched (spec AC-7, golden-tested).
