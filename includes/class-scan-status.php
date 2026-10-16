@@ -54,16 +54,17 @@ class DRSPEED_AIAS_Scan_Status {
 
 	/**
 	 * @param array $page One Railway page: { url, status, broken_devices?[] }.
-	 * @return array{class:string,label:string,credits:int}
+	 * @return array{class:string,label:string,credits:int,survivor_device:string}
 	 */
 	public static function classify( array $page ): array {
 		$status  = (string) ( $page['status'] ?? '' );
 
 		if ( 'origin_unavailable' === $status ) {
 			return [
-				'class'   => 'skipped',
-				'label'   => __( 'Origin unavailable', 'dr-speed-ai-assets-scanner' ),
-				'credits' => 0,
+				'class'           => 'skipped',
+				'label'           => __( 'Origin unavailable', 'dr-speed-ai-assets-scanner' ),
+				'credits'         => 0,
+				'survivor_device' => '',
 			];
 		}
 
@@ -76,54 +77,43 @@ class DRSPEED_AIAS_Scan_Status {
 		// already returned above). Final per-URL credit = base + ET.
 		$credits = ( 'error' === $status ) ? $et_credit : ( 1 + $et_credit );
 
-		// Affected device = entry naming desktop/mobile with a NON-EMPTY reason
-		// (mirrors CuJsonBuilder::blocked_devices(); is_broken intentionally unused).
-		$affected = [];
-		$bd = $page['broken_devices'] ?? null;
-		if ( is_array( $bd ) ) {
-			foreach ( $bd as $entry ) {
-				if ( ! is_array( $entry ) ) { continue; }
-				$device = (string) ( $entry['device'] ?? '' );
-				$reason = (string) ( $entry['reason'] ?? '' );
-				if ( '' === $reason ) { continue; }
-				if ( ( 'desktop' === $device || 'mobile' === $device ) && ! isset( $affected[ $device ] ) ) {
-					$affected[ $device ] = $reason;
-				}
+		$entries = self::blocked_entries( $page );
+
+		if ( [] !== $entries ) {
+			$bot = null;
+			foreach ( $entries as $entry ) {
+				if ( 'bot' === DRSPEED_AIAS_Broken_Banner::reason_category( (string) $entry['reason'] ) ) { $bot = $entry; break; }
 			}
-		}
-
-		$bot_reason = null;
-		foreach ( $affected as $reason ) {
-			if ( 'bot' === DRSPEED_AIAS_Broken_Banner::reason_category( $reason ) ) { $bot_reason = $reason; break; }
-		}
-
-		if ( null !== $bot_reason ) {
+			if ( 'error' === $status ) {
+				// Both devices (or any blocked entry on an error page — total table, spec §3.2.4).
+				if ( null !== $bot ) {
+					return [ 'class' => 'blocked', 'label' => sprintf( /* translators: %s: short reason, e.g. "Cloudflare challenge" */ __( 'Blocked: %s', 'dr-speed-ai-assets-scanner' ), DRSPEED_AIAS_Broken_Banner::reason_phrase( (string) $bot['reason'] ) ), 'credits' => $credits, 'survivor_device' => '' ];
+				}
+				$first = reset( $entries );
+				return [ 'class' => 'error', 'label' => sprintf( /* translators: %s: short reason the scan failed, e.g. "site error (5xx)" */ __( 'Error: %s', 'dr-speed-ai-assets-scanner' ), DRSPEED_AIAS_Broken_Banner::reason_phrase( (string) $first['reason'] ) ), 'credits' => $credits, 'survivor_device' => '' ];
+			}
+			// status done + ≥1 blocked entry: the other device got through. Lead with it (spec §3.2.4, G3).
+			$device   = (string) array_key_first( $entries );
+			$survivor = isset( $entries['desktop'] ) ? ( isset( $entries['mobile'] ) ? '' : 'mobile' ) : 'desktop';
 			return [
-				'class'   => 'blocked',
-				'label'   => sprintf( /* translators: %s reason */ __( 'Blocked: %s', 'dr-speed-ai-assets-scanner' ), DRSPEED_AIAS_Broken_Banner::reason_phrase( $bot_reason ) ),
-				'credits' => $credits,
+				'class'           => 'partial',
+				'label'           => sprintf( /* translators: 1: device name (Desktop/Mobile), 2: short reason */ __( '%1$s not scanned: %2$s', 'dr-speed-ai-assets-scanner' ), ucfirst( $device ), DRSPEED_AIAS_Broken_Banner::reason_phrase( (string) $entries[ $device ]['reason'] ) ),
+				'credits'         => $credits,
+				'survivor_device' => $survivor,
 			];
 		}
+
 		if ( 'error' === $status ) {
-			$first = $affected ? DRSPEED_AIAS_Broken_Banner::reason_phrase( (string) reset( $affected ) ) : '';
-			return [
-				'class'   => 'error',
-				'label'   => $first
-					/* translators: %s: short reason the scan failed, e.g. "bot protection". */
-					? sprintf( __( 'Error: %s', 'dr-speed-ai-assets-scanner' ), $first )
-					: __( 'Error', 'dr-speed-ai-assets-scanner' ),
-				'credits' => $credits,
+			$labels = [
+				'page_time_limit' => __( 'Not finished: time limit', 'dr-speed-ai-assets-scanner' ),
+				'analysis_failed' => __( 'Not finished: scanner error', 'dr-speed-ai-assets-scanner' ),
+				'off_site'        => __( 'Not scanned: off-site (free key)', 'dr-speed-ai-assets-scanner' ),
+				'extra_time_lost' => __( 'Not finished: Extra Time lost', 'dr-speed-ai-assets-scanner' ),
 			];
+			$kind = self::error_kind( $page );
+			return [ 'class' => 'error', 'label' => $labels[ $kind ] ?? __( 'Error', 'dr-speed-ai-assets-scanner' ), 'credits' => $credits, 'survivor_device' => '' ];
 		}
-		if ( ! empty( $affected ) ) {
-			$device = (string) array_key_first( $affected );
-			return [
-				'class'   => 'partial',
-				'label'   => sprintf( /* translators: 1 device, 2 reason */ __( '%1$s failed: %2$s', 'dr-speed-ai-assets-scanner' ), ucfirst( $device ), DRSPEED_AIAS_Broken_Banner::reason_phrase( $affected[ $device ] ) ),
-				'credits' => $credits,
-			];
-		}
-		return [ 'class' => 'ok', 'label' => __( 'OK', 'dr-speed-ai-assets-scanner' ), 'credits' => $credits ];
+		return [ 'class' => 'ok', 'label' => __( 'OK', 'dr-speed-ai-assets-scanner' ), 'credits' => $credits, 'survivor_device' => '' ];
 	}
 
 	/**
@@ -206,6 +196,7 @@ class DRSPEED_AIAS_Scan_Status {
 				'url'          => (string) ( $page['url'] ?? '' ),
 				'status_class' => $st['class'],
 				'status_label' => $st['label'],
+				'survivor_device' => (string) ( $st['survivor_device'] ?? '' ),
 				'credits'      => $credit,
 				'safe'         => (int) ( $tally['safe'] ?? 0 ),
 				'aggressive'   => (int) ( $tally['aggressive'] ?? 0 ),

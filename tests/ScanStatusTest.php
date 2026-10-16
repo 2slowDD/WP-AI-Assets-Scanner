@@ -15,12 +15,13 @@ final class ScanStatusTest extends TestCase {
         $r = DRSPEED_AIAS_Scan_Status::classify( $this->page([ 'broken_devices' => [ [ 'device' => 'mobile', 'reason' => 'tier1_http_rate_limit' ] ] ]) );
         $this->assertSame( 'partial', $r['class'] );
         $this->assertSame( 1, $r['credits'] );
-        $this->assertStringContainsString( 'Mobile failed', $r['label'] );
+        $this->assertStringContainsString( 'Mobile not scanned', $r['label'] );
         $this->assertStringContainsString( 'rate limit (429)', $r['label'] );
     }
     public function test_blocked_bot_protection(): void {
+        // Spec §3.2.4: a bot block on ONE device of a done page is a partial row (the other device got through).
         $r = DRSPEED_AIAS_Scan_Status::classify( $this->page([ 'broken_devices' => [ [ 'device' => 'desktop', 'reason' => 'tier2_cf_challenge' ] ] ]) );
-        $this->assertSame( 'blocked', $r['class'] );
+        $this->assertSame( 'partial', $r['class'] );
         $this->assertStringContainsString( 'Cloudflare challenge', $r['label'] );
     }
     public function test_error_zero_credit(): void {
@@ -141,7 +142,7 @@ final class ScanStatusTest extends TestCase {
             'broken_devices'     => [ [ 'device' => 'desktop', 'reason' => 'tier2_cf_challenge' ] ],
             'extra_time_charged' => true,
         ]) );
-        $this->assertSame( 'blocked', $r['class'] );
+        $this->assertSame( 'partial', $r['class'] ); // spec §3.2.4: one-device bot block on a done page is partial
         $this->assertSame( 2, $r['credits'] ); // base 1 (done) + ET 1
     }
     public function test_extra_time_charged_error_shows_et_credit_only(): void {
@@ -202,5 +203,49 @@ final class ScanStatusTest extends TestCase {
         $this->assertSame( '', DRSPEED_AIAS_Scan_Status::stack_of( [ 'stack' => 'garbage' ] ) );
         $this->assertSame( '', DRSPEED_AIAS_Scan_Status::stack_of( [ 'stack' => [ 'siteground' ] ] ) );   // Review Focus 2
         $this->assertSame( '', DRSPEED_AIAS_Scan_Status::stack_of( [] ) );
+    }
+    public function test_one_device_bot_block_is_partial_mobile_first(): void {
+        $r = DRSPEED_AIAS_Scan_Status::classify( [ 'status' => 'done', 'broken_devices' => [ [ 'device' => 'desktop', 'reason' => 'tier2_cf_challenge' ] ] ] );
+        $this->assertSame( 'partial', $r['class'] );
+        $this->assertSame( 'Desktop not scanned: Cloudflare challenge', $r['label'] );
+        $this->assertSame( 'mobile', $r['survivor_device'] );
+        $this->assertSame( 1, $r['credits'] );
+    }
+    public function test_both_blocked_bot_stays_blocked_zero_credit(): void {
+        $r = DRSPEED_AIAS_Scan_Status::classify( [ 'status' => 'error', 'broken_devices' => [ [ 'device' => 'desktop', 'reason' => 'tier2_cf_challenge' ], [ 'device' => 'mobile', 'reason' => 'tier2_cf_challenge' ] ] ] );
+        $this->assertSame( [ 'blocked', 'Blocked: Cloudflare challenge', 0, '' ], [ $r['class'], $r['label'], $r['credits'], $r['survivor_device'] ] );
+    }
+    public function test_both_blocked_non_bot_stays_error_label(): void {   // r1 M5 pin
+        $r = DRSPEED_AIAS_Scan_Status::classify( [ 'status' => 'error', 'broken_devices' => [ [ 'device' => 'desktop', 'reason' => 'tier1_http_5xx' ], [ 'device' => 'mobile', 'reason' => 'tier1_http_5xx' ] ] ] );
+        $this->assertSame( [ 'error', 'Error: site error (5xx)', 0 ], [ $r['class'], $r['label'], $r['credits'] ] );
+    }
+    public function test_error_status_with_one_bot_entry_takes_blocked_branch(): void {   // r2 m7 total table
+        $r = DRSPEED_AIAS_Scan_Status::classify( [ 'status' => 'error', 'broken_devices' => [ [ 'device' => 'mobile', 'reason' => 'tier2_waf_challenge' ] ] ] );
+        $this->assertSame( 'blocked', $r['class'] );
+    }
+    /** @dataProvider error_kind_labels */
+    public function test_error_kind_rows( array $page, string $label ): void {
+        $r = DRSPEED_AIAS_Scan_Status::classify( $page );
+        $this->assertSame( [ 'error', $label, 0 ], [ $r['class'], $r['label'], $r['credits'] ] );
+    }
+    public function error_kind_labels(): array {
+        return [
+            [ [ 'status' => 'error', 'error_reason' => 'page_time_limit' ], 'Not finished: time limit' ],
+            [ [ 'status' => 'error', 'error_reason' => 'analysis_failed' ], 'Not finished: scanner error' ],
+            [ [ 'status' => 'error', 'site_lock' => 'free_off_site' ],      'Not scanned: off-site (free key)' ],
+            [ [ 'status' => 'error', 'extra_time_lost' => true ],           'Not finished: Extra Time lost' ],
+            [ [ 'status' => 'error' ],                                       'Error' ],
+        ];
+    }
+    public function test_error_kind_row_keeps_et_credit(): void {
+        $r = DRSPEED_AIAS_Scan_Status::classify( [ 'status' => 'error', 'error_reason' => 'page_time_limit', 'extra_time_charged' => true ] );
+        $this->assertSame( 1, $r['credits'] );
+    }
+    public function test_build_pages_threads_survivor_device(): void {
+        $rows = DRSPEED_AIAS_Scan_Status::build_pages( [
+            [ 'url' => 'https://x/a', 'status' => 'done', 'broken_devices' => [ [ 'device' => 'mobile', 'reason' => 'tier2_cf_challenge' ] ] ],
+            [ 'url' => 'https://x/b', 'status' => 'done', 'broken_devices' => [] ],
+        ], [] );
+        $this->assertSame( [ 'desktop', '' ], [ $rows[0]['survivor_device'], $rows[1]['survivor_device'] ] );
     }
 }
