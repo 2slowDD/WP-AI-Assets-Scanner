@@ -4,6 +4,17 @@ All notable changes to AI Assets Scanner are documented here.
 
 ---
 
+## 1.9.7 — 2026-10-16
+
+### Fixed
+- **A scanner-side page failure was shown as a host block plus a server error.** A page that hit the worker's page time limit (or failed inside the scanner) produced "Desktop scanner blocked … Mobile scanner blocked … Your server returned an error". The 2026-05-17 fallback that counted every errored page as blocked on both devices is replaced by an errored-page count with its own sentences ("N pages hit the scanner's time limit …", "… scanner error", free-key off-site, Extra Time lost); nothing on the screen says "blocked" or "your server" for those pages (FU-AAS-TIMEOUT-SHOWN-AS-BLOCKED). The worker now sends the cause (`error_reason`); older workers get a generic "couldn't be finished" sentence. Blocked-reason counts are now per device entry (a page blocked on both devices counts 2; duplicate URLs count per entry, matching the per-URL table and `total_pages`), superseding the 1.2.6 "1 (NOT 2) to the reason counter" note and the 1.3.7 `scan_errored` fallback row below.
+- **"The rules from the unblocked device are complete" when both devices were blocked.** The sentence now appears only when a page really has a device that got through with rules, and says whether they are ready to Push/Sync or to download (FU-AAS-BOT-BANNER-IF-ANY).
+
+### Changed
+- **One device blocked, the other fine → a yellow "partial" row that leads with the success** ("✓ Mobile rules ready to Push/Sync", then "Desktop not scanned: …"), counted as successful. Previously an orange "Blocked" row.
+- **A host's bot protection that answers with an empty page is named** when the worker identifies it (SiteGround), with the action that helps (pause the anti-bot protection during the scan) instead of a CDN exemption link (FU-SITEGROUND-CLASSIFIER-AND-COPY, plugin half).
+- The whole post-scan banner is now built from one translatable copy map (PHP), so translations reach the banner customers see.
+
 ## 1.9.6 — 2026-10-15
 
 ### Fixed

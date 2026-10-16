@@ -129,6 +129,8 @@ final class JsCacheBustDriftTest extends TestCase {
 		'1.9.5' => 'b69858115780ddf1cc523b5e3c8260ba6836c2af13a5493e152155584fcd04ad',
 		// 1.9.5.1 (plugin still 1.9.5) — 10px between the support-box text and its button.
 		'1.9.5.1' => '7388edb02543b518b7d6c99208a0ad5bfba65b5334b320ffea3d1ec63452c7c7',
+		// 1.9.7 — banner from the copy map; partial rows lead with the survivor; errored-page sentences.
+		'1.9.7' => 'eaa49a6d7c3ac1a3c123da38baa12451229e31587c189c4e8e2a3b52d104bdc8',
 	);
 
 	/**
@@ -186,6 +188,8 @@ final class JsCacheBustDriftTest extends TestCase {
 		'1.0.11.14' => 'd9a35b1982092d488db391ae2c584494be58f42453ba1d76c0180c9e0db3e9e2',
 		// Results-table cells carry data-label for the narrow-card labelled layout.
 		'1.0.11.15' => '072a841e2ac694b8dd9c7cb832d0532f51755358d73f41740ba1a1ede72b6c48',
+		// 1.9.7 — banner from the copy map; partial rows lead with the survivor; errored-page sentences.
+		'1.0.11.16' => '1f5d29e5278686ca6a0d8807b2d4bcf7a16e5293fb372910a5bad8c0641d8c0a',
 	);
 
 	private function root(): string {
