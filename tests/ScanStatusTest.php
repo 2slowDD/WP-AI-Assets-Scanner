@@ -219,6 +219,14 @@ final class ScanStatusTest extends TestCase {
         $r = DRSPEED_AIAS_Scan_Status::classify( [ 'status' => 'error', 'broken_devices' => [ [ 'device' => 'desktop', 'reason' => 'tier1_http_5xx' ], [ 'device' => 'mobile', 'reason' => 'tier1_http_5xx' ] ] ] );
         $this->assertSame( [ 'error', 'Error: site error (5xx)', 0 ], [ $r['class'], $r['label'], $r['credits'] ] );
     }
+    public function test_siteground_both_blocked_label_names_the_stack(): void {   // spec §3.2.4 / §3.3.3
+        $r = DRSPEED_AIAS_Scan_Status::classify( [ 'status' => 'error', 'broken_devices' => [ [ 'device' => 'desktop', 'reason' => 'tier1_zero_bytes', 'stack' => 'siteground' ], [ 'device' => 'mobile', 'reason' => 'tier1_zero_bytes', 'stack' => 'siteground' ] ] ] );
+        $this->assertSame( [ 'blocked', 'Blocked: SiteGround bot protection' ], [ $r['class'], $r['label'] ] );
+    }
+    public function test_siteground_one_device_partial_label_names_the_stack(): void {   // spec §3.2.4 / §3.3.3
+        $r = DRSPEED_AIAS_Scan_Status::classify( [ 'status' => 'done', 'broken_devices' => [ [ 'device' => 'desktop', 'reason' => 'tier1_zero_bytes', 'stack' => 'siteground' ] ] ] );
+        $this->assertSame( [ 'partial', 'Desktop not scanned: SiteGround bot protection', 'mobile' ], [ $r['class'], $r['label'], $r['survivor_device'] ] );
+    }
     public function test_error_status_with_one_bot_entry_takes_blocked_branch(): void {   // r2 m7 total table
         $r = DRSPEED_AIAS_Scan_Status::classify( [ 'status' => 'error', 'broken_devices' => [ [ 'device' => 'mobile', 'reason' => 'tier2_waf_challenge' ] ] ] );
         $this->assertSame( 'blocked', $r['class'] );

@@ -87,17 +87,17 @@ class DRSPEED_AIAS_Scan_Status {
 			if ( 'error' === $status ) {
 				// Both devices (or any blocked entry on an error page — total table, spec §3.2.4).
 				if ( null !== $bot ) {
-					return [ 'class' => 'blocked', 'label' => sprintf( /* translators: %s: short reason, e.g. "Cloudflare challenge" */ __( 'Blocked: %s', 'dr-speed-ai-assets-scanner' ), DRSPEED_AIAS_Broken_Banner::reason_phrase( (string) $bot['reason'] ) ), 'credits' => $credits, 'survivor_device' => '' ];
+					return [ 'class' => 'blocked', 'label' => sprintf( /* translators: %s: short reason, e.g. "Cloudflare challenge" */ __( 'Blocked: %s', 'dr-speed-ai-assets-scanner' ), DRSPEED_AIAS_Broken_Banner::entry_phrase( $bot ) ), 'credits' => $credits, 'survivor_device' => '' ];
 				}
 				$first = reset( $entries );
-				return [ 'class' => 'error', 'label' => sprintf( /* translators: %s: short reason the scan failed, e.g. "site error (5xx)" */ __( 'Error: %s', 'dr-speed-ai-assets-scanner' ), DRSPEED_AIAS_Broken_Banner::reason_phrase( (string) $first['reason'] ) ), 'credits' => $credits, 'survivor_device' => '' ];
+				return [ 'class' => 'error', 'label' => sprintf( /* translators: %s: short reason the scan failed, e.g. "site error (5xx)" */ __( 'Error: %s', 'dr-speed-ai-assets-scanner' ), DRSPEED_AIAS_Broken_Banner::entry_phrase( $first ) ), 'credits' => $credits, 'survivor_device' => '' ];
 			}
 			// status done + ≥1 blocked entry: the other device got through. Lead with it (spec §3.2.4, G3).
 			$device   = (string) array_key_first( $entries );
 			$survivor = isset( $entries['desktop'] ) ? ( isset( $entries['mobile'] ) ? '' : 'mobile' ) : 'desktop';
 			return [
 				'class'           => 'partial',
-				'label'           => sprintf( /* translators: 1: device name (Desktop/Mobile), 2: short reason */ __( '%1$s not scanned: %2$s', 'dr-speed-ai-assets-scanner' ), ucfirst( $device ), DRSPEED_AIAS_Broken_Banner::reason_phrase( (string) $entries[ $device ]['reason'] ) ),
+				'label'           => sprintf( /* translators: 1: device name (Desktop/Mobile), 2: short reason */ __( '%1$s not scanned: %2$s', 'dr-speed-ai-assets-scanner' ), ucfirst( $device ), DRSPEED_AIAS_Broken_Banner::entry_phrase( $entries[ $device ] ) ),
 				'credits'         => $credits,
 				'survivor_device' => $survivor,
 			];

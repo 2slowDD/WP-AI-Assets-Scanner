@@ -270,6 +270,42 @@ class DRSPEED_AIAS_Broken_Banner {
 	}
 
 	/**
+	 * Phrases for security stacks the worker names on a blocked entry (spec §3.3.3).
+	 * Keys are members of DRSPEED_AIAS_Scan_Status::STACKS; a stack with no phrase
+	 * here keeps its entry's reason phrase. Plain __() text — exported verbatim by
+	 * export_copy_map()['stack_phrases'] and escaped by entry_phrase().
+	 *
+	 * @return array<string,string>
+	 */
+	private static function stack_phrases(): array {
+		return [
+			'siteground' => __( 'SiteGround bot protection', 'dr-speed-ai-assets-scanner' ),
+		];
+	}
+
+	/**
+	 * Human-readable phrase for ONE blocked entry: the stack's phrase when the
+	 * (allowlisted) stack has one, else the reason phrase. Same contract as
+	 * reason_phrase(): the return value is HTML-escaped.
+	 *
+	 * UNTRUSTED INPUT: $entry is a broken_devices entry from the Railway response.
+	 * `stack` passes the Scan_Status::stack_of() allowlist and only selects a
+	 * hardcoded string; `reason` goes through reason_phrase(), which escapes
+	 * unknown keys. A non-string reason degrades to ''.
+	 *
+	 * @param array $entry One broken_devices entry: { device, reason, stack? }.
+	 */
+	public static function entry_phrase( array $entry ): string {
+		$stack_phrases = self::stack_phrases();
+		$stack         = DRSPEED_AIAS_Scan_Status::stack_of( $entry );
+		if ( isset( $stack_phrases[ $stack ] ) ) {
+			return esc_html( $stack_phrases[ $stack ] );
+		}
+		$reason = $entry['reason'] ?? '';
+		return self::reason_phrase( is_string( $reason ) ? $reason : '' );
+	}
+
+	/**
 	 * FU-ANTIBLOCK-1 — one actionable remediation line per blocked-reason key.
 	 * PLAIN TEXT ONLY (spec Rev 2 §3.1 / d-review M1): no HTML here — settings
 	 * links travel separately via export_copy_map()['settings_url'] and are
@@ -283,7 +319,7 @@ class DRSPEED_AIAS_Broken_Banner {
 			case 'tier2_rocket_loader_stub':
 				return __( 'Cloudflare Rocket Loader served a stub page to the scanner. The WAF exemption rule in AI Assets Scanner settings also skips this.', 'dr-speed-ai-assets-scanner' );
 			case 'tier1_http_rate_limit':
-				return __( 'Your server rate-limited the scanner. The rules from the unblocked device (if any) are complete and safe to apply. Wait a few minutes between scans, or temporarily raise rate limits during scans. Behind Cloudflare or another CDN: set up the scanner exemption in AI Assets Scanner settings.', 'dr-speed-ai-assets-scanner' );
+				return __( 'Your server rate-limited the scanner. Wait a few minutes between scans, or temporarily raise rate limits during scans. Behind Cloudflare or another CDN: set up the scanner exemption in AI Assets Scanner settings.', 'dr-speed-ai-assets-scanner' );
 			case 'tier2_akamai_challenge':
 				return __( 'Akamai Bot Manager blocked the scan. Ask your CDN admin to allowlist requests carrying the x-cu-scanner header (value: your Scanner Secret, shown in AI Assets Scanner settings).', 'dr-speed-ai-assets-scanner' );
 			case 'tier2_imperva_challenge':
@@ -320,6 +356,27 @@ class DRSPEED_AIAS_Broken_Banner {
 	 * Everything here is plugin-authored plain text (unescaped __()), zero HTML,
 	 * zero secrets. scanner.js DOM-builds the settings anchor from settings_url
 	 * for the keys in settings_link_keys.
+	 *
+	 * Errored-page copy spec §3.3.4: this map is the ONE source of every banner
+	 * sentence — heading, dismiss, device words, blocked sentences, action
+	 * clauses, survivor tail, errored sentences, partial-row line 1, stack
+	 * phrases. scanner.js › renderBrokenBanner() and the PHP render() twin
+	 * assemble from it. The link sentences (action.*_link*) carry NO markup: the
+	 * trailing words "open AI Assets Scanner settings" are the anchor text, and
+	 * each consumer wraps that phrase in an <a href=settings_url> it builds itself.
+	 * Translations are third-party text: consumers escape every value before an
+	 * HTML sink.
+	 *
+	 * Serialised shape: errored[kind] is a 2-element LIST [singular, plural]
+	 * (a JSON array); settings_link_keys is a list of reason keys (a JSON array);
+	 * every other sub-map is an associative array (a JSON object).
+	 *
+	 * Plural mechanism (spec §3.3.2 (a)): each errored kind exports
+	 * _n( s, p, 1 ) and _n( s, p, 2 ); consumers pick [0] iff count === 1. The
+	 * literal pair is written inline at both calls so gettext extraction
+	 * (wp i18n make-pot) and the WPCS I18n sniff see literals — a wrapper taking
+	 * the strings as variables would leave them out of the POT. Known limitation:
+	 * locales with three or more plural forms get this two-form approximation.
 	 */
 	public static function export_copy_map(): array {
 		$keys = [
@@ -354,6 +411,80 @@ class DRSPEED_AIAS_Broken_Banner {
 			'categories'         => $categories,
 			'settings_url'       => esc_url( admin_url( 'admin.php?page=drspeed-aias-settings#cu-cloudflare-waf-bypass' ) ),
 			'settings_link_keys' => [ 'tier2_cf_challenge', 'tier2_rocket_loader_stub', 'tier1_http_rate_limit', 'tier2_waf_challenge', 'tier2_unknown_challenge' ],
+			'heading'            => __( 'Some pages couldn\'t be fully scanned', 'dr-speed-ai-assets-scanner' ),
+			'dismiss'            => __( 'Got it — don\'t show again for this scan', 'dr-speed-ai-assets-scanner' ),
+			'device'             => [
+				'Desktop' => __( 'Desktop', 'dr-speed-ai-assets-scanner' ),
+				'Mobile'  => __( 'Mobile', 'dr-speed-ai-assets-scanner' ),
+				'desktop' => __( 'desktop', 'dr-speed-ai-assets-scanner' ),
+				'mobile'  => __( 'mobile', 'dr-speed-ai-assets-scanner' ),
+			],
+			'blocked'            => [
+				/* translators: 1: blocked page count, 2: total page count */
+				'desktop' => __( 'Desktop scanner blocked on %1$d of %2$d pages.', 'dr-speed-ai-assets-scanner' ),
+				/* translators: 1: blocked page count, 2: total page count */
+				'mobile'  => __( 'Mobile scanner blocked on %1$d of %2$d pages.', 'dr-speed-ai-assets-scanner' ),
+			],
+			'action'             => [
+				/* translators: %1$s: device word (desktop/mobile), used twice */
+				'bot_one'           => __( 'Your bot protection denied the %1$s scanner. For %1$s rules too, temporarily disable bot protection during scans and re-scan.', 'dr-speed-ai-assets-scanner' ),
+				'bot_both'          => __( 'Your bot protection denied the scanner. For full coverage, temporarily disable bot protection during scans and re-scan.', 'dr-speed-ai-assets-scanner' ),
+				'bot_link'          => __( 'Behind Cloudflare or another CDN? Set up the scanner exemption so future scans aren\'t blocked — open AI Assets Scanner settings.', 'dr-speed-ai-assets-scanner' ),
+				'bot_link_rate'     => __( 'Behind Cloudflare or another CDN? Set up the scanner rate-limit exemption so future scans aren\'t throttled — open AI Assets Scanner settings.', 'dr-speed-ai-assets-scanner' ),
+				'error'             => __( 'Your server returned an error or didn\'t respond. Try again later, or check site health.', 'dr-speed-ai-assets-scanner' ),
+				'rate_cf'           => __( 'Cloudflare rate-limited the scan. Whoever manages your Cloudflare — you, your host, or your agency — needs to allowlist the scanner.', 'dr-speed-ai-assets-scanner' ),
+				'rate_cf_link'      => __( 'If you manage the Cloudflare account yourself, set up the one-time scanner exemption — open AI Assets Scanner settings.', 'dr-speed-ai-assets-scanner' ),
+				'rate_host'         => __( "Your host's server rate-limited the scan. A CDN or WAF exemption will not help here. Wait a few minutes between scans, or ask your host to raise the rate limit during scans.", 'dr-speed-ai-assets-scanner' ),
+				'rate_unknown'      => __( 'The scan was rate-limited. Wait a few minutes between scans.', 'dr-speed-ai-assets-scanner' ),
+				'rate_unknown_link' => __( 'If a CDN or WAF sits in front of your site, ask whoever manages it to allowlist the scanner; otherwise check your own server\'s rate limits — open AI Assets Scanner settings.', 'dr-speed-ai-assets-scanner' ),
+				'siteground'        => __( 'SiteGround\'s bot protection denied the scanner. Turn off the anti-bot protection in SiteGround Site Tools while the scan runs, or ask SiteGround support to allow the scanner, then re-scan.', 'dr-speed-ai-assets-scanner' ),
+			],
+			'tail'               => [
+				'push'     => __( 'Rules from the device that got through are ready to Push or Sync.', 'dr-speed-ai-assets-scanner' ),
+				'download' => __( 'Rules from the device that got through are ready to download.', 'dr-speed-ai-assets-scanner' ),
+			],
+			// Each kind: [ singular, plural ] — see "Plural mechanism" above.
+			'errored'            => [
+				'page_time_limit' => [
+					/* translators: %d: page count */
+					_n( '%d page hit the scanner\'s time limit and wasn\'t finished. Re-scan it later.', '%d pages hit the scanner\'s time limit and weren\'t finished. Re-scan them later.', 1, 'dr-speed-ai-assets-scanner' ),
+					/* translators: %d: page count */
+					_n( '%d page hit the scanner\'s time limit and wasn\'t finished. Re-scan it later.', '%d pages hit the scanner\'s time limit and weren\'t finished. Re-scan them later.', 2, 'dr-speed-ai-assets-scanner' ),
+				],
+				'analysis_failed' => [
+					/* translators: %d: page count */
+					_n( '%d page wasn\'t finished (scanner error). Re-scan it later.', '%d pages weren\'t finished (scanner error). Re-scan them later.', 1, 'dr-speed-ai-assets-scanner' ),
+					/* translators: %d: page count */
+					_n( '%d page wasn\'t finished (scanner error). Re-scan it later.', '%d pages weren\'t finished (scanner error). Re-scan them later.', 2, 'dr-speed-ai-assets-scanner' ),
+				],
+				'off_site'        => [
+					/* translators: %d: page count */
+					_n( '%d page wasn\'t scanned: free keys cover your own site only.', '%d pages weren\'t scanned: free keys cover your own site only.', 1, 'dr-speed-ai-assets-scanner' ),
+					/* translators: %d: page count */
+					_n( '%d page wasn\'t scanned: free keys cover your own site only.', '%d pages weren\'t scanned: free keys cover your own site only.', 2, 'dr-speed-ai-assets-scanner' ),
+				],
+				'extra_time_lost' => [
+					/* translators: %d: page count */
+					_n( 'Extra Time for %d page couldn\'t be completed and wasn\'t charged. Re-scan it later.', 'Extra Time for %d pages couldn\'t be completed and wasn\'t charged. Re-scan them later.', 1, 'dr-speed-ai-assets-scanner' ),
+					/* translators: %d: page count */
+					_n( 'Extra Time for %d page couldn\'t be completed and wasn\'t charged. Re-scan it later.', 'Extra Time for %d pages couldn\'t be completed and wasn\'t charged. Re-scan them later.', 2, 'dr-speed-ai-assets-scanner' ),
+				],
+				'unknown'         => [
+					/* translators: %d: page count */
+					_n( '%d page couldn\'t be finished. Re-scan it later.', '%d pages couldn\'t be finished. Re-scan them later.', 1, 'dr-speed-ai-assets-scanner' ),
+					/* translators: %d: page count */
+					_n( '%d page couldn\'t be finished. Re-scan it later.', '%d pages couldn\'t be finished. Re-scan them later.', 2, 'dr-speed-ai-assets-scanner' ),
+				],
+			],
+			'partial_row'        => [
+				/* translators: %s: device word (Desktop/Mobile) */
+				'push'     => __( '✓ %s rules ready to Push/Sync', 'dr-speed-ai-assets-scanner' ),
+				/* translators: %s: device word (Desktop/Mobile) */
+				'download' => __( '✓ %s rules ready to download', 'dr-speed-ai-assets-scanner' ),
+				/* translators: %s: device word (Desktop/Mobile) */
+				'none'     => __( '✓ %s: no unloads found', 'dr-speed-ai-assets-scanner' ),
+			],
+			'stack_phrases'      => self::stack_phrases(),
 		];
 	}
 
