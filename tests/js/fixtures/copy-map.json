@@ -1,0 +1,111 @@
+{
+    "phrases": {
+        "tier2_cf_challenge": "Cloudflare challenge",
+        "tier2_akamai_challenge": "Akamai Bot Manager",
+        "tier2_imperva_challenge": "Imperva WAF",
+        "tier2_waf_challenge": "firewall\/WAF",
+        "tier2_unknown_challenge": "bot\/firewall protection (unidentified)",
+        "tier2_rocket_loader_stub": "Cloudflare Rocket-Loader stub",
+        "tier2_small_body": "asymmetric stub response",
+        "tier1_zero_bytes": "empty response",
+        "tier1_http_4xx": "site denial (4xx)",
+        "tier1_http_5xx": "site error (5xx)",
+        "tier1_http_rate_limit": "rate limit (429)",
+        "tier1_transport_error": "unreachable"
+    },
+    "remediation": {
+        "tier2_cf_challenge": "Cloudflare bot protection challenged the scanner. Set up the one-time WAF exemption in AI Assets Scanner settings. Free Cloudflare plan: also turn Bot Fight Mode off during scans (a Skip rule cannot bypass it). Alternative rule key for admins: skip on query strings containing cu_scan_token.",
+        "tier2_akamai_challenge": "Akamai Bot Manager blocked the scan. Ask your CDN admin to allowlist requests carrying the x-cu-scanner header (value: your Scanner Secret, shown in AI Assets Scanner settings).",
+        "tier2_imperva_challenge": "Imperva\/Incapsula blocked the scan. Ask your security admin to allowlist requests carrying the x-cu-scanner header (value: your Scanner Secret, shown in AI Assets Scanner settings).",
+        "tier2_waf_challenge": "A firewall\/WAF challenged the scanner. Wordfence: enable Learning Mode during scans, or allowlist the scanner. Behind a CDN: set up the exemption in AI Assets Scanner settings.",
+        "tier2_unknown_challenge": "Unidentified bot protection denied the scanner. Try the CDN exemption in AI Assets Scanner settings, or temporarily disable bot protection during scans.",
+        "tier2_rocket_loader_stub": "Cloudflare Rocket Loader served a stub page to the scanner. The WAF exemption rule in AI Assets Scanner settings also skips this.",
+        "tier2_small_body": "The site served a reduced page to the scanner (likely bot protection). Set up the CDN exemption in AI Assets Scanner settings, or temporarily disable bot protection during scans.",
+        "tier1_zero_bytes": "Empty response. Check your host\/WAF security logs for blocked requests, then re-scan.",
+        "tier1_http_4xx": "The site denied the request. Check security-plugin blocklists or IP bans — allowlist by the x-cu-scanner header, not by IP (scanner IPs change).",
+        "tier1_http_5xx": "The server errored. Re-scan later; if persistent, check site health and host status.",
+        "tier1_http_rate_limit": "Your server rate-limited the scanner. Wait a few minutes between scans, or temporarily raise rate limits during scans. Behind Cloudflare or another CDN: set up the scanner exemption in AI Assets Scanner settings.",
+        "tier1_transport_error": "The site was unreachable (DNS\/TLS\/timeout). Verify the URL loads from outside your network, then re-scan."
+    },
+    "categories": {
+        "tier2_cf_challenge": "bot",
+        "tier2_akamai_challenge": "bot",
+        "tier2_imperva_challenge": "bot",
+        "tier2_waf_challenge": "bot",
+        "tier2_unknown_challenge": "bot",
+        "tier2_rocket_loader_stub": "bot",
+        "tier2_small_body": "bot",
+        "tier1_zero_bytes": "bot",
+        "tier1_http_4xx": "error",
+        "tier1_http_5xx": "error",
+        "tier1_http_rate_limit": "rate",
+        "tier1_transport_error": "error"
+    },
+    "settings_url": "admin.php?page=drspeed-aias-settings#cu-cloudflare-waf-bypass",
+    "settings_link_keys": [
+        "tier2_cf_challenge",
+        "tier2_rocket_loader_stub",
+        "tier1_http_rate_limit",
+        "tier2_waf_challenge",
+        "tier2_unknown_challenge"
+    ],
+    "heading": "Some pages couldn't be fully scanned",
+    "dismiss": "Got it — don't show again for this scan",
+    "device": {
+        "Desktop": "Desktop",
+        "Mobile": "Mobile",
+        "desktop": "desktop",
+        "mobile": "mobile"
+    },
+    "blocked": {
+        "desktop": "Desktop scanner blocked on %1$d of %2$d pages.",
+        "mobile": "Mobile scanner blocked on %1$d of %2$d pages."
+    },
+    "action": {
+        "bot_one": "Your bot protection denied the %1$s scanner. For %1$s rules too, temporarily disable bot protection during scans and re-scan.",
+        "bot_both": "Your bot protection denied the scanner. For full coverage, temporarily disable bot protection during scans and re-scan.",
+        "bot_link": "Behind Cloudflare or another CDN? Set up the scanner exemption so future scans aren't blocked — open AI Assets Scanner settings.",
+        "bot_link_rate": "Behind Cloudflare or another CDN? Set up the scanner rate-limit exemption so future scans aren't throttled — open AI Assets Scanner settings.",
+        "error": "Your server returned an error or didn't respond. Try again later, or check site health.",
+        "rate_cf": "Cloudflare rate-limited the scan. Whoever manages your Cloudflare — you, your host, or your agency — needs to allowlist the scanner.",
+        "rate_cf_link": "If you manage the Cloudflare account yourself, set up the one-time scanner exemption — open AI Assets Scanner settings.",
+        "rate_host": "Your host's server rate-limited the scan. A CDN or WAF exemption will not help here. Wait a few minutes between scans, or ask your host to raise the rate limit during scans.",
+        "rate_unknown": "The scan was rate-limited. Wait a few minutes between scans.",
+        "rate_unknown_link": "If a CDN or WAF sits in front of your site, ask whoever manages it to allowlist the scanner; otherwise check your own server's rate limits — open AI Assets Scanner settings.",
+        "siteground": "SiteGround's bot protection denied the scanner. Turn off the anti-bot protection in SiteGround Site Tools while the scan runs, or ask SiteGround support to allow the scanner, then re-scan."
+    },
+    "tail": {
+        "push": "Rules from the device that got through are ready to Push or Sync.",
+        "download": "Rules from the device that got through are ready to download."
+    },
+    "errored": {
+        "page_time_limit": [
+            "%d page hit the scanner's time limit and wasn't finished. Re-scan it later.",
+            "%d pages hit the scanner's time limit and weren't finished. Re-scan them later."
+        ],
+        "analysis_failed": [
+            "%d page wasn't finished (scanner error). Re-scan it later.",
+            "%d pages weren't finished (scanner error). Re-scan them later."
+        ],
+        "off_site": [
+            "%d page wasn't scanned: free keys cover your own site only.",
+            "%d pages weren't scanned: free keys cover your own site only."
+        ],
+        "extra_time_lost": [
+            "Extra Time for %d page couldn't be completed and wasn't charged. Re-scan it later.",
+            "Extra Time for %d pages couldn't be completed and wasn't charged. Re-scan them later."
+        ],
+        "unknown": [
+            "%d page couldn't be finished. Re-scan it later.",
+            "%d pages couldn't be finished. Re-scan them later."
+        ]
+    },
+    "partial_row": {
+        "push": "✓ %s rules ready to Push\/Sync",
+        "download": "✓ %s rules ready to download",
+        "none": "✓ %s: no unloads found"
+    },
+    "stack_phrases": {
+        "siteground": "SiteGround bot protection"
+    }
+}

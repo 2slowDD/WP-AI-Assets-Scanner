@@ -2124,11 +2124,15 @@
                     scan_id:         d.scan_id          || '',
                     pages_blocked:   d.pages_blocked    || { desktop: 0, mobile: 0 },
                     blocked_reasons: d.blocked_reasons  || {},
+                    blocked_stacks:  d.blocked_stacks   || {},
+                    pages_errored:   d.pages_errored    || { count: 0, reasons: {} },
+                    pages_one_device:            Number(d.pages_one_device) || 0,
+                    pages_one_device_with_rules: Number(d.pages_one_device_with_rules) || 0,
                     total_pages:     d.total_pages      || 0,
                     // T0-C: this object is a whitelist projection of `d` - a field absent
                     // here never reaches renderBrokenBanner, however well-formed the PHP
                     // payload is. Carries who rate-limited the scan; '' degrades to the
-                    // 'unknown' copy variant via the allowlist in renderBrokenBanner().
+                    // 'unknown' copy variant via the allowlist in bannerActionSentence().
                     rate_limit_attribution: d.rate_limit_attribution || '',
                 };
                 restoreStep4({
@@ -3544,107 +3548,333 @@
         }
     }
 
+    // Errored-page copy spec §3.3.4 — English fallback for every banner string,
+    // verbatim from DRSPEED_AIAS_Broken_Banner::export_copy_map() (the PHP map is the
+    // source; tests/js/banner-errored.test.js fails when the two drift). Used per key
+    // by mergeDefaults() when drspeedAiasReasonCopy is absent or lacks a key.
+    const BANNER_COPY_DEFAULTS = {
+        heading: 'Some pages couldn\'t be fully scanned',
+        dismiss: 'Got it — don\'t show again for this scan',
+        settings_url: 'admin.php?page=drspeed-aias-settings#cu-cloudflare-waf-bypass',
+        device: {
+            Desktop: 'Desktop',
+            Mobile: 'Mobile',
+            desktop: 'desktop',
+            mobile: 'mobile',
+        },
+        blocked: {
+            desktop: 'Desktop scanner blocked on %1$d of %2$d pages.',
+            mobile: 'Mobile scanner blocked on %1$d of %2$d pages.',
+        },
+        action: {
+            bot_one: 'Your bot protection denied the %1$s scanner. For %1$s rules too, temporarily disable bot protection during scans and re-scan.',
+            bot_both: 'Your bot protection denied the scanner. For full coverage, temporarily disable bot protection during scans and re-scan.',
+            bot_link: 'Behind Cloudflare or another CDN? Set up the scanner exemption so future scans aren\'t blocked — open AI Assets Scanner settings.',
+            bot_link_rate: 'Behind Cloudflare or another CDN? Set up the scanner rate-limit exemption so future scans aren\'t throttled — open AI Assets Scanner settings.',
+            error: 'Your server returned an error or didn\'t respond. Try again later, or check site health.',
+            rate_cf: 'Cloudflare rate-limited the scan. Whoever manages your Cloudflare — you, your host, or your agency — needs to allowlist the scanner.',
+            rate_cf_link: 'If you manage the Cloudflare account yourself, set up the one-time scanner exemption — open AI Assets Scanner settings.',
+            rate_host: 'Your host\'s server rate-limited the scan. A CDN or WAF exemption will not help here. Wait a few minutes between scans, or ask your host to raise the rate limit during scans.',
+            rate_unknown: 'The scan was rate-limited. Wait a few minutes between scans.',
+            rate_unknown_link: 'If a CDN or WAF sits in front of your site, ask whoever manages it to allowlist the scanner; otherwise check your own server\'s rate limits — open AI Assets Scanner settings.',
+            siteground: 'SiteGround\'s bot protection denied the scanner. Turn off the anti-bot protection in SiteGround Site Tools while the scan runs, or ask SiteGround support to allow the scanner, then re-scan.',
+        },
+        tail: {
+            push: 'Rules from the device that got through are ready to Push or Sync.',
+            download: 'Rules from the device that got through are ready to download.',
+        },
+        // Each kind: [ singular, plural ]; the banner picks [0] iff count === 1.
+        errored: {
+            page_time_limit: [
+                '%d page hit the scanner\'s time limit and wasn\'t finished. Re-scan it later.',
+                '%d pages hit the scanner\'s time limit and weren\'t finished. Re-scan them later.',
+            ],
+            analysis_failed: [
+                '%d page wasn\'t finished (scanner error). Re-scan it later.',
+                '%d pages weren\'t finished (scanner error). Re-scan them later.',
+            ],
+            off_site: [
+                '%d page wasn\'t scanned: free keys cover your own site only.',
+                '%d pages weren\'t scanned: free keys cover your own site only.',
+            ],
+            extra_time_lost: [
+                'Extra Time for %d page couldn\'t be completed and wasn\'t charged. Re-scan it later.',
+                'Extra Time for %d pages couldn\'t be completed and wasn\'t charged. Re-scan them later.',
+            ],
+            unknown: [
+                '%d page couldn\'t be finished. Re-scan it later.',
+                '%d pages couldn\'t be finished. Re-scan them later.',
+            ],
+        },
+        partial_row: {
+            push: '✓ %s rules ready to Push/Sync',
+            download: '✓ %s rules ready to download',
+            none: '✓ %s: no unloads found',
+        },
+        stack_phrases: {
+            siteground: 'SiteGround bot protection',
+        },
+        phrases: {
+            tier2_cf_challenge: 'Cloudflare challenge',
+            tier2_akamai_challenge: 'Akamai Bot Manager',
+            tier2_imperva_challenge: 'Imperva WAF',
+            tier2_waf_challenge: 'firewall/WAF',
+            tier2_unknown_challenge: 'bot/firewall protection (unidentified)',
+            tier2_rocket_loader_stub: 'Cloudflare Rocket-Loader stub',
+            tier2_small_body: 'asymmetric stub response',
+            tier1_zero_bytes: 'empty response',
+            tier1_http_4xx: 'site denial (4xx)',
+            tier1_http_5xx: 'site error (5xx)',
+            tier1_http_rate_limit: 'rate limit (429)',
+            tier1_transport_error: 'unreachable',
+        },
+        categories: {
+            tier2_cf_challenge: 'bot',
+            tier2_akamai_challenge: 'bot',
+            tier2_imperva_challenge: 'bot',
+            tier2_waf_challenge: 'bot',
+            tier2_unknown_challenge: 'bot',
+            tier2_rocket_loader_stub: 'bot',
+            tier2_small_body: 'bot',
+            tier1_zero_bytes: 'bot',
+            tier1_http_4xx: 'error',
+            tier1_http_5xx: 'error',
+            tier1_http_rate_limit: 'rate',
+            tier1_transport_error: 'error',
+        },
+    };
+
+    // The words of each action.*_link* sentence that become the settings anchor.
+    // A match key, never shown on its own. Mirrors
+    // DRSPEED_AIAS_Broken_Banner::SETTINGS_ANCHOR — keep the two in sync.
+    const BANNER_SETTINGS_ANCHOR = 'open AI Assets Scanner settings';
+
+    // T0-C — the worker's rate-limit `attribution` enum. Mirrors
+    // DRSPEED_AIAS_Broken_Banner::ATTRIBUTION_ALLOWED — keep the two in sync.
+    const ATTR_ALLOWED = ['cloudflare', 'akamai', 'imperva', 'waf', 'host', 'unknown'];
+
     /**
-     * Renders a dismissable warning banner in #cu-banner-area when any pages
-     * were blocked during the scan. Noop when bannerData is absent/zeroed.
+     * The localized copy map with English defaults filled in PER KEY, one level deep:
+     * a sub-object key that is missing (or not a string / not a [singular, plural]
+     * pair of strings) falls back to its own default alone, so a partial translation
+     * never renders "undefined". A sub-map PHP serialised as [] reads as empty.
+     */
+    function mergeDefaults( def, given ) {
+        const src = ( given && typeof given === 'object' ) ? given : {};
+        const out = {};
+        Object.keys( def ).forEach( function ( k ) {
+            if ( typeof def[k] === 'string' ) {
+                out[k] = typeof src[k] === 'string' ? src[k] : def[k];
+                return;
+            }
+            const sub = ( src[k] && typeof src[k] === 'object' ) ? src[k] : {};
+            out[k] = Object.assign( {}, def[k] );
+            Object.keys( sub ).forEach( function ( sk ) {
+                const v = sub[sk];
+                const ok = k === 'errored'
+                    ? ( Array.isArray( v ) && typeof v[0] === 'string' && typeof v[1] === 'string' )
+                    : typeof v === 'string';
+                if ( ok ) out[k][sk] = v;
+            } );
+        } );
+        return out;
+    }
+
+    // A map string, HTML-escaped (translations are third-party text). Non-strings → ''.
+    function S( s ) {
+        return esc( typeof s === 'string' ? s : '' );
+    }
+
+    // PHP sprintf() subset for map strings: %1$s / %2$d positional, %s / %d in order,
+    // %% a literal percent. Runs on an ALREADY-ESCAPED template with already-escaped
+    // (or numeric) args, which equals PHP's esc_html( sprintf( ... ) ): escaping never
+    // touches a placeholder. %d of a non-number is 0, as in PHP.
+    function fmt( tpl, args ) {
+        let next = 0;
+        return tpl.replace( /%%|%(?:(\d+)\$)?([sd])/g, function ( m, pos, type ) {
+            if ( m === '%%' ) return '%';
+            const v = args[ pos ? Number( pos ) - 1 : next++ ];
+            if ( v === undefined ) return '';
+            return type === 'd' ? String( parseInt( v, 10 ) || 0 ) : String( v );
+        } );
+    }
+
+    // Escapes a map link sentence and wraps its LAST occurrence of the anchor words in
+    // the settings link — the only markup the banner adds. A translation without the
+    // anchor words stays plain escaped text (as PHP linkify()).
+    function linkify( sentence, url ) {
+        const html   = S( sentence );
+        const anchor = esc( BANNER_SETTINGS_ANCHOR );
+        const at     = html.lastIndexOf( anchor );
+        if ( at === -1 ) return html;
+        return html.slice( 0, at ) + '<a href="' + esc( url ) + '">' + anchor + '</a>' + html.slice( at + anchor.length );
+    }
+
+    // A worker-supplied count, as PHP count_of(): numeric → non-negative int, else 0.
+    function countOf( v ) {
+        if ( typeof v === 'string' && /^\s*[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?\s*$/.test( v ) ) v = Number( v );
+        return ( typeof v === 'number' && isFinite( v ) ) ? Math.max( 0, Math.trunc( v ) ) : 0;
+    }
+
+    // A worker-supplied sub-map: any object (PHP serialises an empty map as []), else {}.
+    function subMap( v ) {
+        return ( v && typeof v === 'object' ) ? v : {};
+    }
+
+    // own( map, key ): the map's OWN value for a worker-supplied key, else undefined —
+    // so a key like "constructor" never reads Object.prototype.
+    function own( obj, key ) {
+        return Object.prototype.hasOwnProperty.call( obj, key ) ? obj[key] : undefined;
+    }
+
+    /**
+     * Banner body — the JS twin of DRSPEED_AIAS_Broken_Banner::compose_body(), branch
+     * for branch, and must produce the same words for the same inputs (parity pinned
+     * in tests/js/banner-errored.test.js). Order: blocked sentence(s) + reason clause
+     * → action → survivor tail → errored sentence(s).
+     *
+     * UNTRUSTED INPUT: `bd` comes from the worker via build_result. Counts pass
+     * countOf(), sub-maps subMap(), keys only select map strings via own(); an unknown
+     * reason key shows as its own escaped text, an unknown errored kind reads as
+     * 'unknown'. Every string reaches the result through S()/linkify() (escaped);
+     * the settings anchor is the only markup.
+     *
+     * @param {Object} bd bannerData projection (see buildResult()).
+     * @param {Object} M  mergeDefaults( BANNER_COPY_DEFAULTS, drspeedAiasReasonCopy ).
+     * @return {string} HTML.
+     */
+    function composeBannerBody( bd, M ) {
+        const blocked   = subMap( bd.pages_blocked );
+        const errored   = subMap( bd.pages_errored );
+        const total     = countOf( bd.total_pages );
+        const sg        = countOf( own( subMap( bd.blocked_stacks ), 'siteground' ) );
+        const perDevice = { desktop: countOf( blocked.desktop ), mobile: countOf( blocked.mobile ) };
+        const rawReasons = subMap( bd.blocked_reasons );
+        const reasons   = [];   // [{ key, n }] in payload order, positive counts only
+        Object.keys( rawReasons ).forEach( function ( key ) {
+            const n = countOf( rawReasons[key] );
+            if ( n > 0 ) reasons.push( { key: key, n: n } );
+        } );
+        const parts = [];
+
+        // 1. Blocked sentences + reason clause, then 2. the action clause. No blocked
+        // page → neither, so an errored-only scan never mentions blocking or the server.
+        const sentences = [];
+        ['desktop', 'mobile'].forEach( function ( device ) {
+            if ( perDevice[device] > 0 ) sentences.push( fmt( S( M.blocked[device] ), [perDevice[device], total] ) );
+        } );
+        if ( sentences.length ) {
+            const phrases = reasons.map( function ( r ) {
+                const p = own( M.phrases, r.key );
+                return p === undefined ? r.key : p;
+            } );
+            // Spec §3.3.3: every empty response came from SiteGround → its phrase REPLACES
+            // "empty response"; some other entry is SiteGround's → ADD the phrase.
+            const sgPhrase = own( M.stack_phrases, 'siteground' );
+            if ( sg > 0 && sgPhrase !== undefined ) {
+                const zi = reasons.findIndex( function ( r ) { return r.key === 'tier1_zero_bytes'; } );
+                if ( zi !== -1 && sg === reasons[zi].n ) {
+                    phrases[zi] = sgPhrase;
+                } else {
+                    phrases.push( sgPhrase );
+                }
+            }
+            const unique = phrases.filter( function ( p, i ) { return phrases.indexOf( p ) === i; } );
+            const reasonClause = unique.length ? ' (' + unique.map( S ).join( ', ' ) + ')' : '';
+
+            parts.push( sentences.join( ' ' ) + reasonClause );
+            parts.push( bannerActionSentence( perDevice, reasons, sg, bd.rate_limit_attribution, M ) );
+        }
+
+        // 3. Survivor tail: only when a one-device page left rules to apply. pushReady is
+        // set by the results page; until it is known the banner assumes Push/Sync.
+        if ( countOf( bd.pages_one_device_with_rules ) > 0 ) {
+            const pushReady = typeof cuUrlListState.pushReady === 'boolean' ? cuUrlListState.pushReady : true;
+            parts.push( S( pushReady ? M.tail.push : M.tail.download ) );
+        }
+
+        // 4. Errored sentences, in the map's kind order (independent of worker page order).
+        const rawKinds = subMap( errored.reasons );
+        const byKind   = Object.create( null );
+        Object.keys( rawKinds ).forEach( function ( kind ) {
+            const k = own( M.errored, kind ) !== undefined ? kind : 'unknown';
+            byKind[k] = ( byKind[k] || 0 ) + countOf( rawKinds[kind] );
+        } );
+        Object.keys( M.errored ).forEach( function ( kind ) {
+            const n = byKind[kind] || 0;
+            if ( n > 0 ) parts.push( fmt( S( M.errored[kind][ n === 1 ? 0 : 1 ] ), [n] ) );
+        } );
+
+        return parts.filter( function ( s ) { return s !== ''; } ).join( ' ' ).trim();
+    }
+
+    /**
+     * The action clause of composeBannerBody() — PHP action_sentence(), from the map
+     * only. SiteGround on every blocked entry → the SiteGround clause. Otherwise one
+     * remediation category → that category's clause; mixed categories fall back to the
+     * bot clause (naming the device when exactly one device was blocked).
+     */
+    function bannerActionSentence( perDevice, reasons, sg, rawAttr, M ) {
+        const A   = M.action;
+        const url = M.settings_url;
+        const sum = reasons.reduce( function ( s, r ) { return s + r.n; }, 0 );
+        if ( sg > 0 && sum === sg ) return S( A.siteground );
+
+        const categories = [];
+        reasons.forEach( function ( r ) {
+            const c = own( M.categories, r.key );
+            const cat = c === undefined ? 'bot' : c;
+            if ( categories.indexOf( cat ) === -1 ) categories.push( cat );
+        } );
+
+        if ( categories.length === 1 && categories[0] === 'rate' ) {
+            // T0-C — name the party that actually rate-limited the scan. The worker's
+            // `attribution` is UNTRUSTED: allowlisted, then used ONLY to pick a map
+            // sentence; it is never interpolated (wp-compliance Rules 1/27). The
+            // Cloudflare copy deliberately does NOT say "not your server" (a mixed scan
+            // resolves to cloudflare); the host copy has no settings link by design.
+            const attr = ATTR_ALLOWED.indexOf( rawAttr ) !== -1 ? rawAttr : 'unknown';
+            if ( attr === 'cloudflare' ) return S( A.rate_cf ) + ' ' + linkify( A.rate_cf_link, url );
+            if ( attr === 'host' ) return S( A.rate_host );
+            return S( A.rate_unknown ) + ' ' + linkify( A.rate_unknown_link, url );
+        }
+        if ( categories.length === 1 && categories[0] === 'error' ) return S( A.error );
+
+        const desktop = perDevice.desktop > 0;
+        const lead = ( desktop !== ( perDevice.mobile > 0 ) )
+            ? fmt( S( A.bot_one ), [S( M.device[ desktop ? 'desktop' : 'mobile' ] )] )
+            : S( A.bot_both );
+        // Mixed-with-rate: the rate-limit exemption sentence is the single settings link.
+        const link = categories.indexOf( 'rate' ) !== -1 ? A.bot_link_rate : A.bot_link;
+        return lead + ' ' + linkify( link, url );
+    }
+
+    /**
+     * Renders a dismissable warning banner in #cu-banner-area when any page was
+     * blocked or errored. Noop when bannerData is absent/zeroed. Every word comes from
+     * drspeedAiasReasonCopy (= export_copy_map()), English defaults per key.
      *
      * @param {{ scan_id?: string, pages_blocked?: {desktop:number,mobile:number},
-     *            blocked_reasons?: Object<string,number>, total_pages?: number }} bd
+     *            blocked_reasons?: Object<string,number>, blocked_stacks?: Object<string,number>,
+     *            pages_errored?: {count:number, reasons:Object<string,number>},
+     *            pages_one_device_with_rules?: number, rate_limit_attribution?: string,
+     *            total_pages?: number }} bd
      */
     function renderBrokenBanner( bd ) {
         const area = document.getElementById('cu-banner-area');
         if ( !area ) return;
         area.innerHTML = '';
 
-        const blockedD = (bd.pages_blocked && bd.pages_blocked.desktop) || 0;
-        const blockedM = (bd.pages_blocked && bd.pages_blocked.mobile)  || 0;
-        if ( blockedD + blockedM === 0 ) return;
+        const blocked = subMap( bd.pages_blocked );
+        if ( countOf( blocked.desktop ) + countOf( blocked.mobile ) + countOf( subMap( bd.pages_errored ).count ) === 0 ) return;
 
-        const scanId     = bd.scan_id    || '';
-        const total      = bd.total_pages || 0;
-        const reasons    = bd.blocked_reasons || {};
-
-        // Build copy.
-        const bits = [];
-        if ( blockedD > 0 ) bits.push( 'Desktop scanner blocked on ' + blockedD + ' of ' + total + ' pages.' );
-        if ( blockedM > 0 ) bits.push( 'Mobile scanner blocked on '  + blockedM + ' of ' + total + ' pages.' );
-
-        // FU-ANTIBLOCK-1 — copy comes from PHP single source (class-broken-banner.php
-        // export_copy_map via drspeedAiasReasonCopy). Defensive defaults keep the banner
-        // functional (raw keys) if localization is absent (AC-4).
-        const REASON_COPY = (typeof drspeedAiasReasonCopy === 'object' && drspeedAiasReasonCopy) || {};
-        const PHRASES     = REASON_COPY.phrases || {};
-        const CATEGORIES  = REASON_COPY.categories || {};
-        // PHP-side fallback key kept from the old literal:
-        if (!PHRASES.scan_errored) PHRASES.scan_errored = 'scan errored';
-        // scan_errored is PHP-side synthetic (class-scanner-ajax.php), not in the
-        // localized 12-key map - category was 'error' in the pre-dedup reasonCategory().
-        if (!CATEGORIES.scan_errored) CATEGORIES.scan_errored = 'error';
-        function reasonPhrase(k) { return PHRASES[k] || k; }
-        function reasonCategory(k) { return CATEGORIES[k] || 'bot'; }
-
-        const phrases = [...new Set( Object.keys(reasons).map( k => reasonPhrase(k) ) )];
-        const reasonClause = phrases.length ? ' (' + phrases.map(esc).join(', ') + ')' : '';
-
-        // Per-reason action copy — must match class-broken-banner.php
-        // (reason_category + action_clause, now sourced from drspeedAiasReasonCopy.categories
-        // instead of a duplicated local map/function). Mixed-category reasons fall
-        // back to the generic 'bot' clause, matching the PHP-side fallback.
-        const categories = [...new Set( Object.keys(reasons).map(reasonCategory) )];
-
-        // T0-C — name the party that actually rate-limited the scan. The worker's
-        // `attribution` is UNTRUSTED third-party input: allowlist it and use it ONLY
-        // to select one of three hardcoded strings. It is never interpolated into
-        // markup and never reaches innerHTML (wp-compliance Rules 1/27). Mirrors
-        // class-broken-banner.php normalize_attribution() + action_clause().
-        const ATTR_ALLOWED = ['cloudflare', 'akamai', 'imperva', 'waf', 'host', 'unknown'];
-        const rawAttr = bd.rate_limit_attribution;
-        const attr = ATTR_ALLOWED.indexOf(rawAttr) !== -1 ? rawAttr : 'unknown';
-
-        const TAIL = ' The rules from the unblocked device (if any) are complete and safe to apply.';
-
-        // `action` is escaped below, so it must stay markup-free; any anchor goes in
-        // cdnLink, which is concatenated raw. That forces the JS clause order to be
-        // fact -> tail -> link where action_clause() reads fact -> link -> tail: same
-        // wording and same three variants (AC-7), only the clause order differs.
-        // Every href below is a static, hardcoded, user-input-free admin-relative
-        // URL — safe to inline without esc().
-        let action;
-        let cdnLink = '';
-        if ( categories.length === 1 && categories[0] === 'rate' ) {
-            if ( attr === 'cloudflare' ) {
-                // Deliberately does NOT say "not your server": the PHP-side aggregator
-                // ranks cloudflare above host, so a mixed scan resolves here — denying
-                // the origin would be positively false for the origin-limited pages.
-                action  = 'Cloudflare rate-limited the scan. Whoever manages your Cloudflare — you, your host, or your agency — needs to allowlist the scanner.' + TAIL;
-                cdnLink = ' If you manage the Cloudflare account yourself, set up the one-time scanner exemption — <a href="admin.php?page=drspeed-aias-settings#cu-cloudflare-waf-bypass">open AI Assets Scanner settings</a>.';
-            } else if ( attr === 'host' ) {
-                // No settings link by design. The "will not help here" sentence is
-                // LOAD-BEARING: without it a user who already has a working CDN
-                // exemption concludes it is broken and re-does it. Do not trim it.
-                action = 'Your host\'s server rate-limited the scan. A CDN or WAF exemption will not help here. Wait a few minutes between scans, or ask your host to raise the rate limit during scans.' + TAIL;
-            } else {
-                action  = 'The scan was rate-limited. Wait a few minutes between scans.' + TAIL;
-                cdnLink = ' If a CDN or WAF sits in front of your site, ask whoever manages it to allowlist the scanner; otherwise check your own server\'s rate limits — <a href="admin.php?page=drspeed-aias-settings#cu-cloudflare-waf-bypass">open AI Assets Scanner settings</a>.';
-            }
-        } else if ( categories.length === 1 && categories[0] === 'error' ) {
-            action = 'Your server returned an error or didn\'t respond. The rules from the unblocked device (if any) are complete and safe to apply. Try again later, or check site health.';
-        } else {
-            action = 'Your bot protection denied the scanner. The rules from the unblocked device are complete and safe to apply. For full coverage, temporarily disable bot protection during scans.';
-            // Mixed rate+bot scan: keep the exemption pointer, but ownership-neutral —
-            // on client sites the CDN is frequently host- or agency-managed.
-            if ( categories.includes('rate') ) {
-                cdnLink = ' Behind Cloudflare or another CDN? Ask whoever manages it to allowlist the scanner — <a href="admin.php?page=drspeed-aias-settings#cu-cloudflare-waf-bypass">open AI Assets Scanner settings</a>.';
-            }
-        }
-
-        const copy = bits.map(esc).join(' ') + reasonClause + ' ' + esc(action);
+        const M = mergeDefaults( BANNER_COPY_DEFAULTS, typeof drspeedAiasReasonCopy === 'object' ? drspeedAiasReasonCopy : null );
 
         area.innerHTML =
-            '<div class="notice notice-warning inline drspeed-aias-broken-banner" data-scan-id="' + esc(scanId) + '">' +
-            '<p><strong>\u26a0 Some pages couldn\'t be fully scanned</strong></p>' +
-            '<p>' + copy + cdnLink + '</p>' +
-            '<p><button type="button" class="button drspeed-aias-dismiss-banner">Got it \u2014 don\'t show again for this scan</button></p>' +
+            '<div class="notice notice-warning inline drspeed-aias-broken-banner" data-scan-id="' + esc( bd.scan_id || '' ) + '">' +
+            '<p><strong>⚠ ' + S( M.heading ) + '</strong></p>' +
+            '<p>' + composeBannerBody( bd, M ) + '</p>' +
+            '<p><button type="button" class="button drspeed-aias-dismiss-banner">' + S( M.dismiss ) + '</button></p>' +
             '</div>';
     }
 
@@ -4269,6 +4499,7 @@
                         beginScanPolling: beginScanPolling,
                         positionHelpBox: positionHelpBox,
                         renderPartialBanner: renderPartialBanner, restoreStep4: restoreStep4,
+                        bannerCopyDefaults: BANNER_COPY_DEFAULTS,
                         showProbeOutcomeDialog: showProbeOutcomeDialog,
                         buildSummaryLine: buildSummaryLine, buildSummaryParts: buildSummaryParts,
                         buildSyncCopy: buildSyncCopy,

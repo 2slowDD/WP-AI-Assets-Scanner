@@ -23,6 +23,8 @@ function renderBannerWith(attribution) {
     pages_blocked: { desktop: 1, mobile: 0 },
     blocked_reasons: { tier1_http_rate_limit: 1 },
     rate_limit_attribution: attribution,
+    pages_one_device: 1,
+    pages_one_device_with_rules: 0,
     safe_count: 1,
     aggressive_count: 0,
     can_push: true,
