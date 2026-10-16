@@ -878,6 +878,51 @@ class ScannerAjax {
     }
 
     /**
+     * Banner fields from the worker page set (spec §3.2.2). ONE predicate for blocked vs errored —
+     * shared with the Step-4 row through DRSPEED_AIAS_Scan_Status. Replaces the FU-NEW-X-A fallback
+     * (2026-05-17), which counted every status==='error' page as blocked on both devices.
+     *
+     * @param array $pages_raw   Worker pages (untrusted; the helpers allowlist).
+     * @param array $by_page     CuJsonBuilder by_page, index-aligned with $pages_raw.
+     * @param array $all_already attribute_already_present()['all_already'], index-aligned.
+     */
+    public static function aggregate_banner_fields( array $pages_raw, array $by_page, array $all_already ): array {
+        $f = [
+            'pages_blocked'               => [ 'desktop' => 0, 'mobile' => 0 ],
+            'blocked_reasons'             => [],
+            'blocked_stacks'              => [],
+            'pages_errored'               => [ 'count' => 0, 'reasons' => [] ],
+            'pages_one_device'            => 0,
+            'pages_one_device_with_rules' => 0,
+        ];
+        foreach ( $pages_raw as $idx => $page ) {
+            if ( ! is_array( $page ) ) { continue; }
+            $entries = \DRSPEED_AIAS_Scan_Status::blocked_entries( $page );
+            if ( [] !== $entries ) {
+                foreach ( $entries as $device => $entry ) {
+                    $f['pages_blocked'][ $device ]++;
+                    $reason = (string) $entry['reason'];
+                    $f['blocked_reasons'][ $reason ] = ( $f['blocked_reasons'][ $reason ] ?? 0 ) + 1;
+                    $stack = \DRSPEED_AIAS_Scan_Status::stack_of( $entry );
+                    if ( '' !== $stack ) { $f['blocked_stacks'][ $stack ] = ( $f['blocked_stacks'][ $stack ] ?? 0 ) + 1; }
+                }
+                if ( 1 === count( $entries ) && 'done' === (string) ( $page['status'] ?? '' ) ) {
+                    $f['pages_one_device']++;
+                    $rules = (int) ( $by_page[ $idx ]['safe'] ?? 0 ) + (int) ( $by_page[ $idx ]['aggressive'] ?? 0 );
+                    if ( $rules > 0 && empty( $all_already[ $idx ] ) ) { $f['pages_one_device_with_rules']++; }
+                }
+                continue;
+            }
+            $kind = \DRSPEED_AIAS_Scan_Status::error_kind( $page );
+            if ( '' !== $kind ) {
+                $f['pages_errored']['count']++;
+                $f['pages_errored']['reasons'][ $kind ] = ( $f['pages_errored']['reasons'][ $kind ] ?? 0 ) + 1;
+            }
+        }
+        return $f;
+    }
+
+    /**
      * A1: reduce the rate-limited pages' attribution to a single source name.
      * PRESENCE-KEYED (R1): only entries that actually carry the `attribution` key count, so a
      * pre-worker-deploy result (no key) yields null → no notice (backward-safe / inert, AC-A5).
@@ -1552,59 +1597,11 @@ class ScannerAjax {
         ( new BypassManager() )->delete_all_tokens();
         delete_transient( 'drspeed_aias_job_' . get_current_user_id() );
 
-        // Compute pages_blocked + blocked_reasons from Railway status for Subsystem D-4 banner.
-        // Railway per-page shape (Task 8 / Subsystem D-1):
-        //   { url, status, assets, broken_devices?: [{device, is_broken, reason, http_status, body_bytes}] }
-        // broken_devices is an ARRAY inside the page object — NOT top-level 'device'/'blocked_reason' fields.
-        // Each entry represents one device (desktop or mobile) that was blocked.
-        $pages_blocked  = [ 'desktop' => 0, 'mobile' => 0 ];
-        $blocked_reasons = [];
-        $seen_blocked   = [ 'desktop' => [], 'mobile' => [] ]; // track per-device to count each page once
-        foreach ( $pages_raw as $page ) {
-            $broken_devices = is_array( $page['broken_devices'] ?? null ) ? $page['broken_devices'] : [];
-            foreach ( $broken_devices as $bd ) {
-                $device = (string) ( $bd['device'] ?? '' );
-                $reason = (string) ( $bd['reason'] ?? '' );
-                if ( $reason === '' ) {
-                    continue;
-                }
-                // Count each device blocked once per page (broken_devices can have at most one desktop + one mobile entry).
-                $page_url = (string) ( $page['url'] ?? '' );
-                if ( $device === 'mobile' ) {
-                    if ( ! isset( $seen_blocked['mobile'][ $page_url ] ) ) {
-                        $pages_blocked['mobile']++;
-                        $seen_blocked['mobile'][ $page_url ] = true;
-                    }
-                } elseif ( $device === 'desktop' ) {
-                    if ( ! isset( $seen_blocked['desktop'][ $page_url ] ) ) {
-                        $pages_blocked['desktop']++;
-                        $seen_blocked['desktop'][ $page_url ] = true;
-                    }
-                }
-                $blocked_reasons[ $reason ] = ( $blocked_reasons[ $reason ] ?? 0 ) + 1;
-            }
-        }
-
-        // FU-NEW-X-A (2026-05-17 PM late): defensive fallback for the Subsystem D-4 banner.
-        // Some scan-error paths populate `status: 'error'` on a page but DON'T populate
-        // `broken_devices` (e.g., analyzePage's outer catch at page-analyzer.js:893
-        // returns `{url, status:'error', assets:[]}` without broken_devices; certain
-        // pre-runPass failure modes also bypass the broken_devices construction).
-        // Without this fallback the banner silently disappears for external scans that
-        // errored — operator reported regression 2026-05-17 PM. When the broken_devices
-        // walk above yielded zero pages_blocked BUT some pages have `status === 'error'`,
-        // count those errored pages as blocked-on-both-devices with reason `scan_errored`
-        // (a synthetic reason for this fallback path; mapped to the 'error' action_clause
-        // category in scanner.js phraseMap + reasonCategory()).
-        if ( $pages_blocked['desktop'] === 0 && $pages_blocked['mobile'] === 0 ) {
-            foreach ( $pages_raw as $page ) {
-                if ( ( $page['status'] ?? '' ) === 'error' ) {
-                    $pages_blocked['desktop']++;
-                    $pages_blocked['mobile']++;
-                    $blocked_reasons['scan_errored'] = ( $blocked_reasons['scan_errored'] ?? 0 ) + 1;
-                }
-            }
-        }
+        // Banner fields — ONE fragment merged into BOTH payload writers below (spec §3.2.3).
+        $banner_fields = array_merge(
+            self::aggregate_banner_fields( $pages_raw, $cu_json['by_page'] ?? [], $attribution['all_already'] ?? [] ),
+            [ 'rate_limit_attribution' => $rate_limit_attribution ]
+        );
 
         // 12-char scan_id for display: matches the SaaS/Railway canonical id (they
         // truncate the 16-char submit-time scan_id to 12). Bug-fix (1.5.4).
@@ -1750,7 +1747,7 @@ class ScannerAjax {
             // above already carry the cancel-aware credits baked in; RESTORE replays
             // them verbatim (drspeed_aias_last_result → get_badge_state → JS restore).
             'terminal_source' => $terminal_source,
-        ], $kept_field ), false );
+        ], $kept_field, $banner_fields ), false );
 
         return array_merge( [
             'safe_count'       => $safe_count,
@@ -1768,16 +1765,9 @@ class ScannerAjax {
             'apply_safe_count'       => $apply_counts['safe'],
             'apply_aggressive_count' => $apply_counts['aggressive'],
             'scan_id'          => $scan_id_display,
-            'pages_blocked'    => $pages_blocked,
-            'blocked_reasons'  => $blocked_reasons,
-            // T0-C (2026-08-02): already computed at :1186 for scan history. Carried to the
-            // banner so the post-scan copy can name WHO rate-limited the scan (Cloudflare vs
-            // the site's own host) instead of always blaming the origin. Null when nothing
-            // was rate-limited; the consumer allowlists it before use.
-            'rate_limit_attribution' => $rate_limit_attribution,
             'total_pages'      => count( $pages_raw ),
             'pages'            => $pages_payload,
-        ], $this->build_partial_response_fields( $completed, $total ), $kept_field );
+        ], $this->build_partial_response_fields( $completed, $total ), $kept_field, $banner_fields );
     }
 
     /**
