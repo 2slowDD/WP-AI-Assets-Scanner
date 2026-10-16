@@ -94,9 +94,10 @@ class BannerRenderingTest extends TestCase {
 
 		$html = DRSPEED_AIAS_Broken_Banner::render( $this->rate_payload( 'cloudflare' ) );
 
-		$this->assertStringContainsString( 'Cloudflare rate-limited the scan', $html );
+		$this->assertStringContainsString( 'Desktop scanner blocked on 1 of 3 pages. (rate limit (429)) Cloudflare rate-limited the scan', $html );
 		$this->assertStringContainsString( 'cu-cloudflare-waf-bypass', $html );
 		$this->assertStringNotContainsString( 'Your server rate-limited', $html );
+		$this->assertStringNotContainsString( 'ready to', $html ); // pages_one_device_with_rules absent → no tail.
 	}
 
 	public function test_rate_banner_names_host_and_drops_the_cdn_link(): void {
@@ -104,9 +105,10 @@ class BannerRenderingTest extends TestCase {
 
 		$html = DRSPEED_AIAS_Broken_Banner::render( $this->rate_payload( 'host' ) );
 
-		$this->assertStringContainsString( "Your host's server rate-limited the scan", $html );
+		$this->assertStringContainsString( "Desktop scanner blocked on 1 of 3 pages. (rate limit (429)) Your host's server rate-limited the scan", $html );
 		$this->assertStringContainsString( 'will not help here', $html );
 		$this->assertStringNotContainsString( 'cu-cloudflare-waf-bypass', $html );
+		$this->assertStringNotContainsString( 'ready to', $html ); // pages_one_device_with_rules absent → no tail.
 	}
 
 	public function test_rate_banner_unknown_variant_is_the_default_for_everything_else(): void {
@@ -118,9 +120,10 @@ class BannerRenderingTest extends TestCase {
 			$label = null === $attr ? 'null' : (string) $attr;
 			$html  = DRSPEED_AIAS_Broken_Banner::render( $this->rate_payload( $attr ) );
 
-			$this->assertStringContainsString( 'The scan was rate-limited', $html, "attr={$label}" );
+			$this->assertStringContainsString( 'Desktop scanner blocked on 1 of 3 pages. (rate limit (429)) The scan was rate-limited', $html, "attr={$label}" );
 			$this->assertStringContainsString( 'cu-cloudflare-waf-bypass', $html, "attr={$label}" );
 			$this->assertStringNotContainsString( 'Cloudflare rate-limited the scan', $html, "attr={$label}" );
+			$this->assertStringNotContainsString( 'ready to', $html, "attr={$label}" ); // no tail without rules.
 		}
 	}
 
@@ -190,6 +193,8 @@ class BannerRenderingTest extends TestCase {
 		WP_Mock::userFunction( 'esc_html' )->andReturnArg( 0 );
 		WP_Mock::userFunction( 'wp_kses_post' )->andReturnArg( 0 );
 		WP_Mock::userFunction( '__' )->andReturnArg( 0 );
+		// export_copy_map() builds each errored [singular, plural] pair through _n().
+		WP_Mock::userFunction( '_n' )->andReturnUsing( function ( $s, $p, $n, $d ) { return 1 === $n ? $s : $p; } );
 		WP_Mock::userFunction( 'esc_url' )->andReturnArg( 0 );
 		WP_Mock::userFunction( 'admin_url' )->andReturnArg( 0 );
 	}
@@ -228,6 +233,11 @@ class BannerRenderingTest extends TestCase {
 
 		$this->assertStringContainsString( 'didn\'t respond', $html );
 		$this->assertStringNotContainsString( 'bot protection denied', $html );
+		// Errored-page copy §3.3: blocked sentences lead; no survivor tail without
+		// pages_one_device_with_rules, and the old "unblocked device" sentence is gone.
+		$this->assertStringContainsString( 'Desktop scanner blocked on 1 of 5 pages. Mobile scanner blocked on 1 of 5 pages.', $html );
+		$this->assertStringNotContainsString( 'ready to', $html );
+		$this->assertStringNotContainsString( 'unblocked device', $html );
 	}
 
 	public function test_mixed_reasons_falls_back_to_bot_protection_clause(): void {
@@ -287,5 +297,124 @@ class BannerRenderingTest extends TestCase {
 		$this->assertStringContainsString( 'unidentified', $html );
 		$this->assertStringContainsString( 'temporarily disable bot protection', $html );
 		$this->assertStringNotContainsString( 'rate-limited', $html );
+	}
+
+	// -------------------------------------------------------------------------
+	// Errored-page copy spec §3.3 — the body is composed from export_copy_map():
+	// blocked sentence(s) → action clause → survivor tail → errored sentence(s).
+	// Each test stubs once (re-registering WP_Mock userFunctions in one test errors).
+	// -------------------------------------------------------------------------
+
+	private function base( array $over ): array {
+		return array_merge( [ 'scan_id' => 's', 'total_pages' => 3, 'pages_blocked' => [ 'desktop' => 0, 'mobile' => 0 ], 'blocked_reasons' => [], 'blocked_stacks' => [],
+			'pages_errored' => [ 'count' => 0, 'reasons' => [] ], 'pages_one_device' => 0, 'pages_one_device_with_rules' => 0, 'rate_limit_attribution' => null, 'push_ready' => true ], $over );
+	}
+
+	public function test_errored_only_renders_time_limit_sentence_and_nothing_false(): void {   // G2 + Review Focus 4
+		$this->stub_render_helpers();
+		$html = DRSPEED_AIAS_Broken_Banner::render( $this->base( [ 'pages_errored' => [ 'count' => 1, 'reasons' => [ 'page_time_limit' => 1 ] ] ] ) );
+		$this->assertStringContainsString( '1 page hit the scanner', $html );
+		$this->assertStringContainsString( 'time limit', $html );
+		$this->assertStringNotContainsString( 'blocked', strtolower( strip_tags( $html ) ) );
+		$this->assertStringNotContainsString( 'server', strtolower( $html ) );
+		$this->assertStringNotContainsString( 'ready to', $html );
+	}
+
+	public function test_plural_picks_second_form_at_two(): void {
+		$this->stub_render_helpers();
+		$html = DRSPEED_AIAS_Broken_Banner::render( $this->base( [ 'pages_errored' => [ 'count' => 2, 'reasons' => [ 'analysis_failed' => 2 ] ] ] ) );
+		$this->assertStringContainsString( '2 pages weren', $html );
+	}
+
+	public function test_both_blocked_has_no_tail_and_uses_bot_both(): void {
+		$this->stub_render_helpers();
+		$html = DRSPEED_AIAS_Broken_Banner::render( $this->base( [ 'pages_blocked' => [ 'desktop' => 1, 'mobile' => 1 ], 'blocked_reasons' => [ 'tier2_cf_challenge' => 2 ] ] ) );
+		$this->assertStringContainsString( 'For full coverage', $html );
+		$this->assertStringNotContainsString( 'ready to', $html );
+		$this->assertStringNotContainsString( 'unblocked device', $html );
+	}
+
+	public function test_one_device_with_rules_has_device_named_clause_and_push_tail(): void {
+		$this->stub_render_helpers();
+		$html = DRSPEED_AIAS_Broken_Banner::render( $this->base( [ 'pages_blocked' => [ 'desktop' => 1, 'mobile' => 0 ], 'blocked_reasons' => [ 'tier2_cf_challenge' => 1 ], 'pages_one_device' => 1, 'pages_one_device_with_rules' => 1 ] ) );
+		$this->assertStringContainsString( 'denied the desktop scanner. For desktop rules too', $html );
+		$this->assertStringContainsString( 'ready to Push or Sync', $html );
+		$dl = DRSPEED_AIAS_Broken_Banner::render( $this->base( [ 'pages_blocked' => [ 'desktop' => 1, 'mobile' => 0 ], 'blocked_reasons' => [ 'tier2_cf_challenge' => 1 ], 'pages_one_device' => 1, 'pages_one_device_with_rules' => 1, 'push_ready' => false ] ) );
+		$this->assertStringContainsString( 'ready to download', $dl );
+	}
+
+	public function test_one_device_without_rules_has_no_tail(): void {
+		$this->stub_render_helpers();
+		$html = DRSPEED_AIAS_Broken_Banner::render( $this->base( [ 'pages_blocked' => [ 'desktop' => 1, 'mobile' => 0 ], 'blocked_reasons' => [ 'tier2_cf_challenge' => 1 ], 'pages_one_device' => 1, 'pages_one_device_with_rules' => 0 ] ) );
+		$this->assertStringNotContainsString( 'ready to', $html );
+	}
+
+	public function test_siteground_only_replaces_phrase_and_uses_siteground_clause(): void {
+		$this->stub_render_helpers();
+		$html = DRSPEED_AIAS_Broken_Banner::render( $this->base( [ 'pages_blocked' => [ 'desktop' => 1, 'mobile' => 1 ], 'blocked_reasons' => [ 'tier1_zero_bytes' => 2 ], 'blocked_stacks' => [ 'siteground' => 2 ] ] ) );
+		$this->assertStringContainsString( '(SiteGround bot protection)', $html );
+		$this->assertStringNotContainsString( 'empty response', $html );
+		$this->assertStringContainsString( 'SiteGround Site Tools', $html );
+		$this->assertStringNotContainsString( 'cu-cloudflare-waf-bypass', $html );
+	}
+
+	public function test_siteground_mixed_adds_phrase_and_keeps_generic_clause(): void {
+		$this->stub_render_helpers();
+		$html = DRSPEED_AIAS_Broken_Banner::render( $this->base( [ 'pages_blocked' => [ 'desktop' => 2, 'mobile' => 0 ], 'blocked_reasons' => [ 'tier1_zero_bytes' => 2 ], 'blocked_stacks' => [ 'siteground' => 1 ] ] ) );
+		$this->assertStringContainsString( 'SiteGround bot protection', $html );
+		$this->assertStringContainsString( 'empty response', $html );
+		$this->assertStringNotContainsString( 'Site Tools', $html );
+	}
+
+	public function test_order_is_blocked_action_tail_errored(): void {
+		$this->stub_render_helpers();
+		$html = strip_tags( DRSPEED_AIAS_Broken_Banner::render( $this->base( [ 'pages_blocked' => [ 'desktop' => 1, 'mobile' => 0 ], 'blocked_reasons' => [ 'tier2_cf_challenge' => 1 ], 'pages_one_device' => 1, 'pages_one_device_with_rules' => 1, 'pages_errored' => [ 'count' => 1, 'reasons' => [ 'unknown' => 1 ] ] ] ) ) );
+		// strrpos for "couldn": the heading ("Some pages couldn't be fully scanned") also
+		// contains it and precedes the body; the LAST hit is the errored sentence.
+		$this->assertTrue( strpos( $html, 'blocked on' ) < strpos( $html, 'denied the' ) && strpos( $html, 'denied the' ) < strpos( $html, 'ready to' ) && strpos( $html, 'ready to' ) < strrpos( $html, "couldn" ) );
+	}
+
+	public function test_no_fixture_renders_the_old_sentence(): void {
+		$this->stub_render_helpers();
+		foreach ( [ [ 'tier2_cf_challenge' => 1 ], [ 'tier1_http_5xx' => 1 ], [ 'tier1_http_rate_limit' => 1 ] ] as $reasons ) {
+			$html = DRSPEED_AIAS_Broken_Banner::render( $this->base( [ 'pages_blocked' => [ 'desktop' => 1, 'mobile' => 0 ], 'blocked_reasons' => $reasons ] ) );
+			$this->assertStringNotContainsString( 'unblocked device', $html );
+		}
+	}
+
+	// compose_body() is the pure core Task 8's JS is diffed against: pin whole bodies.
+	public function test_compose_body_exact_text_for_parity_fixtures(): void {
+		$this->stub_render_helpers();
+		$map  = DRSPEED_AIAS_Broken_Banner::export_copy_map();
+		$link = '<a href="admin.php?page=drspeed-aias-settings#cu-cloudflare-waf-bypass">open AI Assets Scanner settings</a>';
+		$this->assertSame(
+			'1 page hit the scanner\'s time limit and wasn\'t finished. Re-scan it later.',
+			DRSPEED_AIAS_Broken_Banner::compose_body( $this->base( [ 'pages_errored' => [ 'count' => 1, 'reasons' => [ 'page_time_limit' => 1 ] ] ] ), $map )
+		);
+		$this->assertSame(
+			'Desktop scanner blocked on 1 of 3 pages. (Cloudflare challenge) Your bot protection denied the desktop scanner. For desktop rules too, temporarily disable bot protection during scans and re-scan. Behind Cloudflare or another CDN? Set up the scanner exemption so future scans aren\'t blocked — ' . $link . '. Rules from the device that got through are ready to Push or Sync.',
+			DRSPEED_AIAS_Broken_Banner::compose_body( $this->base( [ 'pages_blocked' => [ 'desktop' => 1, 'mobile' => 0 ], 'blocked_reasons' => [ 'tier2_cf_challenge' => 1 ], 'pages_one_device' => 1, 'pages_one_device_with_rules' => 1 ] ), $map )
+		);
+		$this->assertSame(
+			'Desktop scanner blocked on 1 of 3 pages. Mobile scanner blocked on 1 of 3 pages. (Cloudflare challenge) Your bot protection denied the scanner. For full coverage, temporarily disable bot protection during scans and re-scan. Behind Cloudflare or another CDN? Set up the scanner exemption so future scans aren\'t blocked — ' . $link . '.',
+			DRSPEED_AIAS_Broken_Banner::compose_body( $this->base( [ 'pages_blocked' => [ 'desktop' => 1, 'mobile' => 1 ], 'blocked_reasons' => [ 'tier2_cf_challenge' => 2 ] ] ), $map )
+		);
+		$this->assertSame(
+			'Desktop scanner blocked on 1 of 3 pages. Mobile scanner blocked on 1 of 3 pages. (SiteGround bot protection) SiteGround\'s bot protection denied the scanner. Turn off the anti-bot protection in SiteGround Site Tools while the scan runs, or ask SiteGround support to allow the scanner, then re-scan.',
+			DRSPEED_AIAS_Broken_Banner::compose_body( $this->base( [ 'pages_blocked' => [ 'desktop' => 1, 'mobile' => 1 ], 'blocked_reasons' => [ 'tier1_zero_bytes' => 2 ], 'blocked_stacks' => [ 'siteground' => 2 ] ] ), $map )
+		);
+	}
+
+	// Ruling 6/7: worker values are untrusted — non-numeric counts read as 0, list-shaped
+	// ([]) or scalar sub-maps are tolerated, and stale reasons without blocked pages say nothing.
+	public function test_malformed_payload_shapes_degrade_quietly(): void {
+		$this->stub_render_helpers();
+		$map = DRSPEED_AIAS_Broken_Banner::export_copy_map();
+		$this->assertSame( '', DRSPEED_AIAS_Broken_Banner::compose_body( $this->base( [ 'pages_blocked' => 'x', 'blocked_reasons' => [ 'tier1_http_5xx' => 1 ], 'blocked_stacks' => 'x', 'pages_errored' => 'x' ] ), $map ) );
+		$body = DRSPEED_AIAS_Broken_Banner::compose_body( $this->base( [ 'pages_blocked' => [ 'desktop' => 1, 'mobile' => 0 ], 'blocked_reasons' => [ 'tier2_cf_challenge' => 1 ], 'pages_one_device_with_rules' => 'yes' ] ), $map );
+		$this->assertStringNotContainsString( 'ready to', $body );
+		$this->assertSame( '', DRSPEED_AIAS_Broken_Banner::render( $this->base( [ 'pages_errored' => [ 'count' => 'many', 'reasons' => [] ] ] ) ) );
+		// An unrecognised errored kind (future worker enum member) reads as "unknown".
+		$this->assertSame( '1 page couldn\'t be finished. Re-scan it later.', DRSPEED_AIAS_Broken_Banner::compose_body( $this->base( [ 'pages_errored' => [ 'count' => 1, 'reasons' => [ 'kind_from_the_future' => 1 ] ] ] ), $map ) );
 	}
 }
