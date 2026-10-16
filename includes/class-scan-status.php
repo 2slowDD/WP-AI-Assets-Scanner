@@ -95,9 +95,11 @@ class DRSPEED_AIAS_Scan_Status {
 			// status done + ≥1 blocked entry: the other device got through. Lead with it (spec §3.2.4, G3).
 			$device   = (string) array_key_first( $entries );
 			$survivor = isset( $entries['desktop'] ) ? ( isset( $entries['mobile'] ) ? '' : 'mobile' ) : 'desktop';
+			// Translated device word (the same literals as export_copy_map()['device']), not the English key.
+			$dev_word = 'desktop' === $device ? __( 'Desktop', 'dr-speed-ai-assets-scanner' ) : __( 'Mobile', 'dr-speed-ai-assets-scanner' );
 			return [
 				'class'           => 'partial',
-				'label'           => sprintf( /* translators: 1: device name (Desktop/Mobile), 2: short reason */ __( '%1$s not scanned: %2$s', 'dr-speed-ai-assets-scanner' ), ucfirst( $device ), DRSPEED_AIAS_Broken_Banner::entry_phrase( $entries[ $device ] ) ),
+				'label'           => sprintf( /* translators: 1: device name (Desktop/Mobile), 2: short reason */ __( '%1$s not scanned: %2$s', 'dr-speed-ai-assets-scanner' ), $dev_word, DRSPEED_AIAS_Broken_Banner::entry_phrase( $entries[ $device ] ) ),
 				'credits'         => $credits,
 				'survivor_device' => $survivor,
 			];

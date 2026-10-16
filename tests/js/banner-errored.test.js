@@ -41,6 +41,21 @@ const PARITY = [
     'Desktop scanner blocked on 1 of 3 pages. Mobile scanner blocked on 1 of 3 pages. (Cloudflare challenge) Your bot protection denied the scanner. For full coverage, temporarily disable bot protection during scans and re-scan. Behind Cloudflare or another CDN? Set up the scanner exemption so future scans aren\'t blocked — ' + LINK + '.'],
   ['T6', { pages_blocked: { desktop: 1, mobile: 1 }, blocked_reasons: { tier1_zero_bytes: 2 }, blocked_stacks: { siteground: 2 } },
     'Desktop scanner blocked on 1 of 3 pages. Mobile scanner blocked on 1 of 3 pages. (SiteGround bot protection) SiteGround\'s bot protection denied the scanner. Turn off the anti-bot protection in SiteGround Site Tools while the scan runs, or ask SiteGround support to allow the scanner, then re-scan.'],
+  // Final-review M5 — verbatim from tests/BannerRenderingTest.php › test_compose_body_exact_text_for_remaining_branches.
+  ['rate_cf', { pages_blocked: { desktop: 1, mobile: 0 }, blocked_reasons: { tier1_http_rate_limit: 1 }, rate_limit_attribution: 'cloudflare' },
+    'Desktop scanner blocked on 1 of 3 pages. (rate limit (429)) Cloudflare rate-limited the scan. Whoever manages your Cloudflare — you, your host, or your agency — needs to allowlist the scanner. If you manage the Cloudflare account yourself, set up the one-time scanner exemption — ' + LINK + '.'],
+  ['rate_host', { pages_blocked: { desktop: 1, mobile: 0 }, blocked_reasons: { tier1_http_rate_limit: 1 }, rate_limit_attribution: 'host' },
+    'Desktop scanner blocked on 1 of 3 pages. (rate limit (429)) Your host\'s server rate-limited the scan. A CDN or WAF exemption will not help here. Wait a few minutes between scans, or ask your host to raise the rate limit during scans.'],
+  ['rate_unknown', { pages_blocked: { desktop: 0, mobile: 1 }, blocked_reasons: { tier1_http_rate_limit: 1 } },
+    'Mobile scanner blocked on 1 of 3 pages. (rate limit (429)) The scan was rate-limited. Wait a few minutes between scans. If a CDN or WAF sits in front of your site, ask whoever manages it to allowlist the scanner; otherwise check your own server\'s rate limits — ' + LINK + '.'],
+  ['error', { pages_blocked: { desktop: 1, mobile: 0 }, blocked_reasons: { tier1_http_5xx: 1 } },
+    'Desktop scanner blocked on 1 of 3 pages. (site error (5xx)) Your server returned an error or didn\'t respond. Try again later, or check site health.'],
+  ['mixed_rate_bot', { pages_blocked: { desktop: 1, mobile: 1 }, blocked_reasons: { tier1_http_rate_limit: 1, tier2_cf_challenge: 1 } },
+    'Desktop scanner blocked on 1 of 3 pages. Mobile scanner blocked on 1 of 3 pages. (rate limit (429), Cloudflare challenge) Your bot protection denied the scanner. For full coverage, temporarily disable bot protection during scans and re-scan. Behind Cloudflare or another CDN? Set up the scanner rate-limit exemption so future scans aren\'t throttled — ' + LINK + '.'],
+  ['siteground_add', { pages_blocked: { desktop: 2, mobile: 0 }, blocked_reasons: { tier1_zero_bytes: 2 }, blocked_stacks: { siteground: 1 } },
+    'Desktop scanner blocked on 2 of 3 pages. (empty response, SiteGround bot protection) Your bot protection denied the desktop scanner. For desktop rules too, temporarily disable bot protection during scans and re-scan. Behind Cloudflare or another CDN? Set up the scanner exemption so future scans aren\'t blocked — ' + LINK + '.'],
+  ['two_errored_kinds', { pages_errored: { count: 3, reasons: { page_time_limit: 1, analysis_failed: 2 } } },
+    '1 page hit the scanner\'s time limit and wasn\'t finished. Re-scan it later. 2 pages weren\'t finished (scanner error). Re-scan them later.'],
 ];
 
 async function run() {
@@ -48,6 +63,14 @@ async function run() {
   assert.ok(/1 page hit the scanner/.test(text(out)) && !/blocked/i.test(text(out)) && !/server/i.test(text(out)) && !/ready to/.test(out), 'errored-only');
   out = await render({ pages_blocked: { desktop: 1, mobile: 0 }, blocked_reasons: { tier2_cf_challenge: 1 }, pages_one_device: 1, pages_one_device_with_rules: 1 });   // T4
   assert.ok(/denied the desktop scanner\. For desktop rules too/.test(text(out)) && /ready to Push or Sync/.test(out), 'one-device push tail');
+  // Final-review I1: the tail reads cuUrlListState.pushReady, so restoreStep4() must set it
+  // BEFORE the banner renders. Each render() is a fresh page session (pushReady never set
+  // before), so a late assignment lets the tail say "Push or Sync" while the row says "download".
+  out = await render({ pages_blocked: { desktop: 1, mobile: 0 }, blocked_reasons: { tier2_cf_challenge: 1 }, pages_one_device: 1, pages_one_device_with_rules: 1, can_push: false });
+  assert.ok(/ready to download/.test(out) && !/Push or Sync/.test(out), 'I1: can_push false -> tail says download on the first scan');
+  out = await render({ pages_blocked: { desktop: 1, mobile: 0 }, blocked_reasons: { tier2_cf_challenge: 1 }, pages_one_device: 1, pages_one_device_with_rules: 1,
+    has_internal_rules: false, apply_safe_count: 0, apply_aggressive_count: 0 });
+  assert.ok(/ready to download/.test(out) && !/Push or Sync/.test(out), 'I1: no internal rules -> tail says download on the first scan');
   out = await render({ pages_blocked: { desktop: 1, mobile: 0 }, blocked_reasons: { tier2_cf_challenge: 1 }, pages_one_device: 1, pages_one_device_with_rules: 0 });   // T4b
   assert.ok(!/ready to/.test(out), 'no tail without survivor rules');
   out = await render({ pages_blocked: { desktop: 1, mobile: 1 }, blocked_reasons: { tier2_cf_challenge: 2 } });   // T5

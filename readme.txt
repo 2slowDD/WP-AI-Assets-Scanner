@@ -153,8 +153,8 @@ Privacy policy:[https://wpservice.pro/privacy-policy/](https://wpservice.pro/pri
 * Fixed pages that failed inside the scanner (for example a page that hit the scanner's time limit) being reported as "blocked" by your host with a server error. They now get their own message saying what happened, and nothing on the screen blames your site for them.
 * Fixed "The rules from the unblocked device are complete" appearing when both devices were blocked. It now appears only when one device really got through, and says whether its rules are ready to Push/Sync or to download.
 * When one device is blocked and the other is fine, the results row is now a yellow "partial" row that leads with the device that worked, and counts as a successful page.
-* When a host's bot protection answers the scanner with an empty page, the message now names it where it can be identified (for example SiteGround) and suggests pausing that protection during the scan.
-* The message shown after a scan can now be translated in full.
+* When the scanner service identifies your hosting company's bot protection (SiteGround), the message now names it and suggests pausing that protection during the scan.
+* The message shown after a scan can now be translated.
 
 = 1.9.6 =
 * Fixed a scan that failed with "Error: undefined" on sites running an optimizer the plugin cannot bypass automatically (for example SiteGround Optimizer, or an optimizer with minification on): the confirmation dialog now opens as intended, and until you confirm no scan is started and no credit is used. Before this fix the scan still ran in the background and used a credit while the screen showed the error.

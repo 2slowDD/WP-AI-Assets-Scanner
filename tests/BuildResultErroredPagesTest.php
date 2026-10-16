@@ -160,4 +160,36 @@ class BuildResultErroredPagesTest extends TestCase {
 		$this->assertSame( 1, $control['pages_one_device'] );
 		$this->assertSame( 1, $control['pages_one_device_with_rules'] );
 	}
+
+	/**
+	 * Final-review M1 — the survivor count uses the SAME status test as
+	 * DRSPEED_AIAS_Scan_Status::classify(): any non-'error' page with one blocked entry is a
+	 * partial row, so it counts as one-device (not only status 'done'); an 'error' page with one
+	 * blocked entry is an error/blocked row and does not.
+	 */
+	public function test_m1_one_device_count_matches_classify_status_test(): void {
+		$broken  = [ [ 'device' => 'desktop', 'reason' => 'tier2_cf_challenge' ] ];
+		$by_page = [ 0 => [ 'safe' => 1, 'aggressive' => 0, 'needed' => 0 ] ];
+
+		$page = $this->done_page_with_rules( 'https://site.test/a/', $broken );
+		$page['status'] = 'partial';
+		$f = ScannerAjax::aggregate_banner_fields( [ $page ], $by_page, [] );
+		$this->assertSame( 1, $f['pages_one_device'] );
+		$this->assertSame( 1, $f['pages_one_device_with_rules'] );
+
+		$page['status'] = 'error';
+		$f = ScannerAjax::aggregate_banner_fields( [ $page ], $by_page, [] );
+		$this->assertSame( 0, $f['pages_one_device'] );
+		$this->assertSame( 0, $f['pages_one_device_with_rules'] );
+	}
+
+	/**
+	 * Final-review M2 — the partial row label's device word goes through __() (the same
+	 * 'Desktop'/'Mobile' literals as export_copy_map()['device']), not ucfirst() of the English key.
+	 */
+	public function test_m2_partial_label_device_word_is_translated(): void {
+		WP_Mock::userFunction( '__' )->andReturnUsing( function ( $t ) { return 'Ü' . $t; } );
+		$r = \DRSPEED_AIAS_Scan_Status::classify( [ 'status' => 'done', 'broken_devices' => [ [ 'device' => 'mobile', 'reason' => 'tier2_cf_challenge' ] ] ] );
+		$this->assertStringStartsWith( 'Ü' . 'Ü' . 'Mobile not scanned: ', $r['label'] );
+	}
 }

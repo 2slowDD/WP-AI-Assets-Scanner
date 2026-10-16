@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const SCANNER_JS_VERSION = '1.0.11.16';
+    const SCANNER_JS_VERSION = '1.0.11.17';
     console.log( '[AI Assets Scanner] scanner.js v' + SCANNER_JS_VERSION + ' loaded' );
 
     const ajax    = drspeedAias.ajaxUrl;
@@ -3161,13 +3161,16 @@
             localStorage.removeItem('drspeed_aias_requeue_' + jobId);
         }
 
+        // pushReady picks the partial-row line 1 ("ready to Push/Sync" vs "ready to download")
+        // AND the banner's survivor tail, so it is set BEFORE the banner renders (final-review
+        // I1); hasInternalRules is this function's restore-safe derivation, so live and
+        // restored screens agree.
+        cuUrlListState.pushReady = !! canPush && hasInternalRules;
+
         // Subsystem D-4: render broken-banner if pages were blocked.
         renderBrokenBanner( bannerData || {} );
 
-        // Per-URL results table (hidden when pages is empty/undefined). pushReady picks the
-        // partial-row line 1 ("ready to Push/Sync" vs "ready to download"); hasInternalRules is
-        // this function's restore-safe derivation, so live and restored screens agree.
-        cuUrlListState.pushReady = !! canPush && hasInternalRules;
+        // Per-URL results table (hidden when pages is empty/undefined).
         renderResultUrlList( pages, scanId, cuRulesActive );
 
         // Top "Run Another Scan" is redundant on a short results list. Hide it for
@@ -3479,7 +3482,8 @@
                 var devWord = cuEscHtml( typeof devWords[ devKey ] === 'string' ? devWords[ devKey ] : BANNER_COPY_DEFAULTS.device[ devKey ] );
                 var tplKey = ( effSafe + effAgg > 0 ) ? ( st.pushReady ? 'push' : 'download' ) : 'none';
                 var tpl = cuEscHtml( typeof rowTpls[ tplKey ] === 'string' ? rowTpls[ tplKey ] : BANNER_COPY_DEFAULTS.partial_row[ tplKey ] );
-                statusHtml = tpl.replace( '%s', function () { return devWord; } ) + '<br>' + statusHtml;
+                // First placeholder only, `%s` or positional `%1$s` (a translator may write either).
+                statusHtml = tpl.replace( /%(?:1\$)?s/, function () { return devWord; } ) + '<br>' + statusHtml;
             }
             return '<tr class="cu-row-' + cuEscHtml( p.status_class ) + ( noopt ? ' cu-row-noopt' : '' ) + '">'
                 + '<td data-label="#">' + cuEscHtml( p.n ) + '</td>'

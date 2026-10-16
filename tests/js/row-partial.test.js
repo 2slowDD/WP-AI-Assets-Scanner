@@ -81,6 +81,11 @@ async function run() {
   r = await render({ pages: [ partialRow({ safe: 0 }), okRow() ] }, Object.assign({}, MAP, { partial_row: [], device: [] }));
   assert.strictEqual(statusCell(r.table), '✓ Mobile: no unloads found<br>' + LABEL, 'empty PHP maps ([]) -> per-key defaults');
   console.log('OK no map / empty [] maps -> English defaults');
+
+  // Final-review M3: a translator may write the positional %1$s — the device word still lands.
+  r = await render({ pages: [ partialRow(), okRow() ] }, Object.assign({}, MAP, { partial_row: Object.assign({}, MAP.partial_row, { push: '✓ Regeln (%1$s) bereit' }) }));
+  assert.strictEqual(statusCell(r.table), '✓ Regeln (Mobile) bereit<br>' + LABEL, 'positional %1$s template gets the device word');
+  console.log('OK positional %1$s template');
 }
 
 run().catch(e => { console.error(e); process.exit(1); });

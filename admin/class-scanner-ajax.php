@@ -906,7 +906,9 @@ class ScannerAjax {
                     $stack = \DRSPEED_AIAS_Scan_Status::stack_of( $entry );
                     if ( '' !== $stack ) { $f['blocked_stacks'][ $stack ] = ( $f['blocked_stacks'][ $stack ] ?? 0 ) + 1; }
                 }
-                if ( 1 === count( $entries ) && 'done' === (string) ( $page['status'] ?? '' ) ) {
+                // Same status test as DRSPEED_AIAS_Scan_Status::classify()'s partial branch
+                // (any non-'error' page), so the banner tail and the row agree (final-review M1).
+                if ( 1 === count( $entries ) && 'error' !== (string) ( $page['status'] ?? '' ) ) {
                     $f['pages_one_device']++;
                     $rules = (int) ( $by_page[ $idx ]['safe'] ?? 0 ) + (int) ( $by_page[ $idx ]['aggressive'] ?? 0 );
                     if ( $rules > 0 && empty( $all_already[ $idx ] ) ) { $f['pages_one_device_with_rules']++; }
