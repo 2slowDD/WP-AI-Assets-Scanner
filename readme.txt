@@ -150,7 +150,7 @@ Privacy policy:[https://wpservice.pro/privacy-policy/](https://wpservice.pro/pri
 == Changelog ==
 
 = 1.9.8 =
-* New: a warning on the results page when a site removes the scanner's URL parameters. A redirect that strips them means the page was measured with the optimizer still running, and the results used to say the opposite. The results row and one panel now say so, with the exact parameters to allow.
+* New: a warning on the results page when a site removes the scanner's URL parameters. A redirect that strips them can leave the page measured with the optimizer still running, and the results used to say the opposite. The results row and one panel now say so, with the exact parameters to allow.
 * New: on your own site, the scanner's parameters now pass through Yoast SEO's URL cleanup automatically, on scan requests only. Normal visitors and your Yoast settings are not affected.
 * New: a "Verified by Dr. Speed Lab" badge in the admin header.
 * New: on a new install with no key, the Settings page dims around "Validate your key", so the first step is obvious. It goes away once a key is in place.

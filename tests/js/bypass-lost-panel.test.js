@@ -141,12 +141,45 @@ async function run() {
     assert.ok(panel(h).includes('optimizer still on'));
   });
 
+  await arm('AC-5 the panel is byte-identical across the results table\'s Next and Prev', () => {
+    const clean = Array.from({ length: 30 }, (_, i) => Object.assign({}, ROWS.clean, { n: i + 1 }));
+    const h = render([...clean, ROWS.external_yoast]);
+    const before = panel(h), page1 = table(h);
+    assert.ok(before.includes('optimizer still on'), 'precondition: the panel is up');
+    assert.ok(page1.includes('Page 1 of 2') && !page1.includes('cu-bypass-note--lost'), 'precondition: the flagged row is off table page 1');
+    assert.ok(page1.includes('id="cu-url-next"') && page1.includes('id="cu-url-prev"'), 'precondition: the pager is in the rendered table');
+    // scanner.js assigns the pager's real handlers to .onclick on each render. The harness's
+    // click() fires only addEventListener listeners, so the arm calls the property.
+    h.els['cu-url-next'].onclick();
+    assert.ok(table(h).includes('Page 2 of 2') && table(h).includes('cu-bypass-note--lost'), 'Next really moved to table page 2');
+    assert.strictEqual(panel(h), before, 'Next leaves the panel byte-identical');
+    h.els['cu-url-prev'].onclick();
+    assert.strictEqual(table(h), page1, 'Prev really moved back to table page 1');
+    assert.strictEqual(panel(h), before, 'Prev leaves the panel byte-identical');
+  });
+
   await arm('m5 a new scan empties it; restoreStep4 with nothing flagged empties it', () => {
     const h = render([ROWS.external_yoast]); const T = h.sandbox.window.__cuTest;
     T.beginScanPolling();
     assert.strictEqual(panel(h), '', 'a same-page restart clears the old warning');
     T.restoreStep4(base([ROWS.external_yoast])); assert.notStrictEqual(panel(h), '');
     T.restoreStep4(base([ROWS.clean])); assert.strictEqual(panel(h), '');
+  });
+
+  await arm('AC-5 a following killed result does not bring the panel back', async () => {
+    const h = render([ROWS.external_yoast]); const T = h.sandbox.window.__cuTest;
+    assert.ok(panel(h).includes('optimizer still on'), 'precondition: the old scan\'s panel is up');
+    T.beginScanPolling();
+    assert.strictEqual(panel(h), '', 'the new scan empties the panel');
+    await flush();
+    // A killed poll carries raw worker rows: bypass_lost is the integer 1, not build_pages' true.
+    T.setScanUrlsForTest(['https://other.example/'], {});
+    T.handleStatusUpdate({ status: 'killed', completed: 1, total: 1,
+      pages: [{ status: 'done', url: 'https://other.example/?nowprocket', assets: [], bypass_lost: 1 }] });
+    await flush();
+    assert.ok(h.els['cu-banner-area'].innerHTML.includes('stopped by an administrator'), 'the killed route really ran');
+    assert.strictEqual(JSON.parse(h.sandbox.localStorage.getItem('drspeed_aias_partial')).status, 'killed', 'the killed route stored its result');
+    assert.strictEqual(panel(h), '', 'killed does not bring the old warning back');
   });
 
   await arm('malformed stored rows do not stop the render', () => {
