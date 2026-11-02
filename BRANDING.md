@@ -24,6 +24,16 @@ umbrella *Dr. Speed | Performance Polyclinic*.
 
 Keep claims literal: "safely" is backed by the Safe/Aggressive split and one-click undo.
 
+## Verified badge
+
+> Verified by Dr. Speed Lab
+
+Sits at the bottom right of the admin header, after "Powered by". **Dr. Speed Lab** is the name for our verification worker: it tests rules in real browsers, on desktop and mobile. The badge says the plugin uses that worker. It is a statement about how the plugin tests, not a guarantee about any one page, so keep the wording to that.
+
+- **Icon**: after the text, all brand green: the ✚ cross inside a circle, a monitor at the top middle, a phone at the bottom middle. Decorative: `aria-hidden="true"`.
+- **Link**: none for now; one is planned.
+- Markup: `admin/views/partials/verified-badge.php`, shared by the three admin screens.
+
 ## Colours
 
 | Role | Hex | Notes |

@@ -20,6 +20,7 @@
             <line x1="10" y1="10" x2="16.5" y2="3.5" stroke="#72aee6" stroke-width="1.2" stroke-linecap="round"/>
         </svg>
         <span class="cu-header-by">Powered by <a href="https://wpservice.pro/" target="_blank" rel="noopener">WPservice.pro</a></span>
+        <?php include __DIR__ . '/partials/verified-badge.php'; ?>
     </div>
 
     <main class="cu-settings-grid">

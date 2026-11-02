@@ -145,6 +145,48 @@ class ScannerPageMarkupTest extends TestCase {
 		}
 	}
 
+	public function test_the_three_admin_views_carry_the_verified_badge_after_the_byline(): void {
+		foreach ( [ 'scanner-page.php', 'history-page.php', 'settings-page.php' ] as $view ) {
+			$markup = file_get_contents( dirname( __DIR__ ) . '/admin/views/' . $view );
+			$this->assertIsString( $markup, $view );
+			$byline_pos = strpos( $markup, '<span class="cu-header-by">' );
+			$badge_pos  = strpos( $markup, "include __DIR__ . '/partials/verified-badge.php';" );
+			$this->assertNotFalse( $byline_pos, $view );
+			$this->assertNotFalse( $badge_pos, $view );
+			$this->assertLessThan( $badge_pos, $byline_pos, $view );
+		}
+	}
+
+	/**
+	 * Operator 2026-11-02: plain text for now, icon after the text. The link comes later, on purpose.
+	 */
+	public function test_the_verified_badge_is_guarded_unlinked_text_followed_by_a_decorative_icon(): void {
+		$partial = file_get_contents( dirname( __DIR__ ) . '/admin/views/partials/verified-badge.php' );
+
+		$this->assertIsString( $partial );
+		$this->assertStringContainsString( "defined( 'ABSPATH' ) || exit;", $partial );
+		$this->assertStringContainsString( "esc_html__( 'Verified by %s', 'dr-speed-ai-assets-scanner' )", $partial );
+		$this->assertStringContainsString( 'Dr. Speed Lab', $partial );
+		$this->assertStringNotContainsString( '<a ', $partial );
+		$text_pos = strpos( $partial, 'cu-header-verified-text' );
+		$icon_pos = strpos( $partial, '<svg class="cu-header-verified-icon"' );
+		$this->assertNotFalse( $text_pos );
+		$this->assertNotFalse( $icon_pos );
+		$this->assertLessThan( $icon_pos, $text_pos );
+		$this->assertStringContainsString( 'aria-hidden="true"', $partial );
+	}
+
+	public function test_the_verified_badge_hides_at_the_same_width_as_the_byline(): void {
+		$css = file_get_contents( dirname( __DIR__ ) . '/admin/css/dr-speed-ai-assets-scanner-admin.css' );
+
+		$this->assertIsString( $css );
+		$this->assertMatchesRegularExpression(
+			'/\.cu-admin-page \.cu-header-verified \{\s*position: absolute;.*@media \(max-width: 900px\) \{\s*#drspeed-aias-app \.cu-header-verified,\s*\.cu-admin-page \.cu-header-verified \{ display: none; \}/s',
+			$css,
+			'The hide rule must come after the base rule, or the base display wins at the same specificity.'
+		);
+	}
+
 	/**
 	 * 1.8.6 — the Step-3 live URL table's pager is STATIC markup: JS only toggles it, so a 2 s poll
 	 * can never rebuild the buttons out from under keyboard focus. It starts hidden (one page needs

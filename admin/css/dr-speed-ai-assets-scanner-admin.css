@@ -2618,6 +2618,37 @@
     .cu-admin-page .cu-header-by { display: none; }
 }
 
+/* "Verified by" badge, bottom right; the byline moves up to leave it room. */
+#drspeed-aias-app .cu-header-by,
+.cu-admin-page .cu-header-by { align-self: start; margin-top: 18px; }
+#drspeed-aias-app .cu-header-verified,
+.cu-admin-page .cu-header-verified {
+    position: absolute;
+    right: 28px;
+    bottom: 8px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+#drspeed-aias-app .cu-header-verified-text,
+.cu-admin-page .cu-header-verified-text {
+    color: #9db0c5;
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+#drspeed-aias-app .cu-header-verified-name,
+.cu-admin-page .cu-header-verified-name { color: #d8e4f0; }
+#drspeed-aias-app .cu-header-verified-icon,
+.cu-admin-page .cu-header-verified-icon { display: block; flex: none; }
+/* After the base rule above: same specificity, so the later one wins. */
+@media (max-width: 900px) {
+    #drspeed-aias-app .cu-header-verified,
+    .cu-admin-page .cu-header-verified { display: none; }
+}
+
 /* 1.9.4 — the balance card shrank below its content (grid minmax(0, 1fr)) and its
    "credits available" label spilled over the Refresh button at 783-961px. The row now
    wraps: the buttons move below when there is no room, and the label may drop under the number. */
