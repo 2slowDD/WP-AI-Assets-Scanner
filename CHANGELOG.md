@@ -12,7 +12,7 @@ All notable changes to AI Assets Scanner are documented here.
 - **A warning when a site strips the scanner's parameters.** If a redirect removes them, the page can be measured with the optimizer still running, and the results said the opposite. Step 4 now says so on the row and in one panel, with the exact parameters to allow. On your own site, AAS keeps them through Yoast SEO's URL cleanup automatically, on scan requests only.
 
 ### Changed
-- **Deleting the plugin keeps a paid API key.** A reinstall used to lose it, and "Validate your key" could only offer a free key, because the service brings back free keys only. A paid key now stays saved. A free key is still removed, and every other secret still is.
+- **Deleting the plugin keeps a paid API key.** A reinstall used to lose it, and "Validate your key" could only offer a free key, because the service brings back free keys only. A paid key now stays saved. A free key is still removed, and every other secret still is. Settings and the no-key messages now say that only a free key comes back through Validate.
 
 ---
 

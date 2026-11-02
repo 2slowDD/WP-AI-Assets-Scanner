@@ -45,7 +45,7 @@
                     <strong><?php esc_html_e( 'No API key yet.', 'dr-speed-ai-assets-scanner' ); ?></strong>
                     <?php
                     if ( '' === $drspeed_aias_api_key ) {
-                        esc_html_e( 'Scans need an API key. Using the plugin for the first time, or reinstalled it? Click Validate your key in Settings: a new site gets a free key with starter credits, and a site that had a key before gets the same key and its remaining credits back.', 'dr-speed-ai-assets-scanner' );
+                        esc_html_e( 'Scans need an API key. Using the plugin for the first time, or reinstalled it? Click Validate your key in Settings: a new site gets a free key with starter credits, and a site that had a free key before gets the same key and its remaining credits back.', 'dr-speed-ai-assets-scanner' );
                     } else {
                         esc_html_e( 'The free key request has not finished yet. Click Validate your key again in Settings.', 'dr-speed-ai-assets-scanner' );
                     }

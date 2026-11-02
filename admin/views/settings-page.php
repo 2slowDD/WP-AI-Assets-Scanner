@@ -126,7 +126,7 @@
                     <div class="cu-settings-field cu-free-key-optin" id="cu-free-key-optin">
                         <span class="cu-settings-label"><?php esc_html_e( 'Validate your key', 'dr-speed-ai-assets-scanner' ); ?></span>
                         <p class="description">
-                            <?php esc_html_e( 'First time using the plugin? This creates a free API key with starter scan credits. Reinstalled it? This restores this site\'s existing key and its remaining credits. Clicking sends this site\'s domain and the plugin version to wpservice.pro; nothing is sent until you click. Have a paid key? Paste it in the API key field above instead.', 'dr-speed-ai-assets-scanner' ); ?>
+                            <?php esc_html_e( 'First time using the plugin? This creates a free API key with starter scan credits. Reinstalled it? This restores this site\'s existing free key and its remaining credits. A paid key can\'t be restored this way: enter it above. Clicking sends this site\'s domain and the plugin version to wpservice.pro; nothing is sent until you click. Have a paid key? Paste it in the API key field above instead.', 'dr-speed-ai-assets-scanner' ); ?>
                             <a href="https://wpservice.pro/terms-and-conditions/" target="_blank" rel="noopener"><?php esc_html_e( 'Terms', 'dr-speed-ai-assets-scanner' ); ?></a>
                             &middot;
                             <a href="https://wpservice.pro/privacy-policy/" target="_blank" rel="noopener"><?php esc_html_e( 'Privacy policy', 'dr-speed-ai-assets-scanner' ); ?></a>
