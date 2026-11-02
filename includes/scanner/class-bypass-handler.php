@@ -132,12 +132,11 @@ class BypassHandler {
 	 * scan keeps its bypass. Public URLs are cleaned as before. No Yoast setting is changed.
 	 */
 	public static function allow_scan_keys( mixed $vars ): mixed {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- token-based bypass; nonce architecturally N/A (request originates from headless browser, no session).
-		$raw = $_GET['cu_scan_token'] ?? '';
-		if ( ! is_array( $vars ) || ! is_string( $raw ) || '' === $raw ) {
+		if ( ! is_array( $vars ) ) {
 			return $vars;
 		}
-		$token = sanitize_text_field( wp_unslash( $raw ) );
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- token-based bypass; nonce architecturally N/A (request originates from headless browser, no session).
+		$token = isset( $_GET['cu_scan_token'] ) && is_string( $_GET['cu_scan_token'] ) ? sanitize_text_field( wp_unslash( $_GET['cu_scan_token'] ) ) : '';
 		if ( '' === $token || ! self::is_valid_token( $token ) ) {
 			return $vars;
 		}

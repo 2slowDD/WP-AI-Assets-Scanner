@@ -33,10 +33,12 @@ class BypassScanKeysTest extends TestCase {
     }
 
     public function test_vocabulary_holds_every_key_as_a_bare_name(): void {
-        $keys = PluginDetector::scan_query_keys();
-        foreach ( [ 'cu_scan_token', 'cu_dep_graph', 'nowpcu', 'nowprocket', 'perfmattersoff', 'ao_noptimize', 'nonitro', 'wpacu_no_load', 'LSCWP_CTRL', 'swis_disable', 'no_optimize' ] as $key ) {
+        $keys     = PluginDetector::scan_query_keys();
+        $expected = [ 'cu_scan_token', 'cu_dep_graph', 'nowpcu', 'nowprocket', 'perfmattersoff', 'ao_noptimize', 'nonitro', 'wpacu_no_load', 'LSCWP_CTRL', 'swis_disable', 'no_optimize' ];
+        foreach ( $expected as $key ) {
             $this->assertContains( $key, $keys );
         }
+        $this->assertEqualsCanonicalizing( $expected, $keys, 'a closed list: an extra key is as wrong as a lost one' );
         $this->assertSame( array_values( array_unique( $keys ) ), $keys, 'no duplicates' );
         foreach ( $keys as $key ) {
             $this->assertStringNotContainsString( '=', $key );
@@ -48,7 +50,7 @@ class BypassScanKeysTest extends TestCase {
         $method = new \ReflectionMethod( PluginDetector::class, 'scan_query_keys' );
         $lines  = file( (string) $method->getFileName() );
         $body   = implode( '', array_slice( $lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1 ) );
-        foreach ( [ 'is_plugin_active', 'get_plugin_data', 'get_plugins', 'get_option' ] as $call ) {
+        foreach ( [ 'is_plugin_active', 'get_plugin_data', 'get_plugins', 'get_option', 'detect(', 'load_plugin_api' ] as $call ) {
             $this->assertStringNotContainsString( $call, $body );
         }
     }
@@ -72,11 +74,17 @@ class BypassScanKeysTest extends TestCase {
         $this->assertSame( [ 'utm_source' ], BypassHandler::allow_scan_keys( [ 'utm_source' ] ) );
     }
 
+    public function test_an_empty_token_returns_the_input_untouched(): void {
+        $_GET['cu_scan_token'] = '';
+        BypassHandler::for_testing_set_token_validator( static fn ( $t ) => true );
+        $this->assertSame( [ 'utm_source' ], BypassHandler::allow_scan_keys( [ 'utm_source' ] ) );
+    }
+
     public function test_an_array_token_cannot_widen_or_fatal(): void {
         $_GET['cu_scan_token'] = [ 'x' ];
         BypassHandler::for_testing_set_token_validator( static fn ( $t ) => true );
         $this->assertSame( [ 'utm_source' ], BypassHandler::allow_scan_keys( [ 'utm_source' ] ) );
-        // The sanitizer also turns an array into '', which would hide a missing is_string() check above.
+        // The real sanitizer also returns '' for an array, so only this assertion can tell whether is_string() is there.
         $this->assertSame( [], $this->sanitized, 'an array token stops at the is_string check' );
     }
 
