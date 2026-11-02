@@ -1,5 +1,5 @@
 <?php if ( ! defined( 'ABSPATH' ) ) exit; ?>
-<div class="wrap cu-admin-page" id="drspeed-aias-settings">
+<div class="wrap cu-admin-page<?php echo \DrSpeedAIAS\FreeKeyBootstrap::needs_first_run_guide( new \DrSpeedAIAS\Settings() ) ? ' cu-first-run' : ''; ?>" id="drspeed-aias-settings">
 <h1 class="screen-reader-text">AI Assets Scanner settings</h1>
 <h2 class="screen-reader-text cu-admin-notice-anchor">AI Assets Scanner notices</h2>
 <div class="cu-wrap">

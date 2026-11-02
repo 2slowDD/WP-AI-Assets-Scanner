@@ -123,6 +123,15 @@ class FreeKeyBootstrap {
         return '' === $current || $settings->is_pending_free_key( $current );
     }
 
+    /**
+     * Whether Settings should dim around "Validate your key" as the first step. Not once
+     * a key is in place, and not on a converted or revoked free key, where the page asks
+     * for a paid key because Validate cannot help.
+     */
+    public static function needs_first_run_guide( Settings $settings ): bool {
+        return self::can_request( $settings ) && '' === $settings->get_free_key_unusable();
+    }
+
     private function make_client( string $current_key ): object {
         if ( $this->client_factory ) {
             return ( $this->client_factory )( $current_key );

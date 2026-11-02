@@ -8,6 +8,7 @@ All notable changes to AI Assets Scanner are documented here.
 
 ### Added
 - **"Verified by Dr. Speed Lab" badge in the admin header.** Shown at the bottom right of the Scanner, Settings and History screens, with "Powered by" moved up to make room. Hidden below 900 px wide, as "Powered by" is. It names the verification worker the plugin uses and has no link yet.
+- **New installs are guided to "Validate your key".** With no key in place, the Settings page dims around that section so the first step is obvious. Everything under the dim still works, and clicking another field lifts it. It ends as soon as a key is in place: validated, pasted or bought.
 
 ---
 

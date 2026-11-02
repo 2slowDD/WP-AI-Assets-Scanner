@@ -14,7 +14,21 @@
             });
         }
 
+        const page  = document.getElementById('drspeed-aias-settings');
+        const optin = document.getElementById('cu-free-key-optin');
+
+        // The new-install dim ends here on the two paths that store a key without a reload.
+        function endFirstRunDim() {
+            if (page) {
+                page.classList.remove('cu-first-run');
+            }
+        }
+
         function showMsg(text, type) {
+            // While dimmed, the message's usual place is out of sight under the dim.
+            if (page && optin && page.classList.contains('cu-first-run')) {
+                optin.appendChild(msg);
+            }
             msg.textContent = text;
             msg.className   = 'notice notice-' + type + ' is-dismissible';
             msg.style.display = 'block';
@@ -41,6 +55,7 @@
                 .then(r => r.json())
                 .then(res => {
                     if (res.success) {
+                        endFirstRunDim();
                         showMsg('Settings saved. Credit balance: ' + res.data.credits, 'success');
                         setBalance(res.data.credits);
                     } else {
@@ -67,6 +82,7 @@
                 .then(res => {
                     setBalance(res.success ? res.data.balance : '—');
                     if (res.success && res.data.api_key_updated) {
+                        endFirstRunDim();
                         showMsg('Your paid AAS Scanner API key was received and saved. Credit balance: ' + res.data.balance, 'success');
                         if (apiKeyInput) {
                             apiKeyInput.value = 'Saved paid key';
