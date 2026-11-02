@@ -4,7 +4,7 @@ Tags: performance, dequeue, unload unused css, optimize javascript, page speed
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.9.7
+Stable tag: 1.9.8
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -148,6 +148,12 @@ Privacy policy:[https://wpservice.pro/privacy-policy/](https://wpservice.pro/pri
 5. Settings - Validate your key before scanning (get a free API key)
 
 == Changelog ==
+
+= 1.9.8 =
+* New: a warning on the results page when a site removes the scanner's URL parameters. A redirect that strips them means the page was measured with the optimizer still running, and the results used to say the opposite. The results row and one panel now say so, with the exact parameters to allow.
+* New: on your own site, the scanner's parameters now pass through Yoast SEO's URL cleanup automatically, on scan requests only. Normal visitors and your Yoast settings are not affected.
+* New: a "Verified by Dr. Speed Lab" badge in the admin header.
+* New: on a new install with no key, the Settings page dims around "Validate your key", so the first step is obvious. It goes away once a key is in place.
 
 = 1.9.7 =
 * Fixed pages that failed inside the scanner (for example a page that hit the scanner's time limit) being reported as "blocked" by your host with a server error. They now get their own message saying what happened, and nothing on the screen blames your site for them.

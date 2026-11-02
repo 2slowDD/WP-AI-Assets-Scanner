@@ -131,8 +131,8 @@ final class JsCacheBustDriftTest extends TestCase {
 		'1.9.5.1' => '7388edb02543b518b7d6c99208a0ad5bfba65b5334b320ffea3d1ec63452c7c7',
 		// 1.9.7 — banner from the copy map; partial rows lead with the survivor; errored-page sentences.
 		'1.9.7' => 'a6df5b06dcc785aa5cfb9b87a4cfb285c460a089c125653281175ef160f6e071',
-		// 1.9.7.1 (plugin still 1.9.7, unreleased) — "Verified by Dr. Speed Lab" badge; new-install dim on Settings; a warning when a site strips the scanner's parameters.
-		'1.9.7.1' => 'ba3a3951b901fe77272f2164fc7650a140a96b54655e9fe27b5422013c271479',
+		// 1.9.8 — "Verified by Dr. Speed Lab" badge; new-install dim on Settings; a warning when a site strips the scanner's parameters.
+		'1.9.8' => 'ba3a3951b901fe77272f2164fc7650a140a96b54655e9fe27b5422013c271479',
 	);
 
 	/**

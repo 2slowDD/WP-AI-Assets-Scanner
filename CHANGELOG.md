@@ -4,7 +4,7 @@ All notable changes to AI Assets Scanner are documented here.
 
 ---
 
-## Unreleased
+## 1.9.8 — 2026-11-02
 
 ### Added
 - **"Verified by Dr. Speed Lab" badge in the admin header.** Shown at the bottom right of the Scanner, Settings and History screens, with "Powered by" moved up to make room. Hidden below 900 px wide, as "Powered by" is. It names the verification worker the plugin uses and has no link yet.

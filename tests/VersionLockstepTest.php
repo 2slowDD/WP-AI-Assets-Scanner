@@ -84,7 +84,7 @@ class VersionLockstepTest extends TestCase {
         $badge  = $this->capture_one( self::BADGE_RE, $readme, 'README.md shields.io VERSION badge' );
         $stable = $this->capture_one( self::STABLE_TAG_RE, $this->read_repo_file( 'readme.txt' ), 'readme.txt Stable tag' );
 
-        $this->assertSame( '1.9.7', $header, '1.9.7 replaces the errored-page "blocked" fallback with errored-page sentences (FU-AAS-TIMEOUT-SHOWN-AS-BLOCKED)' );
+        $this->assertSame( '1.9.8', $header, '1.9.8 warns when a site strips the scanner\'s parameters (FU-AAS-BYPASS-STRIPPED-AWARENESS)' );
 
         // Shape first: without it, three empty captures would "agree" and pass.
         foreach ( [ 'plugin header' => $header, 'DRSPEED_AIAS_VERSION define' => $define, 'README badge' => $badge, 'readme.txt Stable tag' => $stable ] as $where => $v ) {
