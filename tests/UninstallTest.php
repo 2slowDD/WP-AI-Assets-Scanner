@@ -33,6 +33,90 @@ class UninstallTest extends TestCase {
         parent::tearDown();
     }
 
+    /**
+     * Runs the real uninstall.php with $stored as the only options saved, and returns
+     * the names it deleted.
+     *
+     * @param array<string,mixed> $stored
+     * @return string[]
+     */
+    private function uninstall_with( array $stored ): array {
+        if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
+            define( 'WP_UNINSTALL_PLUGIN', true );
+        }
+        WP_Mock::userFunction( 'current_user_can' )->andReturn( true );
+        WP_Mock::userFunction( 'wp_unschedule_hook' )->andReturn( 0 );
+        WP_Mock::userFunction( 'delete_transient' )->andReturn( true );
+        WP_Mock::userFunction( 'get_option' )->andReturnUsing(
+            static fn ( $name, $fallback = false ) => array_key_exists( $name, $stored ) ? $stored[ $name ] : $fallback
+        );
+        $deleted = [];
+        WP_Mock::userFunction( 'delete_option' )->andReturnUsing(
+            static function ( $name ) use ( &$deleted ) {
+                $deleted[] = $name;
+                return true;
+            }
+        );
+        $GLOBALS['wpdb'] = new class {
+            public string $options = 'wp_options';
+
+            public function esc_like( string $value ): string {
+                return $value;
+            }
+
+            public function prepare( string $query, string ...$args ): string {
+                return $query;
+            }
+
+            public function query( string $query ): int {
+                return 0;
+            }
+        };
+
+        require dirname( __DIR__ ) . '/uninstall.php';
+
+        return $deleted;
+    }
+
+    /** The service can only bring back a free key, so deleting a paid one strands the customer on a new free key. */
+    public function test_a_paid_key_survives_uninstall_and_every_other_secret_does_not(): void {
+        // The other secrets hold values too, so only the name can tell them apart from the key.
+        $deleted = $this->uninstall_with(
+            [
+                'drspeed_aias_api_key'              => 'cusk_TESTKEY_000000',
+                'drspeed_aias_secret'               => 'stored-secret',
+                'drspeed_aias_paid_key_claim_token' => 'stored-token',
+                'drspeed_aias_railway_url'          => 'https://worker.example',
+            ]
+        );
+
+        $this->assertNotContains( 'drspeed_aias_api_key', $deleted );
+        $this->assertContains( 'drspeed_aias_secret', $deleted );
+        $this->assertContains( 'drspeed_aias_paid_key_claim_token', $deleted );
+        $this->assertContains( 'drspeed_aias_railway_url', $deleted );
+    }
+
+    public function test_a_paid_key_under_its_pre_1_9_4_name_survives_too(): void {
+        $this->assertNotContains( 'cu_scanner_api_key', $this->uninstall_with( [ 'cu_scanner_api_key' => 'cusk_TESTKEY_000000' ] ) );
+    }
+
+    /**
+     * @dataProvider not_a_paid_key
+     */
+    public function test_anything_but_a_paid_key_is_deleted( mixed $value ): void {
+        $this->assertContains( 'drspeed_aias_api_key', $this->uninstall_with( [ 'drspeed_aias_api_key' => $value ] ) );
+    }
+
+    public function not_a_paid_key(): array {
+        return [
+            'free key'    => [ 'cusk_Freekey_12' ],
+            'pending'     => [ 'cusk_Freekey_?' ],
+            'empty'       => [ '' ],
+            'not a string' => [ [ 'x' ] ],
+            'false'       => [ false ],
+        ];
+    }
+
     public function test_uninstall_removes_plugin_data_but_never_the_saas_plugins_options(): void {
         if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
             define( 'WP_UNINSTALL_PLUGIN', true );
@@ -41,6 +125,7 @@ class UninstallTest extends TestCase {
         WP_Mock::userFunction( 'current_user_can' )
             ->with( 'delete_plugins' )
             ->andReturn( true );
+        WP_Mock::userFunction( 'get_option' )->andReturn( '' ); // no key saved
 
         $deleted_options    = [];
         $deleted_transients = [];
@@ -86,7 +171,7 @@ class UninstallTest extends TestCase {
 
         require dirname( __DIR__ ) . '/uninstall.php';
 
-        // No secret survives uninstall, under its current or its pre-1.9.4 name.
+        // With no paid key saved, no secret survives uninstall, under its current or its pre-1.9.4 name.
         foreach ( [ 'api_key', 'secret', 'paid_key_claim_token' ] as $secret ) {
             $this->assertContains( 'drspeed_aias_' . $secret, $deleted_options );
             $this->assertContains( 'cu_scanner_' . $secret, $deleted_options );

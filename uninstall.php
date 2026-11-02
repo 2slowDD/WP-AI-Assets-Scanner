@@ -13,8 +13,9 @@
  * the service plugin owns and fails if any of them would be deleted; check a
  * new name against it before adding it here.
  *
- * The saved API key is removed too, so no secret stays in the database after
- * the plugin is deleted.
+ * A saved paid API key stays, by the operator's decision: the service can only
+ * bring back a free key, so deleting a paid one would leave its customer on a new
+ * free key after a reinstall. A free key is removed. Every other secret is removed.
  *
  * @package AIAssetsScanner
  */
@@ -38,8 +39,15 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
 	foreach ( array( 'options', 'version' ) as $group ) {
 		foreach ( $names[ $group ] as $option => $legacy_option ) {
-			delete_option( $option );
-			delete_option( $legacy_option );
+			foreach ( array( $option, $legacy_option ) as $name ) {
+				if ( 'drspeed_aias_api_key' === $option ) {
+					$key = get_option( $name, '' );
+					if ( is_string( $key ) && '' !== $key && ! str_starts_with( $key, 'cusk_Freekey_' ) ) {
+						continue; // A paid key: see the note at the top of this file.
+					}
+				}
+				delete_option( $name );
+			}
 		}
 	}
 

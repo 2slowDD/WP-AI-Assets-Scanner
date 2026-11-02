@@ -102,7 +102,7 @@ A firewall or rate limit can block scans. Settings provides guidance and a Cloud
 
 = What is removed when I delete the plugin? =
 
-The plugin's options, scan history, stored results, scheduled tasks, and saved API key are removed from WordPress. Export your history first if you want to keep it.
+The plugin's options, scan history, stored results and scheduled tasks are removed from WordPress. A paid API key stays saved, so a reinstall works straight away. A free key is removed; **Validate your key** brings it back. To remove a paid key too, delete the `drspeed_aias_api_key` option, for example with WP-CLI. Export your history first if you want to keep it.
 
 = I installed AI Assets Scanner from wpservice.pro before it was on WordPress.org. How do I switch? =
 
@@ -115,7 +115,7 @@ The WordPress.org edition lives in a different plugin folder, so WordPress sees 
 
 = I deleted and reinstalled the plugin. Where is my key? =
 
-Deleting the plugin removes the saved key from your site, but the key and its credits stay on wpservice.pro. Open **Settings** and click **Validate your key**: the same key comes back with its remaining credits. Deactivating the plugin does not remove the key.
+A paid key is still in place. For a free key, open **Settings** and click **Validate your key**: the same key comes back with its remaining credits. Deactivating the plugin does not remove the key.
 
 == External services ==
 
@@ -154,6 +154,7 @@ Privacy policy:[https://wpservice.pro/privacy-policy/](https://wpservice.pro/pri
 * New: on your own site, the scanner's parameters now pass through Yoast SEO's URL cleanup automatically, on scan requests only. Normal visitors and your Yoast settings are not affected.
 * New: a "Verified by Dr. Speed Lab" badge in the admin header.
 * New: on a new install with no key, the Settings page dims around "Validate your key", so the first step is obvious. It goes away once a key is in place.
+* Changed: deleting the plugin now keeps a paid API key, so a reinstall works straight away. Before, a reinstall lost the key, and Validate could only offer a free one. A free key is still removed, and Validate brings it back.
 
 = 1.9.7 =
 * Fixed pages that failed inside the scanner (for example a page that hit the scanner's time limit) being reported as "blocked" by your host with a server error. They now get their own message saying what happened, and nothing on the screen blames your site for them.
