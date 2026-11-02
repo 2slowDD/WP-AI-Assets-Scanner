@@ -272,8 +272,67 @@ class DRSPEED_AIAS_Scan_Status {
 				// instead of by two predicates that must agree in two languages.
 				'kept_breakdown' => self::build_kept_breakdown( $page ),
 			];
+			$rows[ array_key_last( $rows ) ] += self::bypass_lost_fields( $page, $st['class'] );
 		}
 		return $rows;
+	}
+
+	/**
+	 * FU-AAS-BYPASS-STRIPPED-AWARENESS (spec §4.1): untrusted Railway input for a warning
+	 * in wp-admin. Keys are checked against a closed vocabulary; the host is parsed here so
+	 * the browser never parses a Railway URL. "External" is the comparison that sets the
+	 * worker's is_external (ScannerAjax::build_pages_array). wp_parse_url and home_url run
+	 * only for a flagged row.
+	 *
+	 * @param array  $page  Raw worker page.
+	 * @param string $class The row's status class.
+	 * @return array{bypass_lost:bool,bypass_keys_lost:string[],bypass_lost_by:string,bypass_lost_host:string,bypass_lost_external:bool,bypass_fix_keys:string[]}
+	 */
+	private static function bypass_lost_fields( array $page, string $class ): array {
+		$none = [
+			'bypass_lost'          => false,
+			'bypass_keys_lost'     => [],
+			'bypass_lost_by'       => '',
+			'bypass_lost_host'     => '',
+			'bypass_lost_external' => false,
+			'bypass_fix_keys'      => [],
+		];
+		if ( ! in_array( $class, [ 'ok', 'partial' ], true ) || 1 !== ( $page['bypass_lost'] ?? null ) ) {
+			return $none;
+		}
+		$known = \DrSpeedAIAS\Scanner\PluginDetector::scan_query_keys();
+		$raw   = is_array( $page['bypass_keys_lost'] ?? null ) ? $page['bypass_keys_lost'] : [];
+		$keys  = array_values( array_unique( array_intersect( array_filter( $raw, 'is_string' ), $known ) ) );
+		if ( [] === $keys ) {
+			return $none;
+		}
+		$url      = (string) ( $page['url'] ?? '' );
+		$host     = self::comparable_host( $url );
+		$external = '' !== $host && $host !== self::comparable_host( (string) home_url() );
+		$fix      = $keys;
+		if ( ! $external ) {
+			$query = (string) ( wp_parse_url( $url, PHP_URL_QUERY ) ?: '' );
+			foreach ( explode( '&', $query ) as $pair ) {
+				$key = explode( '=', $pair, 2 )[0];
+				if ( in_array( $key, $known, true ) && ! in_array( $key, $fix, true ) ) {
+					$fix[] = $key;
+				}
+			}
+			sort( $fix );
+		}
+		return [
+			'bypass_lost'          => true,
+			'bypass_keys_lost'     => $keys,
+			'bypass_lost_by'       => 'yoast' === ( $page['bypass_lost_by'] ?? '' ) ? 'yoast' : '',
+			'bypass_lost_host'     => $host,
+			'bypass_lost_external' => $external,
+			'bypass_fix_keys'      => $fix,
+		];
+	}
+
+	private static function comparable_host( string $url ): string {
+		$host = wp_parse_url( $url, PHP_URL_HOST );
+		return is_string( $host ) ? strtolower( (string) preg_replace( '/^www\./i', '', $host ) ) : '';
 	}
 
 	/**

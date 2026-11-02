@@ -1,0 +1,191 @@
+{
+    "external_yoast": {
+        "n": 1,
+        "url": "https://other.example/a",
+        "status_class": "ok",
+        "status_label": "OK",
+        "survivor_device": "",
+        "credits": 1,
+        "safe": 0,
+        "aggressive": 0,
+        "needed": 0,
+        "safe_breakdown": [],
+        "aggressive_breakdown": [],
+        "et_candidate": false,
+        "et_charged": false,
+        "bypass_suffixes": [],
+        "visual_channel_off": [],
+        "kept_protection": [],
+        "kept_count": 0,
+        "kept_breakdown": [],
+        "bypass_lost": true,
+        "bypass_keys_lost": [
+            "nowprocket"
+        ],
+        "bypass_lost_by": "yoast",
+        "bypass_lost_host": "other.example",
+        "bypass_lost_external": true,
+        "bypass_fix_keys": [
+            "nowprocket"
+        ]
+    },
+    "external_generic": {
+        "n": 1,
+        "url": "https://third.example/b",
+        "status_class": "ok",
+        "status_label": "OK",
+        "survivor_device": "",
+        "credits": 1,
+        "safe": 0,
+        "aggressive": 0,
+        "needed": 0,
+        "safe_breakdown": [],
+        "aggressive_breakdown": [],
+        "et_candidate": false,
+        "et_charged": false,
+        "bypass_suffixes": [],
+        "visual_channel_off": [],
+        "kept_protection": [],
+        "kept_count": 0,
+        "kept_breakdown": [],
+        "bypass_lost": true,
+        "bypass_keys_lost": [
+            "nowprocket"
+        ],
+        "bypass_lost_by": "",
+        "bypass_lost_host": "third.example",
+        "bypass_lost_external": true,
+        "bypass_fix_keys": [
+            "nowprocket"
+        ]
+    },
+    "own_generic": {
+        "n": 1,
+        "url": "https://www.own.example/c?nowpcu",
+        "status_class": "ok",
+        "status_label": "OK",
+        "survivor_device": "",
+        "credits": 1,
+        "safe": 0,
+        "aggressive": 0,
+        "needed": 0,
+        "safe_breakdown": [],
+        "aggressive_breakdown": [],
+        "et_candidate": false,
+        "et_charged": false,
+        "bypass_suffixes": [],
+        "visual_channel_off": [],
+        "kept_protection": [],
+        "kept_count": 0,
+        "kept_breakdown": [],
+        "bypass_lost": true,
+        "bypass_keys_lost": [
+            "cu_dep_graph",
+            "cu_scan_token",
+            "nowprocket"
+        ],
+        "bypass_lost_by": "",
+        "bypass_lost_host": "own.example",
+        "bypass_lost_external": false,
+        "bypass_fix_keys": [
+            "cu_dep_graph",
+            "cu_scan_token",
+            "nowpcu",
+            "nowprocket"
+        ]
+    },
+    "own_token_only": {
+        "n": 1,
+        "url": "https://own.example/d",
+        "status_class": "ok",
+        "status_label": "OK",
+        "survivor_device": "",
+        "credits": 1,
+        "safe": 0,
+        "aggressive": 0,
+        "needed": 0,
+        "safe_breakdown": [],
+        "aggressive_breakdown": [],
+        "et_candidate": false,
+        "et_charged": false,
+        "bypass_suffixes": [],
+        "visual_channel_off": [],
+        "kept_protection": [],
+        "kept_count": 0,
+        "kept_breakdown": [],
+        "bypass_lost": true,
+        "bypass_keys_lost": [
+            "cu_dep_graph",
+            "cu_scan_token"
+        ],
+        "bypass_lost_by": "",
+        "bypass_lost_host": "own.example",
+        "bypass_lost_external": false,
+        "bypass_fix_keys": [
+            "cu_dep_graph",
+            "cu_scan_token"
+        ]
+    },
+    "clean": {
+        "n": 1,
+        "url": "https://own.example/e",
+        "status_class": "ok",
+        "status_label": "OK",
+        "survivor_device": "",
+        "credits": 1,
+        "safe": 0,
+        "aggressive": 0,
+        "needed": 0,
+        "safe_breakdown": [],
+        "aggressive_breakdown": [],
+        "et_candidate": false,
+        "et_charged": false,
+        "bypass_suffixes": [
+            "nowprocket"
+        ],
+        "visual_channel_off": [],
+        "kept_protection": [],
+        "kept_count": 0,
+        "kept_breakdown": [],
+        "bypass_lost": false,
+        "bypass_keys_lost": [],
+        "bypass_lost_by": "",
+        "bypass_lost_host": "",
+        "bypass_lost_external": false,
+        "bypass_fix_keys": []
+    },
+    "own_yoast": {
+        "n": 1,
+        "url": "https://own.example/f",
+        "status_class": "ok",
+        "status_label": "OK",
+        "survivor_device": "",
+        "credits": 1,
+        "safe": 0,
+        "aggressive": 0,
+        "needed": 0,
+        "safe_breakdown": [],
+        "aggressive_breakdown": [],
+        "et_candidate": false,
+        "et_charged": false,
+        "bypass_suffixes": [],
+        "visual_channel_off": [],
+        "kept_protection": [],
+        "kept_count": 0,
+        "kept_breakdown": [],
+        "bypass_lost": true,
+        "bypass_keys_lost": [
+            "cu_dep_graph",
+            "cu_scan_token",
+            "nowprocket"
+        ],
+        "bypass_lost_by": "yoast",
+        "bypass_lost_host": "own.example",
+        "bypass_lost_external": false,
+        "bypass_fix_keys": [
+            "cu_dep_graph",
+            "cu_scan_token",
+            "nowprocket"
+        ]
+    }
+}

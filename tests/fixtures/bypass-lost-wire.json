@@ -1,0 +1,59 @@
+{
+  "external_yoast": {
+    "bypass_lost": 1,
+    "bypass_keys_lost": [
+      "nowprocket"
+    ],
+    "bypass_lost_by": "yoast"
+  },
+  "translated": {
+    "bypass_lost": 1,
+    "bypass_keys_lost": [
+      "nowprocket"
+    ],
+    "bypass_lost_by": "yoast"
+  },
+  "two_hop": {
+    "bypass_lost": 1,
+    "bypass_keys_lost": [
+      "nowprocket"
+    ],
+    "bypass_lost_by": "yoast"
+  },
+  "bare_yoast": {
+    "bypass_lost": 1,
+    "bypass_keys_lost": [
+      "nowprocket"
+    ]
+  },
+  "external_generic": {
+    "bypass_lost": 1,
+    "bypass_keys_lost": [
+      "nowprocket"
+    ]
+  },
+  "own_yoast": {
+    "bypass_lost": 1,
+    "bypass_keys_lost": [
+      "cu_dep_graph",
+      "cu_scan_token",
+      "nowprocket"
+    ],
+    "bypass_lost_by": "yoast"
+  },
+  "own_generic": {
+    "bypass_lost": 1,
+    "bypass_keys_lost": [
+      "cu_dep_graph",
+      "cu_scan_token",
+      "nowprocket"
+    ]
+  },
+  "own_token_only": {
+    "bypass_lost": 1,
+    "bypass_keys_lost": [
+      "cu_dep_graph",
+      "cu_scan_token"
+    ]
+  }
+}
