@@ -141,7 +141,7 @@ class ScannerAjax {
      * A scan cannot start without a usable key. Without this check the reserve call
      * went out with an empty key and the operator saw "HTTP 401: Invalid API key"
      * with no hint that the fix is one click in Settings (typical after the plugin
-     * was deleted and reinstalled, which removes the saved key).
+     * was deleted and reinstalled, which removes a free key).
      *
      * @return array|null Error payload for wp_send_json_error(), or null when a key is saved.
      */

@@ -6,8 +6,8 @@
  * everything to `drspeed_aias_`.
  *
  * Read by Migrations (moves old data to the new names once) and by uninstall.php
- * (deletes both). Keeping one list means a name cannot be migrated but left
- * behind on delete, or the other way round.
+ * (deletes both, except a saved paid API key). Keeping one list means a name
+ * cannot be migrated but left behind on delete, or the other way round.
  *
  * The old names are listed one by one on purpose. The wpservice.pro service
  * plugin still uses the `cu_scanner_` prefix for its own options, and a site can

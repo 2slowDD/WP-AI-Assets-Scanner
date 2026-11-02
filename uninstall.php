@@ -1,7 +1,7 @@
 <?php
 /**
  * Uninstall handler: removes every option, transient and scheduled event the
- * plugin created.
+ * plugin created, except a saved paid API key (see below).
  *
  * WordPress runs this file when the user deletes the plugin from the Plugins
  * screen. All work happens inside a closure, so no global variables are defined.
@@ -13,9 +13,9 @@
  * the service plugin owns and fails if any of them would be deleted; check a
  * new name against it before adding it here.
  *
- * A saved paid API key stays, by the operator's decision: the service can only
- * bring back a free key, so deleting a paid one would leave its customer on a new
- * free key after a reinstall. A free key is removed. Every other secret is removed.
+ * A saved paid API key stays: the service can only bring back a free key, so
+ * deleting a paid one would leave its customer on a new free key after a reinstall.
+ * A free key is removed. Every other secret is removed.
  *
  * @package AIAssetsScanner
  */

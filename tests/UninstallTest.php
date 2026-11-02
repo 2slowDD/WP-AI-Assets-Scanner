@@ -103,18 +103,20 @@ class UninstallTest extends TestCase {
     /**
      * @dataProvider not_a_paid_key
      */
-    public function test_anything_but_a_paid_key_is_deleted( mixed $value ): void {
-        $this->assertContains( 'drspeed_aias_api_key', $this->uninstall_with( [ 'drspeed_aias_api_key' => $value ] ) );
+    public function test_anything_but_a_paid_key_is_deleted( string $name, mixed $value ): void {
+        $this->assertContains( $name, $this->uninstall_with( [ $name => $value ] ) );
     }
 
     public function not_a_paid_key(): array {
-        return [
-            'free key'    => [ 'cusk_Freekey_12' ],
-            'pending'     => [ 'cusk_Freekey_?' ],
-            'empty'       => [ '' ],
-            'not a string' => [ [ 'x' ] ],
-            'false'       => [ false ],
-        ];
+        $cases = [];
+        foreach ( [ 'drspeed_aias_api_key', 'cu_scanner_api_key' ] as $name ) {
+            $cases[ "$name free key" ]     = [ $name, 'cusk_Freekey_12' ];
+            $cases[ "$name pending" ]      = [ $name, 'cusk_Freekey_?' ];
+            $cases[ "$name empty" ]        = [ $name, '' ];
+            $cases[ "$name not a string" ] = [ $name, [ 'x' ] ];
+            $cases[ "$name false" ]        = [ $name, false ];
+        }
+        return $cases;
     }
 
     public function test_uninstall_removes_plugin_data_but_never_the_saas_plugins_options(): void {
