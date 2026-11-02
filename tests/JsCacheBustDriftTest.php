@@ -131,8 +131,8 @@ final class JsCacheBustDriftTest extends TestCase {
 		'1.9.5.1' => '7388edb02543b518b7d6c99208a0ad5bfba65b5334b320ffea3d1ec63452c7c7',
 		// 1.9.7 — banner from the copy map; partial rows lead with the survivor; errored-page sentences.
 		'1.9.7' => 'a6df5b06dcc785aa5cfb9b87a4cfb285c460a089c125653281175ef160f6e071',
-		// 1.9.7.1 (plugin still 1.9.7, unreleased) — "Verified by Dr. Speed Lab" badge; new-install dim on Settings.
-		'1.9.7.1' => 'c108cca4bf4be411433519e4ed6fcd6c09e497eadcb78ce90364d6eba75a9c5f',
+		// 1.9.7.1 (plugin still 1.9.7, unreleased) — "Verified by Dr. Speed Lab" badge; new-install dim on Settings; a warning when a site strips the scanner's parameters.
+		'1.9.7.1' => 'ba3a3951b901fe77272f2164fc7650a140a96b54655e9fe27b5422013c271479',
 	);
 
 	/**
@@ -194,6 +194,8 @@ final class JsCacheBustDriftTest extends TestCase {
 		'1.0.11.16' => '1f5d29e5278686ca6a0d8807b2d4bcf7a16e5293fb372910a5bad8c0641d8c0a',
 		// 1.0.11.17 — pushReady set before the banner renders (final-review I1).
 		'1.0.11.17' => '4de9e1e773922aee935a4d38b8b9056d83eef2993cd81f37fef087fe27c5082c',
+		// 1.0.11.18 — row note + panel when a site strips the scanner's parameters.
+		'1.0.11.18' => 'e93ffbbe0d61ce68cb91a028937ece75249bcb6bd7e0d2a6577e5ad0dd3f6a1a',
 	);
 
 	private function root(): string {

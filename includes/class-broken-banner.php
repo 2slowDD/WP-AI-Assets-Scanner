@@ -542,6 +542,26 @@ class DRSPEED_AIAS_Broken_Banner {
 				'none'     => __( '✓ %s: no unloads found', 'dr-speed-ai-assets-scanner' ),
 			],
 			'stack_phrases'      => self::stack_phrases(),
+			// FU-AAS-BYPASS-STRIPPED-AWARENESS (spec §5): copy approved by the operator, 2026-11-02.
+			'bypass_lost'        => [
+				/* translators: %s: query parameters, e.g. nowprocket */
+				'note_optimizer'       => __( '⚠ Optimizer stayed on: this site removed ?%s', 'dr-speed-ai-assets-scanner' ),
+				'note_plain'           => __( '⚠ This site removed the scanner\'s URL parameters', 'dr-speed-ai-assets-scanner' ),
+				'heading_optimizer'    => __( 'Some pages were scanned with the optimizer still on', 'dr-speed-ai-assets-scanner' ),
+				'heading_plain'        => __( 'Some pages may not have been measured correctly', 'dr-speed-ai-assets-scanner' ),
+				'body_optimizer_one'   => __( 'This site removes the scanner\'s URL parameters, so at least some of these pages were measured with optimization running and their rules may be unreliable.', 'dr-speed-ai-assets-scanner' ),
+				'body_optimizer_many'  => __( 'These sites remove the scanner\'s URL parameters, so at least some of these pages were measured with optimization running and their rules may be unreliable.', 'dr-speed-ai-assets-scanner' ),
+				'body_plain_one'       => __( 'This site removes the scanner\'s URL parameters, so these pages may not have been measured correctly and their rules may be unreliable.', 'dr-speed-ai-assets-scanner' ),
+				'body_plain_many'      => __( 'These sites remove the scanner\'s URL parameters, so these pages may not have been measured correctly and their rules may be unreliable.', 'dr-speed-ai-assets-scanner' ),
+				/* translators: %s: comma-separated query parameters */
+				'fix_own_yoast'        => __( 'This looks like Yoast SEO\'s URL cleanup. Add these to "Additional URL parameters to allow": %s. Or turn off "Remove unregistered URL parameters" while you scan. Then scan again before applying these rules.', 'dr-speed-ai-assets-scanner' ),
+				/* translators: %s: comma-separated query parameters */
+				'fix_own_generic'      => __( 'A plugin or server rule on this site is removing them. Allow these parameters in its settings: %s, or temporarily deactivate it. Then scan again before applying these rules.', 'dr-speed-ai-assets-scanner' ),
+				/* translators: %s: comma-separated query parameters */
+				'fix_external_yoast'   => __( 'If you run this site: this looks like Yoast SEO\'s URL cleanup. Add these to "Additional URL parameters to allow": %s. Or turn off "Remove unregistered URL parameters" while you scan. Then scan again before applying these rules.', 'dr-speed-ai-assets-scanner' ),
+				/* translators: %s: comma-separated query parameters */
+				'fix_external_generic' => __( 'If you run this site: a plugin or server rule on it is removing them. Allow these parameters in its settings: %s, or temporarily deactivate it. Then scan again before applying these rules.', 'dr-speed-ai-assets-scanner' ),
+			],
 		];
 	}
 

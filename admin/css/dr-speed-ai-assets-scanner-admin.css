@@ -914,6 +914,7 @@
 .cu-resolved-note { font-size: 13px; color: #787c82; font-style: italic; }
 /* FU-ABSENT-SAFE B2 — Step-4 "optimizer detected" note (see cu-bypass-note in scanner.js). */
 .cu-bypass-note { font-size: 13px; color: #2271b1; font-style: italic; }
+.cu-bypass-note--lost { color: #b32d2e; font-style: normal; font-weight: 600; }
 /* FU-VFM-MASKING — Step-4 "visual comparison off" note (see cu-choff-note in scanner.js).
    Block-level so it starts its own line instead of trailing the bypass note; the tooltip's
    absolutely-positioned box is unaffected (it anchors to .cu-help, which stays inline-flex). */
@@ -2200,6 +2201,10 @@
     font-size: 10px;
     line-height: 1.35;
 }
+#drspeed-aias-app .cu-url-meta .cu-bypass-note--lost { color: #b32d2e; font-style: normal; font-weight: 600; }
+#drspeed-aias-app #cu-bypass-lost-panel .notice { margin: 0 0 16px; }
+#drspeed-aias-app #cu-bypass-lost-panel code,
+#drspeed-aias-app #cu-bypass-lost-panel .cu-bypass-lost-host { overflow-wrap: anywhere; }
 #drspeed-aias-app .cu-url-meta .cu-kept-chip { font-size: 9px; }
 #drspeed-aias-app .cu-url-suffix { color: #7a8796; opacity: 1; font-weight: 400; }
 #drspeed-aias-app .cu-url-table td.cu-san { min-width: 0; white-space: nowrap; }

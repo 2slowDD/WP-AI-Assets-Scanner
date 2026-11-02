@@ -107,5 +107,19 @@
     },
     "stack_phrases": {
         "siteground": "SiteGround bot protection"
+    },
+    "bypass_lost": {
+        "note_optimizer": "⚠ Optimizer stayed on: this site removed ?%s",
+        "note_plain": "⚠ This site removed the scanner's URL parameters",
+        "heading_optimizer": "Some pages were scanned with the optimizer still on",
+        "heading_plain": "Some pages may not have been measured correctly",
+        "body_optimizer_one": "This site removes the scanner's URL parameters, so at least some of these pages were measured with optimization running and their rules may be unreliable.",
+        "body_optimizer_many": "These sites remove the scanner's URL parameters, so at least some of these pages were measured with optimization running and their rules may be unreliable.",
+        "body_plain_one": "This site removes the scanner's URL parameters, so these pages may not have been measured correctly and their rules may be unreliable.",
+        "body_plain_many": "These sites remove the scanner's URL parameters, so these pages may not have been measured correctly and their rules may be unreliable.",
+        "fix_own_yoast": "This looks like Yoast SEO's URL cleanup. Add these to \"Additional URL parameters to allow\": %s. Or turn off \"Remove unregistered URL parameters\" while you scan. Then scan again before applying these rules.",
+        "fix_own_generic": "A plugin or server rule on this site is removing them. Allow these parameters in its settings: %s, or temporarily deactivate it. Then scan again before applying these rules.",
+        "fix_external_yoast": "If you run this site: this looks like Yoast SEO's URL cleanup. Add these to \"Additional URL parameters to allow\": %s. Or turn off \"Remove unregistered URL parameters\" while you scan. Then scan again before applying these rules.",
+        "fix_external_generic": "If you run this site: a plugin or server rule on it is removing them. Allow these parameters in its settings: %s, or temporarily deactivate it. Then scan again before applying these rules."
     }
 }

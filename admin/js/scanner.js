@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const SCANNER_JS_VERSION = '1.0.11.17';
+    const SCANNER_JS_VERSION = '1.0.11.18';
     console.log( '[AI Assets Scanner] scanner.js v' + SCANNER_JS_VERSION + ' loaded' );
 
     const ajax    = drspeedAias.ajaxUrl;
@@ -1700,6 +1700,7 @@
     function beginScanPolling() {
         document.getElementById('cu-pages-tbody').innerHTML = '';
         resetBypassStatus(); // 1.8.1b — clear a previous scan's latched "Applied".
+        renderBypassLostPanel( [] ); // a same-page restart can end with no restoreStep4 (killed)
         // 1.8.6 — a new scan opens the live table on page 1. Applied NOW, not on the next poll: a
         // queued scan returns before the row loop, so the old pager would otherwise sit over the
         // empty table for the whole queue wait.
@@ -3169,6 +3170,7 @@
 
         // Subsystem D-4: render broken-banner if pages were blocked.
         renderBrokenBanner( bannerData || {} );
+        renderBypassLostPanel( pages );
 
         // Per-URL results table (hidden when pages is empty/undefined).
         renderResultUrlList( pages, scanId, cuRulesActive );
@@ -3399,9 +3401,15 @@
             // optimizer-bypass suffix (p.bypass_suffixes threaded server-side by
             // DRSPEED_AIAS_Scan_Status::build_pages()). Gated on non-empty so a miss renders
             // no note at all (fail-closed, never a false positive).
-            var bypassNote = ( p.bypass_suffixes && p.bypass_suffixes.length )
-                ? ' <span class="cu-bypass-note">optimizer detected — scanned with ?' + cuEscHtml( p.bypass_suffixes.join( '&' ) ) + '</span>'
-                : '';
+            var bypassLostCopy = p.bypass_lost === true ? cuBypassCopy() : null;
+            var bypassLostKeys = bypassLostCopy ? cuBypassOptimizerKeys( p ) : [];
+            var bypassNote = bypassLostCopy
+                ? ' <span class="cu-bypass-note cu-bypass-note--lost">' + ( bypassLostKeys.length
+                    ? fmt( S( bypassLostCopy.note_optimizer ), [ esc( bypassLostKeys.join( '&' ) ) ] )
+                    : S( bypassLostCopy.note_plain ) ) + '</span>'
+                : ( p.bypass_suffixes && p.bypass_suffixes.length )
+                    ? ' <span class="cu-bypass-note">optimizer detected — scanned with ?' + cuEscHtml( p.bypass_suffixes.join( '&' ) ) + '</span>'
+                    : '';
             // FU-VFM-MASKING — legacy-row guard: rows restored from pre-release storage
             // (drspeed_aias_last_result / localStorage drspeed_aias_result, both surfaces per AC-M7b)
             // lack this key entirely; an unguarded .length would throw and break the
@@ -3639,6 +3647,21 @@
         },
         stack_phrases: {
             siteground: 'SiteGround bot protection',
+        },
+        // FU-AAS-BYPASS-STRIPPED-AWARENESS (spec §5): copy approved by the operator, 2026-11-02.
+        bypass_lost: {
+            note_optimizer: '⚠ Optimizer stayed on: this site removed ?%s',
+            note_plain: '⚠ This site removed the scanner\'s URL parameters',
+            heading_optimizer: 'Some pages were scanned with the optimizer still on',
+            heading_plain: 'Some pages may not have been measured correctly',
+            body_optimizer_one: 'This site removes the scanner\'s URL parameters, so at least some of these pages were measured with optimization running and their rules may be unreliable.',
+            body_optimizer_many: 'These sites remove the scanner\'s URL parameters, so at least some of these pages were measured with optimization running and their rules may be unreliable.',
+            body_plain_one: 'This site removes the scanner\'s URL parameters, so these pages may not have been measured correctly and their rules may be unreliable.',
+            body_plain_many: 'These sites remove the scanner\'s URL parameters, so these pages may not have been measured correctly and their rules may be unreliable.',
+            fix_own_yoast: 'This looks like Yoast SEO\'s URL cleanup. Add these to "Additional URL parameters to allow": %s. Or turn off "Remove unregistered URL parameters" while you scan. Then scan again before applying these rules.',
+            fix_own_generic: 'A plugin or server rule on this site is removing them. Allow these parameters in its settings: %s, or temporarily deactivate it. Then scan again before applying these rules.',
+            fix_external_yoast: 'If you run this site: this looks like Yoast SEO\'s URL cleanup. Add these to "Additional URL parameters to allow": %s. Or turn off "Remove unregistered URL parameters" while you scan. Then scan again before applying these rules.',
+            fix_external_generic: 'If you run this site: a plugin or server rule on it is removing them. Allow these parameters in its settings: %s, or temporarily deactivate it. Then scan again before applying these rules.',
         },
         phrases: {
             tier2_cf_challenge: 'Cloudflare challenge',
@@ -3901,6 +3924,54 @@
             '<p><strong>⚠ ' + S( M.heading ) + '</strong></p>' +
             '<p>' + composeBannerBody( bd, M ) + '</p>' +
             '<p><button type="button" class="button drspeed-aias-dismiss-banner">' + S( M.dismiss ) + '</button></p>' +
+            '</div>';
+    }
+
+    // FU-AAS-BYPASS-STRIPPED-AWARENESS (spec \u00a75). Its own node: renderBrokenBanner and
+    // renderPartialBanner each replace #cu-banner-area wholesale. Built from the FULL page list
+    // in restoreStep4, so the results table's paging cannot change it. Rows are validated in
+    // DRSPEED_AIAS_Scan_Status::bypass_lost_fields; the shape checks here cover stored rows.
+    const CU_BYPASS_OWN_KEYS = [ 'cu_scan_token', 'cu_dep_graph' ];
+    function cuBypassCopy() {
+        return mergeDefaults( BANNER_COPY_DEFAULTS, typeof drspeedAiasReasonCopy === 'object' ? drspeedAiasReasonCopy : null ).bypass_lost;
+    }
+    function cuBypassStrings( v ) {
+        return Array.isArray( v ) ? v.filter( function ( k ) { return typeof k === 'string'; } ) : [];
+    }
+    function cuBypassOptimizerKeys( p ) {
+        return cuBypassStrings( p.bypass_keys_lost ).filter( function ( k ) { return CU_BYPASS_OWN_KEYS.indexOf( k ) === -1; } );
+    }
+    function renderBypassLostPanel( pages ) {
+        const node = document.getElementById( 'cu-bypass-lost-panel' );
+        if ( !node ) return;
+        node.innerHTML = '';
+        const flagged = ( Array.isArray( pages ) ? pages : [] ).filter( function ( p ) { return p && p.bypass_lost === true; } );
+        if ( !flagged.length ) return;
+
+        const M = cuBypassCopy();
+        const hosts = new Map();
+        flagged.forEach( function ( p ) {
+            const host = typeof p.bypass_lost_host === 'string' ? p.bypass_lost_host : '';
+            if ( !hosts.has( host ) ) hosts.set( host, { keys: new Set(), yoast: false, external: false } );
+            const g = hosts.get( host );
+            cuBypassStrings( p.bypass_fix_keys ).forEach( function ( k ) { g.keys.add( k ); } );
+            if ( p.bypass_lost_by === 'yoast' ) g.yoast = true;
+            if ( p.bypass_lost_external === true ) g.external = true;
+        } );
+        const optimizer = flagged.some( function ( p ) { return cuBypassOptimizerKeys( p ).length > 0; } );
+        const many = hosts.size > 1;
+        const lines = [];
+        hosts.forEach( function ( g, host ) {
+            const key = 'fix_' + ( g.external ? 'external' : 'own' ) + '_' + ( g.yoast ? 'yoast' : 'generic' );
+            const code = '<code>' + esc( Array.from( g.keys ).sort().join( ', ' ) ) + '</code>';
+            const label = many && host ? '<strong class="cu-bypass-lost-host">' + esc( host ) + '</strong><br>' : '';
+            lines.push( '<p>' + label + fmt( S( M[ key ] ), [ code ] ) + '</p>' );
+        } );
+        node.innerHTML =
+            '<div class="notice notice-warning inline cu-bypass-lost-notice">' +
+            '<p><strong>' + S( optimizer ? M.heading_optimizer : M.heading_plain ) + '</strong></p>' +
+            '<p>' + S( M[ 'body_' + ( optimizer ? 'optimizer' : 'plain' ) + '_' + ( many ? 'many' : 'one' ) ] ) + '</p>' +
+            lines.join( '' ) +
             '</div>';
     }
 
@@ -4525,6 +4596,7 @@
                         beginScanPolling: beginScanPolling,
                         positionHelpBox: positionHelpBox,
                         renderPartialBanner: renderPartialBanner, restoreStep4: restoreStep4,
+                        renderBypassLostPanel: renderBypassLostPanel,
                         bannerCopyDefaults: BANNER_COPY_DEFAULTS,
                         showProbeOutcomeDialog: showProbeOutcomeDialog,
                         buildSummaryLine: buildSummaryLine, buildSummaryParts: buildSummaryParts,
