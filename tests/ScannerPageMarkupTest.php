@@ -60,6 +60,24 @@ class ScannerPageMarkupTest extends TestCase {
 		$this->assertStringNotContainsString( 'Safe rules are the safest to apply.', $markup );
 	}
 
+	/**
+	 * FU-AAS-BYPASS-STRIPPED-AWARENESS — renderBypassLostPanel returns silently when its node is missing,
+	 * and the Node harness pre-creates ids by NAME, so only this test notices the view losing it. It must
+	 * stay a sibling of the banner area: the banner writers replace #cu-banner-area wholesale, which would
+	 * wipe a panel nested inside it.
+	 */
+	public function test_bypass_lost_panel_node_directly_follows_the_banner_area(): void {
+		$markup = file_get_contents( dirname( __DIR__ ) . '/admin/views/scanner-page.php' );
+
+		$this->assertIsString( $markup );
+		$this->assertMatchesRegularExpression(
+			'#<div id="cu-banner-area"></div>\s*<div id="cu-bypass-lost-panel"></div>#',
+			$markup,
+			'the panel node must exist as the next sibling of the banner area, never inside it'
+		);
+		$this->assertSame( 1, substr_count( $markup, 'id="cu-bypass-lost-panel"' ), 'exactly one panel node' );
+	}
+
 	public function test_active_scan_uses_the_reference_radar_without_dropping_live_data_targets(): void {
 		$markup = file_get_contents( dirname( __DIR__ ) . '/admin/views/scanner-page.php' );
 

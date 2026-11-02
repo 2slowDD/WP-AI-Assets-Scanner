@@ -55,7 +55,9 @@ async function run() {
   });
 
   await arm('m7 two hosts, one Yoast: separate labels, each with its own keys and wording', () => {
-    const out = panel(render([ROWS.external_yoast, ROWS.external_generic]));
+    // The two rows must differ in keys: with identical keys, one Set shared across hosts passes.
+    const generic = Object.assign({}, ROWS.external_generic, { bypass_fix_keys: ['nowpcu'] });
+    const out = panel(render([ROWS.external_yoast, generic]));
     const a = out.indexOf('other.example'), b = out.indexOf('third.example');
     assert.ok(a !== -1 && b !== -1, 'both host labels');
     assert.ok(out.includes('cu-bypass-lost-host'), 'labels carry their class');
@@ -63,6 +65,27 @@ async function run() {
     assert.ok(lineA.includes('Yoast SEO') && !lineB.includes('Yoast SEO'), 'wording stays per host');
     assert.ok(lineB.includes('If you run this site: a plugin or server rule on it is removing them'), 'external generic line');
     assert.ok(lineB.includes(FIX_TAIL));
+    assert.ok(lineA.includes('<code>nowprocket</code>') && !lineA.includes('nowpcu'), 'first host lists only its own key');
+    assert.ok(lineB.includes('<code>nowpcu</code>') && !lineB.includes('nowprocket'), 'second host lists only its own key');
+  });
+
+  await arm('empty host: those rows group together with no label, beside a named host', () => {
+    // Own-site base: bypass_lost_fields never marks an empty host external.
+    const blank = (keys) => Object.assign({}, ROWS.own_generic, { bypass_lost_host: '', bypass_fix_keys: keys });
+    const out = panel(render([blank(['nowprocket']), ROWS.external_yoast, blank(['nowpcu'])]));
+    assert.strictEqual((out.match(/cu-bypass-lost-host/g) || []).length, 1, 'only the named host gets a label');
+    assert.ok(out.includes('<strong class="cu-bypass-lost-host">other.example</strong>'), 'the label is the named host');
+    assert.ok(!/<strong[^>]*>\s*<\/strong>/.test(out), 'no empty strong');
+    assert.strictEqual((out.match(/<code>/g) || []).length, 2, 'one fix line per group, so the empty-host rows are one group');
+    assert.ok(out.includes('<code>nowpcu, nowprocket</code>'), 'the empty-host group holds both rows\' keys');
+  });
+
+  await arm('keys render sorted across the rows of one host', () => {
+    // The fixture rows are already sorted, so only an out-of-order union shows the sort.
+    const first  = Object.assign({}, ROWS.own_generic, { bypass_fix_keys: ['nowprocket', 'cu_scan_token'] });
+    const second = Object.assign({}, ROWS.own_token_only, { bypass_fix_keys: ['nowpcu', 'cu_dep_graph'] });
+    const out = panel(render([first, second]));
+    assert.ok(out.includes('<code>cu_dep_graph, cu_scan_token, nowpcu, nowprocket</code>'), 'sorted union of both rows');
   });
 
   await arm('fix_own_yoast: own-site wording, ends with the scan-again sentence', () => {
