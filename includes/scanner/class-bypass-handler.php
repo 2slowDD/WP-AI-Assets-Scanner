@@ -76,6 +76,7 @@ class BypassHandler {
 
 	public static function init(): void {
 		add_action( 'wp_loaded', [ self::class, 'handle_wp_loaded' ], 0 );
+		add_filter( 'Yoast\WP\SEO\allowlist_permalink_vars', [ self::class, 'allow_scan_keys' ] );
 	}
 
 	// -------------------------------------------------------------------------
@@ -124,6 +125,23 @@ class BypassHandler {
 				);
 			} );
 		}
+	}
+
+	/**
+	 * Yoast URL cleanup: keep the scanner's own keys on a real scan request, so an own-site
+	 * scan keeps its bypass. Public URLs are cleaned as before. No Yoast setting is changed.
+	 */
+	public static function allow_scan_keys( mixed $vars ): mixed {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- token-based bypass; nonce architecturally N/A (request originates from headless browser, no session).
+		$raw = $_GET['cu_scan_token'] ?? '';
+		if ( ! is_array( $vars ) || ! is_string( $raw ) || '' === $raw ) {
+			return $vars;
+		}
+		$token = sanitize_text_field( wp_unslash( $raw ) );
+		if ( '' === $token || ! self::is_valid_token( $token ) ) {
+			return $vars;
+		}
+		return array_merge( $vars, PluginDetector::scan_query_keys() );
 	}
 
 	// -------------------------------------------------------------------------

@@ -114,6 +114,9 @@ class PluginDetector {
     private const CU_PLUGIN      = 'code-unloader/code-unloader.php';
     private const CU_MIN_VERSION = '1.3.9';
 
+    /** Code Unloader's bypass suffix. */
+    public const CODE_UNLOADER_BYPASS_KEY = 'nowpcu';
+
     /**
      * §5.5 + §8 row 18 — CPU-bound cap on body-scan haystack.
      * Bounds substring-scan cost regardless of whether the upstream server
@@ -372,6 +375,31 @@ class PluginDetector {
     ];
 
     /**
+     * Every query key the scanner itself relies on, as bare names: a closed vocabulary,
+     * read from consts only, so it is safe on a front-end request (no is_plugin_active()).
+     *
+     * @return string[]
+     */
+    public static function scan_query_keys(): array {
+        $queries = [ 'cu_scan_token', 'cu_dep_graph', self::CODE_UNLOADER_BYPASS_KEY ];
+        foreach ( self::OPTIMIZERS as $entry ) {
+            $queries[] = $entry['bypass_query'] ?? null;
+        }
+        foreach ( self::AUTO_BYPASS as $entry ) {
+            foreach ( $entry[1] as $param ) {
+                $queries[] = $param;
+            }
+        }
+        $keys = [];
+        foreach ( $queries as $query ) {
+            if ( is_string( $query ) && '' !== $query ) {
+                $keys[] = explode( '=', $query, 2 )[0];
+            }
+        }
+        return array_values( array_unique( $keys ) );
+    }
+
+    /**
      * is_plugin_active() and get_plugin_data() live in wp-admin/includes/plugin.php,
      * which WordPress loads only for admin requests. detect_typed() also runs on the
      * front end, when the scanning worker requests a page with a valid scan token
@@ -447,7 +475,7 @@ class PluginDetector {
             $data    = get_plugin_data( \WP_PLUGIN_DIR . '/' . self::CU_PLUGIN );
             $version = $data['Version'] ?? '0';
             if ( version_compare( $version, self::CU_MIN_VERSION, '>=' ) ) {
-                $result['auto_bypass']['code-unloader'] = [ 'nowpcu' ];
+                $result['auto_bypass']['code-unloader'] = [ self::CODE_UNLOADER_BYPASS_KEY ];
                 $result['auto_bypass_labels']['code-unloader'] = 'Code Unloader';
             } else {
                 $result['soft_block']['Code Unloader'] = "Version {$version} detected. Upgrade to v" . self::CU_MIN_VERSION . "+ for automatic bypass, or disable Code Unloader before scanning.";
