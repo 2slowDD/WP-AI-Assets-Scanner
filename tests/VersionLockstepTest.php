@@ -84,7 +84,7 @@ class VersionLockstepTest extends TestCase {
         $badge  = $this->capture_one( self::BADGE_RE, $readme, 'README.md shields.io VERSION badge' );
         $stable = $this->capture_one( self::STABLE_TAG_RE, $this->read_repo_file( 'readme.txt' ), 'readme.txt Stable tag' );
 
-        $this->assertSame( '1.9.9', $header, '1.9.9 — Step 3 says Lost when a site removed the bypass; header badge on top (FU-STEP3-BYPASS-LABEL-OVERCLAIMS, FU-AAS-HERO-BANNER-SWAP)' );
+        $this->assertSame( '1.9.10', $header, '1.9.10 — scans reach the worker via scanner.wpservice.pro with failover (FU-WORKER-CLOUDFLARE-FRONT)' );
 
         // Shape first: without it, three empty captures would "agree" and pass.
         foreach ( [ 'plugin header' => $header, 'DRSPEED_AIAS_VERSION define' => $define, 'README badge' => $badge, 'readme.txt Stable tag' => $stable ] as $where => $v ) {

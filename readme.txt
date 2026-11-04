@@ -4,7 +4,7 @@ Tags: performance, dequeue, unload unused css, optimize javascript, page speed
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.9.9
+Stable tag: 1.9.10
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -129,7 +129,7 @@ This plugin connects to two services run by WPservice.pro. Nothing is sent until
 * During a scan: status events tied to the scan ID, so the scan can be billed and supported. They contain the names of caching or optimization plugins detected on your site, whether each was paused for the scan, and hashed (unreadable) page paths.
 * If someone requests your site with an invalid scan token: one security event with a hashed IP address, user agent, and path, sent at most once every 10 minutes.
 
-**Scanning worker** (a server address given by the wpservice.pro API) renders your pages.
+**Scanning worker** (`https://scanner.wpservice.pro`, with `https://cu-scanner-railway-production.up.railway.app` as its fallback address) renders your pages. The plugin tries the first address and uses the second only when the first cannot be reached at all.
 
 * When you start a scan: the page URLs, your API key, a one-time scan token, the scanner secret the plugin generates for CDN rules, a summary of detected caching or optimization plugins, and the plugin version. If you entered an HTTP Basic Auth login for a staging site in Settings, that login is sent too, so the worker can open protected pages.
 * The worker then loads those pages from your site in a headless browser, the same way a visitor would.
@@ -148,6 +148,9 @@ Privacy policy:[https://wpservice.pro/privacy-policy/](https://wpservice.pro/pri
 5. Settings - Validate your key before scanning (get a free API key)
 
 == Changelog ==
+
+= 1.9.10 =
+* Fixed: scans work again on hosts that block the scanner's address. Some hosting providers block the shared network addresses the scanner runs on. The plugin now reaches the scanner through scanner.wpservice.pro first and falls back to the previous address only when the first cannot be reached at all. Nothing to configure.
 
 = 1.9.9 =
 * Fixed: during a scan, the "Optimizer bypass" row said "Applied" as soon as the scanner added its bypass parameters, even on sites that remove them. It now says "Requested" until a finished page confirms the bypass, and "Lost — optimizer stayed on" when a finished page lost it. The results page then explains what to allow.
