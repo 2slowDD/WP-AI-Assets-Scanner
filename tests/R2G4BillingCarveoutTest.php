@@ -194,6 +194,11 @@ class R2G4BillingCarveoutTest extends TestCase {
 
     public function test_cancel_job_success_does_not_write_scan_history_and_returns_pages_completed(): void {
         $this->mockCheck();
+        // FU-WORKER-CLOUDFLARE-FRONT: RailwayClient keeps per-host demotion marks in drspeed_aias_worker_* transients;
+        // scope them so the job-transient pins below (get once, delete once) stay exact.
+        WP_Mock::userFunction( 'get_transient' )->with( \Mockery::pattern( '/^drspeed_aias_worker_/' ) )->andReturn( false );
+        WP_Mock::userFunction( 'set_transient' )->with( \Mockery::pattern( '/^drspeed_aias_worker_/' ), \Mockery::any(), \Mockery::any() )->andReturn( true );
+        WP_Mock::userFunction( 'delete_transient' )->with( \Mockery::pattern( '/^drspeed_aias_worker_/' ) )->andReturn( true );
         WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 3 );
 
         WP_Mock::userFunction( 'get_transient' )

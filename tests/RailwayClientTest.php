@@ -13,6 +13,10 @@ class RailwayClientTest extends TestCase {
         parent::setUp();
         WP_Mock::setUp();
         WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( fn( $url, $component = -1 ) => parse_url( $url, $component ) );
+        WP_Mock::userFunction( 'get_transient' )->andReturn( false );     // FU-WORKER-CLOUDFLARE-FRONT: RailwayClient demotion marks
+        WP_Mock::userFunction( 'set_transient' )->andReturn( true );
+        WP_Mock::userFunction( 'delete_transient' )->andReturn( true );
+        WP_Mock::userFunction( 'wp_json_encode' )->andReturnUsing( fn( $v ) => json_encode( $v ) ); // was only defined by an earlier test when run in the full suite
         $this->client = new RailwayClient( 'https://cu-scanner-railway-production.up.railway.app', 'api-key-123' );
     }
     public function tearDown(): void {
@@ -37,7 +41,7 @@ class RailwayClientTest extends TestCase {
 
     public function test_get_status_uses_from_param(): void {
         WP_Mock::userFunction( 'wp_remote_get' )
-            ->with( 'https://cu-scanner-railway-production.up.railway.app/jobs/job-xyz/status?from=5', \Mockery::type( 'array' ) )
+            ->with( 'https://scanner.wpservice.pro/jobs/job-xyz/status?from=5', \Mockery::type( 'array' ) )
             ->once()
             ->andReturn( [] );
         WP_Mock::userFunction( 'is_wp_error' )->andReturn( false );
@@ -62,7 +66,7 @@ class RailwayClientTest extends TestCase {
 
     public function test_cancel_job_posts_to_correct_endpoint(): void {
         WP_Mock::userFunction( 'wp_remote_post' )
-            ->with( 'https://cu-scanner-railway-production.up.railway.app/jobs/job-xyz/cancel', \Mockery::type( 'array' ) )
+            ->with( 'https://scanner.wpservice.pro/jobs/job-xyz/cancel', \Mockery::type( 'array' ) )
             ->once()
             ->andReturn( [] );
         WP_Mock::userFunction( 'is_wp_error' )->andReturn( false );
@@ -102,7 +106,7 @@ class RailwayClientTest extends TestCase {
 
         $this->assertSame( 'job-xyz', $result['job_id'] );
         $this->assertNotNull( $captured, 'wp_remote_post was not called' );
-        $this->assertSame( 'https://cu-scanner-railway-production.up.railway.app/jobs', $captured['url'] );
+        $this->assertSame( 'https://scanner.wpservice.pro/jobs', $captured['url'] ); // first attempt = the Cloudflare host (spec §3.3)
         $body = json_decode( (string) $captured['args']['body'], true );
         $this->assertIsArray( $body );
         $this->assertArrayHasKey( 'plugin_version', $body );

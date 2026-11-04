@@ -18,8 +18,24 @@ class Settings {
      * subdomain.
      */
     private const ALLOWED_RAILWAY_HOSTS = array(
+        'scanner.wpservice.pro',                          // Cloudflare-proxied front (FU-WORKER-CLOUDFLARE-FRONT, 1.9.10)
+        'cu-scanner-railway-production.up.railway.app',   // direct Railway address — permanent fallback
+    );
+
+    /**
+     * Preference order for worker calls (spec §3.3): the Cloudflare-fronted hostname first
+     * (hosts that block Railway's shared edge IPs can reach it), the direct address second.
+     * Code-ordered on purpose: the SaaS-advertised URL is an allowlist GATE, not a routing input.
+     */
+    private const RAILWAY_HOST_ORDER = array(
+        'scanner.wpservice.pro',
         'cu-scanner-railway-production.up.railway.app',
     );
+
+    /** @return string[] */
+    public static function railway_host_order(): array {
+        return self::RAILWAY_HOST_ORDER;
+    }
 
     public function get_api_key(): string {
         return (string) get_option( 'drspeed_aias_api_key', '' );

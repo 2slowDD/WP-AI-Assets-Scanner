@@ -4,6 +4,11 @@ All notable changes to AI Assets Scanner are documented here.
 
 ---
 
+## 1.9.10 — 2026-11-04
+
+### Fixed
+- **Scans work again on hosts that block the scanner's address.** Some hosting providers block the shared network addresses the scanner runs on. The plugin now reaches the scanner through `scanner.wpservice.pro` first and falls back to the previous address only when the first cannot be reached at all (a connection that never completed, never a slow or failed answer, so a scan is never submitted twice). A host that fails twice in ten minutes is tried last for ten minutes, then first again as soon as it answers once. Nothing to configure.
+
 ## 1.9.9 — 2026-11-04
 
 ### Fixed
