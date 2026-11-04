@@ -4061,7 +4061,30 @@
 
     // --- Cancel ---
 
+    // FU-AAS-OUTBOX-CANNOT-BE-CANCELLED — Cancel while the scan is queued LOCALLY (outbox).
+    // There is no worker job to ask for progress and nothing has been charged: skip the
+    // status fetch, confirm in queued wording, and let drspeed_aias_cancel_job discard the
+    // outbox entry (it releases the reservation and unschedules the replay cron). On success
+    // stop the tick, drop the banner and return to Step 1; on refusal (a cron replay holds
+    // the outbox lock this second) keep the queued state and let the user retry.
+    function cancelQueuedScan() {
+        if (!confirm('Cancel the queued scan? It has not started, so no credits will be charged.')) return;
+        post('drspeed_aias_cancel_job').then(function (res) {
+            if (res && res.success) {
+                if (outboxTickTimer !== null) { clearInterval(outboxTickTimer); outboxTickTimer = null; }
+                hideOutboxBanner();
+                showStep(1);
+                alert('Queued scan cancelled. No credits were charged.');
+            } else {
+                var m = (res && res.data && res.data.message) ? res.data.message
+                    : 'Could not cancel the queued scan — please try again.';
+                alert(m);
+            }
+        });
+    }
+
     document.getElementById('cu-btn-cancel').addEventListener('click', async function () {
+        if (outboxTickTimer !== null) { cancelQueuedScan(); return; } // queued locally — no worker job exists
         let msg;
         // Task 5 — widen progress.pages beyond the try block so the user_cancel
         // terminal-incomplete routing can source the page rows the confirm fetch

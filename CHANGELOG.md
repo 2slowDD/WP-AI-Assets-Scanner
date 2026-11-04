@@ -8,6 +8,7 @@ All notable changes to AI Assets Scanner are documented here.
 
 ### Fixed
 - **Step 3 no longer claims a bypass worked before it is confirmed.** The "Optimizer bypass" row read "Applied" as soon as a scan URL carried a bypass parameter, and stayed there, even on a site whose SEO plugin strips unregistered URL parameters. It now reads **Requested** until a finished page kept the bypass, **Applied** once one has, and **Lost — optimizer stayed on** once a finished page lost an optimizer parameter; it never moves back down during a scan. Checking and Requested are grey, Lost is red. The row's strings are now translatable.
+- **A locally queued scan can be cancelled.** When the backend is unreachable, the scan waits locally and retries by itself. Cancel used to answer "Could not cancel" in that state, and the queue kept retrying — each retry reserved credits again. Cancel now discards the queued scan, releases its reservation and stops the retries: "Queued scan cancelled. No credits were charged."
 
 ### Changed
 - **Admin header:** "Verified by Dr. Speed Lab" and its icon moved to the top right; "Powered by WPservice.pro" moved below it. Both are still hidden below 900 px wide.

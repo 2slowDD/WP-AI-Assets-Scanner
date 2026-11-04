@@ -151,6 +151,7 @@ Privacy policy:[https://wpservice.pro/privacy-policy/](https://wpservice.pro/pri
 
 = 1.9.9 =
 * Fixed: during a scan, the "Optimizer bypass" row said "Applied" as soon as the scanner added its bypass parameters, even on sites that remove them. It now says "Requested" until a finished page confirms the bypass, and "Lost — optimizer stayed on" when a finished page lost it. The results page then explains what to allow.
+* Fixed: a scan queued locally while the backend is unreachable can now be cancelled. Cancel discards it, releases its credit reservation and stops the automatic retries.
 * Changed: in the admin header, "Verified by Dr. Speed Lab" now sits at the top right, with "Powered by WPservice.pro" below it.
 
 = 1.9.8 =

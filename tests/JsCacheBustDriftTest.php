@@ -134,7 +134,9 @@ final class JsCacheBustDriftTest extends TestCase {
 		// 1.9.8 — "Verified by Dr. Speed Lab" badge; new-install dim on Settings; a warning when a site strips the scanner's parameters.
 		'1.9.8' => 'ba3a3951b901fe77272f2164fc7650a140a96b54655e9fe27b5422013c271479',
 		// 1.9.9 — badge on top, byline at the bottom; Step-3 bypass row says Requested / Lost.
-		'1.9.9' => '131b4224263b6f198b8bfe420ddd13304f0a26802d8f1956d03ff952e846d842',
+		// Re-pinned in place 2026-11-04 before 1.9.9 shipped (never served): Cancel discards a
+		// locally queued scan (FU-AAS-OUTBOX-CANNOT-BE-CANCELLED).
+		'1.9.9' => 'db15dfccb4378a92af20c54e61853277ffa6139bc07c6793840325ad476cfd2c',
 	);
 
 	/**
@@ -199,7 +201,8 @@ final class JsCacheBustDriftTest extends TestCase {
 		// 1.0.11.18 — row note + panel when a site strips the scanner's parameters.
 		'1.0.11.18' => 'e93ffbbe0d61ce68cb91a028937ece75249bcb6bd7e0d2a6577e5ad0dd3f6a1a',
 		// 1.0.11.19 — Step-3 bypass row: copy-map strings; rank-based states incl. Lost (FU-STEP3-BYPASS-LABEL-OVERCLAIMS).
-		'1.0.11.19' => 'd81217b17aca44b5e6c14447945f68c94ca2ea2dd85146b1d120954561cf4697',
+		// Re-pinned in place 2026-11-04 before 1.9.9 shipped (never served): queued-scan Cancel branch.
+		'1.0.11.19' => '8997f4ecd7ae887396514d746934253c90695a729e8c84775878425e3daa1ebb',
 	);
 
 	private function root(): string {

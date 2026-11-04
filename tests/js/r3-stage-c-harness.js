@@ -298,7 +298,7 @@ function createHarness(opts = {}) {
     setInterval: (fn, ms) => { const t = { fn, ms, type: 'interval', cleared: false }; timers.push(t); return t; },
     clearInterval: (t) => { if (t) t.cleared = true; },
     confirm: opts.confirm || (() => true),
-    alert: () => {},
+    alert: opts.alert || (() => {}),
     Date,
     URL,
     AbortController,
