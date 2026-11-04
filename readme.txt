@@ -4,7 +4,7 @@ Tags: performance, dequeue, unload unused css, optimize javascript, page speed
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.9.8
+Stable tag: 1.9.9
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -148,6 +148,10 @@ Privacy policy:[https://wpservice.pro/privacy-policy/](https://wpservice.pro/pri
 5. Settings - Validate your key before scanning (get a free API key)
 
 == Changelog ==
+
+= 1.9.9 =
+* Fixed: during a scan, the "Optimizer bypass" row said "Applied" as soon as the scanner added its bypass parameters, even on sites that remove them. It now says "Requested" until a finished page confirms the bypass, and "Lost — optimizer stayed on" when a finished page lost it. The results page then explains what to allow.
+* Changed: in the admin header, "Verified by Dr. Speed Lab" now sits at the top right, with "Powered by WPservice.pro" below it.
 
 = 1.9.8 =
 * New: a warning on the results page when a site removes the scanner's URL parameters. A redirect that strips them can leave the page measured with the optimizer still running, and the results used to say the opposite. The results row and one panel now say so, with the exact parameters to allow.

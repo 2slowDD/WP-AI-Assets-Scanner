@@ -4,6 +4,14 @@ All notable changes to AI Assets Scanner are documented here.
 
 ---
 
+## 1.9.9 — 2026-11-04
+
+### Fixed
+- **Step 3 no longer claims a bypass worked before it is confirmed.** The "Optimizer bypass" row read "Applied" as soon as a scan URL carried a bypass parameter, and stayed there, even on a site whose SEO plugin strips unregistered URL parameters. It now reads **Requested** until a finished page kept the bypass, **Applied** once one has, and **Lost — optimizer stayed on** once a finished page lost an optimizer parameter; it never moves back down during a scan. Checking and Requested are grey, Lost is red. The row's strings are now translatable.
+
+### Changed
+- **Admin header:** "Verified by Dr. Speed Lab" and its icon moved to the top right; "Powered by WPservice.pro" moved below it. Both are still hidden below 900 px wide.
+
 ## 1.9.8 — 2026-11-02
 
 ### Added
