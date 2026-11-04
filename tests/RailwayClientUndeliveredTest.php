@@ -31,6 +31,15 @@ class RailwayClientUndeliveredTest extends TestCase {
             'curl 6'            => [ $err( 'cURL error 6: Could not resolve host: scanner.wpservice.pro' ), true ],
             'curl 35'           => [ $err( 'cURL error 35: OpenSSL SSL_connect: SSL_ERROR_SYSCALL in connection to scanner.wpservice.pro:443' ), true ],
             'curl 56 recv'      => [ $err( 'cURL error 56: Recv failure: Connection reset by peer' ), false ],
+            // TLS-phase codes — every member of CURL_UNDELIVERED has a row, so dropping any one of them goes red (Group P review).
+            'curl 51 tls name'  => [ $err( 'cURL error 51: SSL: no alternative certificate subject name matches target host name \'scanner.wpservice.pro\'' ), true ],
+            'curl 53 tls engine'=> [ $err( 'cURL error 53: SSL engine not found' ), true ],
+            'curl 54 tls engine set' => [ $err( 'cURL error 54: SSL: failed setting default engine' ), true ],
+            'curl 58 tls client cert' => [ $err( 'cURL error 58: could not load PEM client certificate' ), true ],
+            'curl 59 tls ciphers' => [ $err( 'cURL error 59: failed setting cipher list' ), true ],
+            'curl 60 tls verify' => [ $err( 'cURL error 60: SSL certificate problem: unable to get local issuer certificate' ), true ],
+            // Accepted residual: a TLS-phase hang surfaces as a 28 without the connect/resolving phrase → delivered (no failover, safe side).
+            'curl 28 tls hang'  => [ $err( 'cURL error 28: SSL connection timeout' ), false ],
             // streams transport — Requests Fsockopen.php: connect-phase = captured PHP warning text or $errstr; the ONLY read error is 'fsocket timed out'
             'streams connect'   => [ $err( 'stream_socket_client(): Unable to connect to ssl://scanner.wpservice.pro:443 (Connection timed out)' ), true ],
             'streams dns'       => [ $err( 'php_network_getaddresses: getaddrinfo failed: Name or service not known' ), true ],
