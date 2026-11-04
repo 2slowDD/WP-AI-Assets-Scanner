@@ -37,6 +37,11 @@ class RailwayClientUndeliveredTest extends TestCase {
             'streams errstr'    => [ $err( 'Connection refused' ), true ],
             'streams read'      => [ $err( 'fsocket timed out' ), false ],
             'empty message'     => [ $err( '' ), true ],
+            // captured 2026-11-04 render stack (WordPress 7.0.1, PHP 8.2, Requests Fsockopen forced by disabling the cURL functions,
+            // host blackholed to TEST-NET-2): the REAL connect-phase text says "Operation timed out", not "Connection timed out".
+            'streams connect (captured)' => [ $err( 'stream_socket_client(): Unable to connect to ssl://scanner.wpservice.pro:443 (Operation timed out)' ), true ],
+            // captured 2026-11-04 render stack (cURL, second attempt under its 5 s remainder): the overall timeout fired in the connect phase.
+            'curl 28 connect, 5 s budget (captured)' => [ $err( 'cURL error 28: Connection timed out after 5001 milliseconds' ), true ],
             // Cloudflare origin-not-reached vs delivered
             'cf 521' => [ $http( 521 ), true ], 'cf 522' => [ $http( 522 ), true ], 'cf 523' => [ $http( 523 ), true ],
             'cf 525' => [ $http( 525 ), true ], 'cf 526' => [ $http( 526 ), true ], 'cf 530' => [ $http( 530 ), true ],
