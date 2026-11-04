@@ -60,6 +60,43 @@ class RailwayClient {
         return $this->parse( $response );
     }
 
+    /** Cloudflare "origin not reached" statuses — the worker never saw the request (spec §3.3). */
+    private const CF_UNDELIVERED = array( 521, 522, 523, 525, 526, 530 );
+    /** cURL connect-phase codes: DNS, connect, TLS. 28 is split by message (connect/resolving vs read). */
+    private const CURL_UNDELIVERED = array( 6, 7, 35, 51, 53, 54, 58, 59, 60 );
+
+    /**
+     * FU-WORKER-CLOUDFLARE-FRONT (spec §3.3): true when the attempt could not have reached the worker, so
+     * a second host may be tried without risking a duplicate delivery. Pure; shared verbatim with the SaaS.
+     *
+     * - cURL transport ("cURL error N: …"): N in CURL_UNDELIVERED, or 28 whose message says the CONNECT or
+     *   RESOLVE phase timed out. 28 "Operation timed out … with N bytes received" is a read timeout: delivered.
+     * - streams (fsockopen) transport: Requests raises every connect-phase failure as PHP warning text or
+     *   $errstr and exactly one read-side error, 'fsocket timed out' ⇒ undelivered ⇔ message ≠ that string.
+     * - HTTP response: undelivered ⇔ a Cloudflare origin-not-reached status. 520/524, worker statuses and a
+     *   Cloudflare 403 are delivered (or must fail loudly).
+     *
+     * @param \WP_Error|array $response A wp_remote_* result.
+     */
+    public static function is_undelivered( $response ): bool {
+        if ( $response instanceof \WP_Error ) {
+            $m = (string) $response->get_error_message();
+            if ( preg_match( '/^cURL error (\d+):/', $m, $mm ) ) {
+                $n = (int) $mm[1];
+                if ( in_array( $n, self::CURL_UNDELIVERED, true ) ) {
+                    return true;
+                }
+                if ( 28 === $n ) {
+                    return str_contains( $m, 'Connection timed out' ) || str_contains( $m, 'Resolving timed out' );
+                }
+                return false;
+            }
+            return 'fsocket timed out' !== $m;
+        }
+        $code = is_array( $response ) ? (int) ( $response['response']['code'] ?? 0 ) : 0;
+        return in_array( $code, self::CF_UNDELIVERED, true );
+    }
+
     private function parse( mixed $response, bool $allow_410 = false ): array {
         if ( is_wp_error( $response ) ) {
             throw new HttpException( $response->get_error_message(), 0 ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Caught by AJAX handler; passed to wp_send_json_error(), not rendered as HTML.
