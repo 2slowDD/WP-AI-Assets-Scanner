@@ -163,7 +163,8 @@ class ScannerPageMarkupTest extends TestCase {
 		}
 	}
 
-	public function test_the_three_admin_views_carry_the_verified_badge_after_the_byline(): void {
+	/** 1.9.9 — operator layout 2026-11-03: the badge sits on top, the byline below it, on all three headers. */
+	public function test_the_three_admin_views_carry_the_verified_badge_before_the_byline(): void {
 		foreach ( [ 'scanner-page.php', 'history-page.php', 'settings-page.php' ] as $view ) {
 			$markup = file_get_contents( dirname( __DIR__ ) . '/admin/views/' . $view );
 			$this->assertIsString( $markup, $view );
@@ -171,7 +172,8 @@ class ScannerPageMarkupTest extends TestCase {
 			$badge_pos  = strpos( $markup, "include __DIR__ . '/partials/verified-badge.php';" );
 			$this->assertNotFalse( $byline_pos, $view );
 			$this->assertNotFalse( $badge_pos, $view );
-			$this->assertLessThan( $badge_pos, $byline_pos, $view );
+			$this->assertLessThan( $byline_pos, $badge_pos, $view . ': the badge include comes first' );
+			$this->assertSame( 1, substr_count( $markup, 'partials/verified-badge.php' ), $view . ': one badge' );
 		}
 	}
 
@@ -199,7 +201,7 @@ class ScannerPageMarkupTest extends TestCase {
 
 		$this->assertIsString( $css );
 		$this->assertMatchesRegularExpression(
-			'/\.cu-admin-page \.cu-header-verified \{\s*position: absolute;.*@media \(max-width: 900px\) \{\s*#drspeed-aias-app \.cu-header-verified,\s*\.cu-admin-page \.cu-header-verified \{ display: none; \}/s',
+			'/\.cu-admin-page \.cu-header-verified \{\s*position: relative;.*@media \(max-width: 900px\) \{\s*#drspeed-aias-app \.cu-header-verified,\s*\.cu-admin-page \.cu-header-verified \{ display: none; \}/s',
 			$css,
 			'The hide rule must come after the base rule, or the base display wins at the same specificity.'
 		);
