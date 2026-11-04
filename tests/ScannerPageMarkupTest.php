@@ -78,6 +78,20 @@ class ScannerPageMarkupTest extends TestCase {
 		$this->assertSame( 1, substr_count( $markup, 'id="cu-bypass-lost-panel"' ), 'exactly one panel node' );
 	}
 
+	/**
+	 * 1.9.9 — the Step-3 bypass row's FIRST paint is the grey Checking state. The resume-after-reload
+	 * path (checkForActiveJob) shows Step 3 before any poll and never calls resetBypassStatus, so the
+	 * class must come from the markup, and the two strings must be the translatable defaults.
+	 */
+	public function test_step3_bypass_row_first_paint_is_the_translatable_grey_checking_state(): void {
+		$markup = file_get_contents( dirname( __DIR__ ) . '/admin/views/scanner-page.php' );
+		$this->assertIsString( $markup );
+		$this->assertStringContainsString( '<div class="cu-scan-validation-row is-pending" id="cu-bypass-status-row">', $markup );
+		$this->assertStringContainsString( "esc_html_e( 'Detected bypass rules are applied per URL when available.', 'dr-speed-ai-assets-scanner' )", $markup );
+		$this->assertStringContainsString( "esc_html_e( 'Checking…', 'dr-speed-ai-assets-scanner' )", $markup );
+		$this->assertSame( 1, substr_count( $markup, 'id="cu-bypass-status-row"' ) );
+	}
+
 	public function test_active_scan_uses_the_reference_radar_without_dropping_live_data_targets(): void {
 		$markup = file_get_contents( dirname( __DIR__ ) . '/admin/views/scanner-page.php' );
 

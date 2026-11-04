@@ -108,6 +108,18 @@ $expected = [
         'none'     => '✓ %s: no unloads found',
     ],
     'stack_phrases' => [ 'siteground' => 'SiteGround bot protection' ],
+    'step3_bypass'  => [
+        'pending_label'   => 'Checking…',
+        'pending_copy'    => 'Detected bypass rules are applied per URL when available.',
+        'requested_label' => 'Requested',
+        'requested_copy'  => 'Bypass parameters were added. Confirming each page received them…',
+        'applied_label'   => 'Applied',
+        'applied_copy'    => 'Confirmed on at least one finished page.',
+        'lost_label'      => 'Lost — optimizer stayed on',
+        'lost_copy'       => 'This site removed the bypass from at least one page. Details follow when the scan finishes.',
+        'none_label'      => 'Not applied (N/A)',
+        'none_copy'       => 'No optimizer bypass was needed for the URLs in this scan.',
+    ],
 ];
 
 // Key completeness + verbatim copy (exact key sets — no extra, no missing).

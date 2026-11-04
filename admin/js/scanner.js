@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const SCANNER_JS_VERSION = '1.0.11.18';
+    const SCANNER_JS_VERSION = '1.0.11.19';
     console.log( '[AI Assets Scanner] scanner.js v' + SCANNER_JS_VERSION + ' loaded' );
 
     const ajax    = drspeedAias.ajaxUrl;
@@ -3663,6 +3663,19 @@
             fix_external_yoast: 'If you run this site: this looks like Yoast SEO\'s URL cleanup. Add these to "Additional URL parameters to allow": %s. Or turn off "Remove unregistered URL parameters" while you scan. Then scan again before applying these rules.',
             fix_external_generic: 'If you run this site: a plugin or server rule on it is removing them. Allow these parameters in its settings: %s, or temporarily deactivate it. Then scan again before applying these rules.',
         },
+        // FU-STEP3-BYPASS-LABEL-OVERCLAIMS (spec 2026-11-04 §4): the Step-3 "Optimizer bypass" row. Copy approved by the operator, 2026-11-04.
+        step3_bypass: {
+            pending_label: 'Checking…',
+            pending_copy: 'Detected bypass rules are applied per URL when available.',
+            requested_label: 'Requested',
+            requested_copy: 'Bypass parameters were added. Confirming each page received them…',
+            applied_label: 'Applied',
+            applied_copy: 'Confirmed on at least one finished page.',
+            lost_label: 'Lost — optimizer stayed on',
+            lost_copy: 'This site removed the bypass from at least one page. Details follow when the scan finishes.',
+            none_label: 'Not applied (N/A)',
+            none_copy: 'No optimizer bypass was needed for the URLs in this scan.',
+        },
         phrases: {
             tier2_cf_challenge: 'Cloudflare challenge',
             tier2_akamai_challenge: 'Akamai Bot Manager',
@@ -3934,6 +3947,10 @@
     const CU_BYPASS_OWN_KEYS = [ 'cu_scan_token', 'cu_dep_graph' ];
     function cuBypassCopy() {
         return mergeDefaults( BANNER_COPY_DEFAULTS, typeof drspeedAiasReasonCopy === 'object' ? drspeedAiasReasonCopy : null ).bypass_lost;
+    }
+    // The Step-3 bypass row's strings (translatable via drspeedAiasReasonCopy; English defaults above).
+    function cuStep3BypassCopy() {
+        return mergeDefaults( BANNER_COPY_DEFAULTS, typeof drspeedAiasReasonCopy === 'object' ? drspeedAiasReasonCopy : null ).step3_bypass;
     }
     function cuBypassStrings( v ) {
         return Array.isArray( v ) ? v.filter( function ( k ) { return typeof k === 'string'; } ) : [];
@@ -4598,6 +4615,7 @@
                         renderPartialBanner: renderPartialBanner, restoreStep4: restoreStep4,
                         renderBypassLostPanel: renderBypassLostPanel,
                         bannerCopyDefaults: BANNER_COPY_DEFAULTS,
+                        step3BypassCopy: cuStep3BypassCopy,
                         showProbeOutcomeDialog: showProbeOutcomeDialog,
                         buildSummaryLine: buildSummaryLine, buildSummaryParts: buildSummaryParts,
                         buildSyncCopy: buildSyncCopy,

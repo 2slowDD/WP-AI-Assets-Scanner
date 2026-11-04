@@ -238,7 +238,7 @@
                 <div id="cu-target-stack-notice"></div>
                 <div class="cu-scan-validation-list">
                     <div class="cu-scan-validation-row"><span class="cu-validation-icon">&#10003;</span><div><strong>Access checks</strong><small>Connectivity and reserved scan access validated.</small></div><span>Ready</span></div>
-                    <div class="cu-scan-validation-row" id="cu-bypass-status-row"><span class="cu-validation-icon" id="cu-bypass-status-icon">&ndash;</span><div><strong>Optimizer bypass</strong><small id="cu-bypass-status-copy">Detected bypass rules are applied per URL when available.</small></div><span id="cu-bypass-status-label">Checking&hellip;</span></div>
+                    <div class="cu-scan-validation-row is-pending" id="cu-bypass-status-row"><span class="cu-validation-icon" id="cu-bypass-status-icon">&ndash;</span><div><strong>Optimizer bypass</strong><small id="cu-bypass-status-copy"><?php esc_html_e( 'Detected bypass rules are applied per URL when available.', 'dr-speed-ai-assets-scanner' ); ?></small></div><span id="cu-bypass-status-label"><?php esc_html_e( 'Checking…', 'dr-speed-ai-assets-scanner' ); ?></span></div>
                 </div>
                 <div class="cu-scan-note">
                     <p><strong>You can safely close this tab.</strong> The scan runs in the background and results will be waiting when you return.</p>
