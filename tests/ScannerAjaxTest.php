@@ -20,6 +20,11 @@ class ScannerAjaxTest extends TestCase {
         // success — it returns a retryable error and leaves local state intact so the user
         // can retry (otherwise the still-active reservation strands → post-cancel 409).
         $this->mockCheck();
+        // FU-WORKER-CLOUDFLARE-FRONT: RailwayClient keeps per-host demotion marks in drspeed_aias_worker_* transients;
+        // scope them so the job-transient pins below stay exact (delete_transient on the JOB key must still be never).
+        WP_Mock::userFunction( 'get_transient' )->with( \Mockery::pattern( '/^drspeed_aias_worker_/' ) )->andReturn( false );
+        WP_Mock::userFunction( 'set_transient' )->with( \Mockery::pattern( '/^drspeed_aias_worker_/' ), \Mockery::any(), \Mockery::any() )->andReturn( true );
+        WP_Mock::userFunction( 'delete_transient' )->with( \Mockery::pattern( '/^drspeed_aias_worker_/' ) )->andReturn( true );
         WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 5 );
         WP_Mock::userFunction( 'get_transient' )->with( 'drspeed_aias_job_5' )->andReturn( [
             'job_id'      => 'job-abc',

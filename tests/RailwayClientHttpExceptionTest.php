@@ -10,6 +10,9 @@ class RailwayClientHttpExceptionTest extends TestCase {
     public function setUp(): void {
         parent::setUp();
         WP_Mock::setUp();
+        WP_Mock::userFunction( 'get_transient' )->andReturn( false );     // FU-WORKER-CLOUDFLARE-FRONT: RailwayClient demotion marks
+        WP_Mock::userFunction( 'set_transient' )->andReturn( true );
+        WP_Mock::userFunction( 'delete_transient' )->andReturn( true );
         WP_Mock::userFunction( 'wp_parse_url' )->andReturnUsing( fn( $url, $component = -1 ) => parse_url( $url, $component ) );
     }
     public function tearDown(): void {
