@@ -2326,6 +2326,14 @@
 /* Step 3 — "not applied" is a neutral state, not a green pass. */
 #drspeed-aias-app .cu-scan-validation-row.is-not-applicable .cu-validation-icon { background: #eef1f5; color: #8794a5; }
 #drspeed-aias-app .cu-scan-validation-row.is-not-applicable > span:last-child { color: var(--cu-muted); }
+/* 1.9.9 — Step-3 bypass row: grey while nothing is confirmed (Checking, Requested); red when a site removed the
+   bypass (Lost). Red = the Step-4 row note's #b32d2e. */
+#drspeed-aias-app .cu-scan-validation-row.is-pending .cu-validation-icon,
+#drspeed-aias-app .cu-scan-validation-row.is-requested .cu-validation-icon { background: #eef1f5; color: #8794a5; }
+#drspeed-aias-app .cu-scan-validation-row.is-pending > span:last-child,
+#drspeed-aias-app .cu-scan-validation-row.is-requested > span:last-child { color: var(--cu-muted); }
+#drspeed-aias-app .cu-scan-validation-row.is-lost .cu-validation-icon { background: #fcf0f1; color: #b32d2e; }
+#drspeed-aias-app .cu-scan-validation-row.is-lost > span:last-child { color: #b32d2e; }
 
 /* ---------------------------------------------------------------------------
    v1.8.2b — settings/history polish + S:/A: hover breakdown.

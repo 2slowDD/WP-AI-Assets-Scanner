@@ -134,7 +134,7 @@ final class JsCacheBustDriftTest extends TestCase {
 		// 1.9.8 — "Verified by Dr. Speed Lab" badge; new-install dim on Settings; a warning when a site strips the scanner's parameters.
 		'1.9.8' => 'ba3a3951b901fe77272f2164fc7650a140a96b54655e9fe27b5422013c271479',
 		// 1.9.8.1 (never shipped; becomes 1.9.9 at release) — badge on top, byline at the bottom; Step-3 bypass row states.
-		'1.9.8.1' => 'a00a112c30ac69a9781a567c0ff066c52d7bfb6db600ea669cb6cc629be14511',
+		'1.9.8.1' => 'fd5851f67b954023fb5dad0998cad4824115feed3b06a749e8ba8ad1a70cbda6',
 	);
 
 	/**
