@@ -1661,4 +1661,49 @@ class ScannerAjaxTest extends TestCase {
         $this->assertSame( 'job-1', $captured['job_id'] );
         $this->assertCount( 1, $calls, 'the consented retry runs the side effects exactly once' );
     }
+
+    /**
+     * FU-WORKER-CLOUDFLARE-FRONT (spec §3.3 / AC-3, P17): the REAL submit_job handler — no injected client; the
+     * RailwayClient is built inside it from the stored (advertised) URL — reaches the worker through the Cloudflare
+     * host first and, when that attempt provably never arrived, through the direct Railway host. wp_remote_post is
+     * stubbed at the WordPress boundary and answers BY URL. The demotion bookkeeping is real (a transient store).
+     */
+    public function test_submit_job_fails_over_to_the_direct_host_through_the_real_handler(): void {
+        $this->mockSubmitEnv( [ 'class_c_consent_given' => '1' ] );
+        $store = [];
+        WP_Mock::userFunction( 'get_transient' )->with( \Mockery::pattern( '/^drspeed_aias_worker_/' ) )->andReturnUsing( function ( $k ) use ( &$store ) { return $store[ $k ] ?? false; } );
+        WP_Mock::userFunction( 'set_transient' )->with( \Mockery::pattern( '/^drspeed_aias_worker_/' ), \Mockery::any(), \Mockery::any() )->andReturnUsing( function ( $k, $v ) use ( &$store ) { $store[ $k ] = $v; return true; } );
+        WP_Mock::userFunction( 'delete_transient' )->with( \Mockery::pattern( '/^drspeed_aias_worker_/' ) )->andReturnUsing( function ( $k ) use ( &$store ) { unset( $store[ $k ] ); return true; } );
+        WP_Mock::userFunction( 'is_wp_error' )->andReturnUsing( fn( $r ) => $r instanceof \WP_Error );
+        $urls = [];
+        WP_Mock::userFunction( 'wp_remote_post' )->andReturnUsing( function ( string $url ) use ( &$urls ) {
+            $urls[] = $url;
+            if ( 'https://scanner.wpservice.pro/jobs' === $url ) {
+                // the host firewall's shape: the connect phase never completed (Requests' cURL text)
+                return new \WP_Error( 'http_request_failed', 'cURL error 7: Failed to connect to scanner.wpservice.pro port 443 after 21 ms: Couldn\'t connect to server' );
+            }
+            if ( 'https://cu-scanner-railway-production.up.railway.app/jobs' === $url ) {
+                return [ 'response' => [ 'code' => 200 ], 'body' => '{"job_id":"J"}' ];
+            }
+            return [ 'response' => [ 'code' => 404 ], 'body' => '{"message":"not found"}' ];
+        } );
+        WP_Mock::userFunction( 'wp_send_json' )->never();
+        WP_Mock::userFunction( 'wp_send_json_error' )->never();
+        $captured = null;
+        WP_Mock::userFunction( 'wp_send_json_success' )->once()->andReturnUsing( function ( $data ) use ( &$captured ) { $captured = $data; } );
+
+        $calls = [];
+        $this->classCAjax( $calls )->submit_job();
+        $this->unsetSubmitPost();
+
+        $this->assertSame( 'J', $captured['job_id'] );
+        $this->assertSame(
+            [ 'https://scanner.wpservice.pro/jobs', 'https://cu-scanner-railway-production.up.railway.app/jobs' ],
+            array_values( array_filter( $urls, fn( $u ) => str_ends_with( $u, '/jobs' ) ) ),
+            'Cloudflare host first, the direct host only after a never-delivered error'
+        );
+        $this->assertSame( 1, $store['drspeed_aias_worker_fails_scanner-wpservice-pro'] ?? null, 'the Cloudflare miss was counted once (no mark after a single failure)' );
+        $this->assertArrayNotHasKey( 'drspeed_aias_worker_demoted_scanner-wpservice-pro', $store );
+        $this->assertCount( 1, $calls, 'the side effects ran exactly once, for the delivered submit' );
+    }
 }
