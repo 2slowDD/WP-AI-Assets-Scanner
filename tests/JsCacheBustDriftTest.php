@@ -134,7 +134,7 @@ final class JsCacheBustDriftTest extends TestCase {
 		// 1.9.8 — "Verified by Dr. Speed Lab" badge; new-install dim on Settings; a warning when a site strips the scanner's parameters.
 		'1.9.8' => 'ba3a3951b901fe77272f2164fc7650a140a96b54655e9fe27b5422013c271479',
 		// 1.9.8.1 (never shipped; becomes 1.9.9 at release) — badge on top, byline at the bottom; Step-3 bypass row states.
-		'1.9.8.1' => 'f2ad1759b9386911697b9403bb3901fcc043cf31b8ecc972395e0f9876ebdf52',
+		'1.9.8.1' => 'a00a112c30ac69a9781a567c0ff066c52d7bfb6db600ea669cb6cc629be14511',
 	);
 
 	/**
@@ -199,7 +199,7 @@ final class JsCacheBustDriftTest extends TestCase {
 		// 1.0.11.18 — row note + panel when a site strips the scanner's parameters.
 		'1.0.11.18' => 'e93ffbbe0d61ce68cb91a028937ece75249bcb6bd7e0d2a6577e5ad0dd3f6a1a',
 		// 1.0.11.19 — Step-3 bypass row: copy-map strings; rank-based states incl. Lost (FU-STEP3-BYPASS-LABEL-OVERCLAIMS).
-		'1.0.11.19' => '84d5fd1a2c8b40ba3afd6c5fe565508c1bdcde61b2918908b4122610605486ba',
+		'1.0.11.19' => '5fdbdbdd808fec292a50dcc99a8869f6cf68c752379f46cbdb7b203b7498243f',
 	);
 
 	private function root(): string {

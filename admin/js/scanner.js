@@ -1699,7 +1699,7 @@
     // those paths legitimately repopulate the table from the worker's pages[] array.
     function beginScanPolling() {
         document.getElementById('cu-pages-tbody').innerHTML = '';
-        resetBypassStatus(); // 1.8.1b — clear a previous scan's latched "Applied".
+        resetBypassStatus(); // 1.9.9 — a new scan's bypass row starts again at Checking (rank 0).
         renderBypassLostPanel( [] ); // a same-page restart can end with no restoreStep4 (killed)
         // 1.8.6 — a new scan opens the live table on page 1. Applied NOW, not on the next poll: a
         // queued scan returns before the row loop, so the old pager would otherwise sit over the
@@ -1986,19 +1986,30 @@
         return `<td>${urlCell}</td><td>${esc(status)}</td>`;
     }
 
-    // 1.8.1b — Step-3 optimizer-bypass status. The markup used to hardcode "Applied",
-    // which lied on every scan where no optimizer was detected.
+    // 1.9.9 — Step-3 optimizer-bypass status (FU-STEP3-BYPASS-LABEL-OVERCLAIMS, spec 2026-11-04 §4).
     //
-    // Latching matters: pages arrive progressively, and a not-yet-started page comes back
-    // from the worker WITHOUT a `url` (see the FU-AAS-UNDEFINED-URL fallback in the poll
-    // handler), so its row falls back to the CLEAN submitted URL. Declaring "not applied"
-    // off that early state would just be a different wrong label. So: latch to applied on
-    // first sighting, and only declare "not applied" once every page has a real
-    // worker-echoed URL.
-    var bypassStatusLatched = false;
+    // Within one scan the row only moves UP a rank: Checking / N/A (0) < Requested (1) < Applied (2)
+    // < Lost (3). Each poll computes a state from the FULL page list; the row shows the higher-ranked
+    // of that and what it already showed, and at EQUAL rank the computed state (so Checking -> N/A
+    // works). Applied needs a FINISHED page: a bypass key on the URL alone is only "Requested".
+    // resetBypassStatus() (beginScanPolling) starts a scan again at Checking. A page that has not
+    // started comes back without a `url`, so N/A waits until every page has one.
+    //
+    // These are the worker's RAW page records (poll_status forwards get_status() unvalidated):
+    //  - Raw readers compare bypass_lost to the INTEGER 1; validated readers compare to true.
+    //    The PHP raw reader DRSPEED_AIAS_Scan_Status::bypass_lost_fields tests `1 !==` and produces
+    //    the `true` that Step 4 reads. Do not "harmonise" the two.
+    //  - bypass_keys_lost is only tested for membership in the closed allow-list CU_BYPASS_PARAM_KEYS.
+    //    Never use cuBypassOptimizerKeys() here: it is a deny-list, safe only on Step 4's
+    //    server-validated rows.
+    //  - Nothing from the payload is rendered; every string is a fixed copy-map value.
+    var BYPASS_STATUS_RANK  = { pending: 0, none: 0, requested: 1, applied: 2, lost: 3 };
+    var BYPASS_STATUS_ICON  = { pending: '–', none: '–', requested: '…', applied: '✓', lost: '⚠' };
+    var BYPASS_STATUS_CLASS = { pending: 'is-pending', none: 'is-not-applicable', requested: 'is-requested', applied: '', lost: 'is-lost' };
+    var bypassStatusShown   = 'pending';
 
     function resetBypassStatus() {
-        bypassStatusLatched = false;
+        bypassStatusShown = 'pending';
         applyBypassStatus( 'pending' );
     }
 
@@ -2008,40 +2019,45 @@
         var label = document.getElementById( 'cu-bypass-status-label' );
         var copy  = document.getElementById( 'cu-bypass-status-copy' );
         if ( ! row || ! icon || ! label || ! copy ) return;
-        row.classList.toggle( 'is-not-applicable', state === 'none' );
-        if ( state === 'applied' ) {
-            icon.textContent  = '✓';
-            label.textContent = 'Applied';
-            copy.textContent  = 'Detected bypass rules are applied per URL when available.';
-        } else if ( state === 'none' ) {
-            icon.textContent  = '–';
-            label.textContent = 'Not applied (N/A)';
-            copy.textContent  = 'No optimizer bypass was needed for the URLs in this scan.';
-        } else {
-            icon.textContent  = '–';
-            label.textContent = 'Checking…';
-            copy.textContent  = 'Detected bypass rules are applied per URL when available.';
-        }
+        if ( ! Object.prototype.hasOwnProperty.call( BYPASS_STATUS_RANK, state ) ) state = 'pending';
+        var text = cuStep3BypassCopy();
+        [ 'is-pending', 'is-not-applicable', 'is-requested', 'is-lost' ].forEach( function ( c ) {
+            row.classList.toggle( c, BYPASS_STATUS_CLASS[ state ] === c );
+        } );
+        icon.textContent  = BYPASS_STATUS_ICON[ state ];
+        label.textContent = text[ state + '_label' ];
+        copy.textContent  = text[ state + '_copy' ];
+    }
+
+    // A finished page that lost at least one optimizer key (raw record: integer flag, allow-list keys).
+    function cuBypassPageLost( p ) {
+        return p.status === 'done' && p.bypass_lost === 1 &&
+            cuBypassStrings( p.bypass_keys_lost ).some( function ( k ) { return CU_BYPASS_PARAM_KEYS.indexOf( k ) !== -1; } );
+    }
+
+    function computeBypassStatus( pages ) {
+        var list        = Array.isArray( pages ) ? pages : [];
+        var allResolved = list.length > 0;
+        var requested   = false;
+        var applied     = false;
+        var lost        = false;
+        list.forEach( function ( p ) {
+            if ( ! p || ! p.url ) { allResolved = false; return; }
+            if ( cuBypassPageLost( p ) ) { lost = true; return; }
+            if ( cuBypassSuffixStart( p.url ) === -1 ) return;
+            requested = true;
+            if ( p.status === 'done' && p.bypass_lost !== 1 ) applied = true;
+        } );
+        if ( lost ) return 'lost';
+        if ( applied ) return 'applied';
+        if ( requested ) return 'requested';
+        return allResolved ? 'none' : 'pending';
     }
 
     function updateBypassStatus( pages ) {
-        if ( bypassStatusLatched ) return;
-        var list        = Array.isArray( pages ) ? pages : [];
-        var anyBypass   = false;
-        var allResolved = list.length > 0;
-        list.forEach( function ( p ) {
-            if ( p && p.url ) {
-                if ( cuBypassSuffixStart( p.url ) !== -1 ) anyBypass = true;
-            } else {
-                allResolved = false;
-            }
-        } );
-        if ( anyBypass ) {
-            bypassStatusLatched = true;
-            applyBypassStatus( 'applied' );
-            return;
-        }
-        applyBypassStatus( allResolved ? 'none' : 'pending' );
+        var computed = computeBypassStatus( pages );
+        if ( BYPASS_STATUS_RANK[ computed ] >= BYPASS_STATUS_RANK[ bypassStatusShown ] ) bypassStatusShown = computed;
+        applyBypassStatus( bypassStatusShown );
     }
 
     // 1.8.6 — the Step-3 live table shows LIVE_TABLE_PER_PAGE rows at a time. Every row stays in
