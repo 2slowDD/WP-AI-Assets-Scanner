@@ -2046,7 +2046,8 @@
             if ( cuBypassPageLost( p ) ) { lost = true; return; }
             if ( cuBypassSuffixStart( p.url ) === -1 ) return;
             requested = true;
-            if ( p.status === 'done' && p.bypass_lost !== 1 ) applied = true;
+            // Either loss shape blocks a confirmation (raw 1, or a validated true): never Applied off a lost page.
+            if ( p.status === 'done' && p.bypass_lost !== 1 && p.bypass_lost !== true ) applied = true;
         } );
         if ( lost ) return 'lost';
         if ( applied ) return 'applied';

@@ -64,8 +64,10 @@ arm('AC-3 Applied -> Lost -> still Lost', () => {
 arm('AC-4 token-only loss: not Lost, not confirmed', () => {
   const { h, T } = fresh(); poll(T, [{ status: 'done', url: A + '?nowprocket', bypass_lost: 1, bypass_keys_lost: ['cu_scan_token'] }, { status: 'pending' }]); expectState(h, 'requested');
 });
-arm('AC-4 boolean true is the validated shape, not the raw one: not Lost', () => {
-  const { h, T } = fresh(); poll(T, [{ status: 'done', url: A + '?nowprocket', bypass_lost: true, bypass_keys_lost: ['nowprocket'] }, { status: 'pending' }]); expectState(h, 'applied');
+// Final review #1: a loss flag in the VALIDATED shape (true) is not a raw-path Lost, but it is not a
+// confirmation either — reading it as Applied would bring back the over-claim if poll data were ever validated.
+arm('AC-4 boolean true is the validated shape, not the raw one: not Lost, not confirmed', () => {
+  const { h, T } = fresh(); poll(T, [{ status: 'done', url: A + '?nowprocket', bypass_lost: true, bypass_keys_lost: ['nowprocket'] }, { status: 'pending' }]); expectState(h, 'requested');
 });
 arm('AC-4 keys missing: not Lost, not confirmed', () => {
   const { h, T } = fresh(); poll(T, [{ status: 'done', url: A + '?nowprocket', bypass_lost: 1 }, { status: 'pending' }]); expectState(h, 'requested');
