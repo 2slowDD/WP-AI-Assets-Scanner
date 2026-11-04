@@ -78,6 +78,20 @@ class ScannerPageMarkupTest extends TestCase {
 		$this->assertSame( 1, substr_count( $markup, 'id="cu-bypass-lost-panel"' ), 'exactly one panel node' );
 	}
 
+	/**
+	 * 1.9.9 — the Step-3 bypass row's FIRST paint is the grey Checking state. The resume-after-reload
+	 * path (checkForActiveJob) shows Step 3 before any poll and never calls resetBypassStatus, so the
+	 * class must come from the markup, and the two strings must be the translatable defaults.
+	 */
+	public function test_step3_bypass_row_first_paint_is_the_translatable_grey_checking_state(): void {
+		$markup = file_get_contents( dirname( __DIR__ ) . '/admin/views/scanner-page.php' );
+		$this->assertIsString( $markup );
+		$this->assertStringContainsString( '<div class="cu-scan-validation-row is-pending" id="cu-bypass-status-row">', $markup );
+		$this->assertStringContainsString( "esc_html_e( 'Detected bypass rules are applied per URL when available.', 'dr-speed-ai-assets-scanner' )", $markup );
+		$this->assertStringContainsString( "esc_html_e( 'Checking…', 'dr-speed-ai-assets-scanner' )", $markup );
+		$this->assertSame( 1, substr_count( $markup, 'id="cu-bypass-status-row"' ) );
+	}
+
 	public function test_active_scan_uses_the_reference_radar_without_dropping_live_data_targets(): void {
 		$markup = file_get_contents( dirname( __DIR__ ) . '/admin/views/scanner-page.php' );
 
@@ -163,7 +177,8 @@ class ScannerPageMarkupTest extends TestCase {
 		}
 	}
 
-	public function test_the_three_admin_views_carry_the_verified_badge_after_the_byline(): void {
+	/** 1.9.9 — operator layout 2026-11-03: the badge sits on top, the byline below it, on all three headers. */
+	public function test_the_three_admin_views_carry_the_verified_badge_before_the_byline(): void {
 		foreach ( [ 'scanner-page.php', 'history-page.php', 'settings-page.php' ] as $view ) {
 			$markup = file_get_contents( dirname( __DIR__ ) . '/admin/views/' . $view );
 			$this->assertIsString( $markup, $view );
@@ -171,7 +186,8 @@ class ScannerPageMarkupTest extends TestCase {
 			$badge_pos  = strpos( $markup, "include __DIR__ . '/partials/verified-badge.php';" );
 			$this->assertNotFalse( $byline_pos, $view );
 			$this->assertNotFalse( $badge_pos, $view );
-			$this->assertLessThan( $badge_pos, $byline_pos, $view );
+			$this->assertLessThan( $byline_pos, $badge_pos, $view . ': the badge include comes first' );
+			$this->assertSame( 1, substr_count( $markup, 'partials/verified-badge.php' ), $view . ': one badge' );
 		}
 	}
 
@@ -199,7 +215,7 @@ class ScannerPageMarkupTest extends TestCase {
 
 		$this->assertIsString( $css );
 		$this->assertMatchesRegularExpression(
-			'/\.cu-admin-page \.cu-header-verified \{\s*position: absolute;.*@media \(max-width: 900px\) \{\s*#drspeed-aias-app \.cu-header-verified,\s*\.cu-admin-page \.cu-header-verified \{ display: none; \}/s',
+			'/\.cu-admin-page \.cu-header-verified \{\s*position: relative;.*@media \(max-width: 900px\) \{\s*#drspeed-aias-app \.cu-header-verified,\s*\.cu-admin-page \.cu-header-verified \{ display: none; \}/s',
 			$css,
 			'The hide rule must come after the base rule, or the base display wins at the same specificity.'
 		);

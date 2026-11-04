@@ -20,8 +20,8 @@
             <circle cx="10" cy="10" r="1"    fill="#72aee6"/>
             <line x1="10" y1="10" x2="16.5" y2="3.5" stroke="#72aee6" stroke-width="1.2" stroke-linecap="round"/>
         </svg>
-        <span class="cu-header-by">Powered by <a href="https://wpservice.pro/" target="_blank" rel="noopener">WPservice.pro</a></span>
         <?php include __DIR__ . '/partials/verified-badge.php'; ?>
+        <span class="cu-header-by">Powered by <a href="https://wpservice.pro/" target="_blank" rel="noopener">WPservice.pro</a></span>
         <div class="cu-step-pips" id="cu-step-pips">
             <div class="cu-pip is-active" id="cu-pip-1" aria-label="Discover pages" title="Discover pages"></div>
             <div class="cu-pip" id="cu-pip-2" aria-label="Reserve credits" title="Reserve credits"></div>
@@ -238,7 +238,7 @@
                 <div id="cu-target-stack-notice"></div>
                 <div class="cu-scan-validation-list">
                     <div class="cu-scan-validation-row"><span class="cu-validation-icon">&#10003;</span><div><strong>Access checks</strong><small>Connectivity and reserved scan access validated.</small></div><span>Ready</span></div>
-                    <div class="cu-scan-validation-row" id="cu-bypass-status-row"><span class="cu-validation-icon" id="cu-bypass-status-icon">&ndash;</span><div><strong>Optimizer bypass</strong><small id="cu-bypass-status-copy">Detected bypass rules are applied per URL when available.</small></div><span id="cu-bypass-status-label">Checking&hellip;</span></div>
+                    <div class="cu-scan-validation-row is-pending" id="cu-bypass-status-row"><span class="cu-validation-icon" id="cu-bypass-status-icon">&ndash;</span><div><strong>Optimizer bypass</strong><small id="cu-bypass-status-copy"><?php esc_html_e( 'Detected bypass rules are applied per URL when available.', 'dr-speed-ai-assets-scanner' ); ?></small></div><span id="cu-bypass-status-label"><?php esc_html_e( 'Checking…', 'dr-speed-ai-assets-scanner' ); ?></span></div>
                 </div>
                 <div class="cu-scan-note">
                     <p><strong>You can safely close this tab.</strong> The scan runs in the background and results will be waiting when you return.</p>

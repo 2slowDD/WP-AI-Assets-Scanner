@@ -49,6 +49,74 @@ class ScannerAjaxTest extends TestCase {
         $this->assertTrue( $captured['retryable'] ?? false );
     }
 
+    public function test_cancel_job_discards_a_locally_queued_scan(): void {
+        // FU-AAS-OUTBOX-CANNOT-BE-CANCELLED: no worker job (no job transient) but a pending
+        // outbox entry — Cancel must discard it through the REAL path: Outbox::discard() with
+        // no injected deps, so the SaaS release goes out over wp_remote_post with the entry's
+        // token as the Bearer, bypass tokens are cleared, the entry is deleted and the replay
+        // cron unscheduled. The browser gets success + queued_cancelled so it can show the copy.
+        $this->mockCheck();
+        WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 5 );
+        WP_Mock::userFunction( 'get_transient' )->with( 'drspeed_aias_job_5' )->andReturn( false );
+        WP_Mock::userFunction( 'get_option' )->with( 'drspeed_aias_outbox' )->andReturn( [
+            'status'          => 'pending',
+            'attempts'        => 2,
+            'created_at'      => time() - 120,
+            'next_attempt_at' => time() + 90,
+            'job_token'       => 'TOK-QUEUED',
+            'last_error'      => 'cURL error 28',
+            'intent'          => [ 'user_id' => 5, 'page_count' => 1 ],
+        ] );
+        WP_Mock::userFunction( 'get_option' )->with( 'drspeed_aias_api_key', '' )->andReturn( 'test-key' );
+        WP_Mock::userFunction( 'get_option' )->with( 'drspeed_aias_active_tokens', [] )->andReturn( [] );
+        WP_Mock::userFunction( 'get_home_url' )->andReturn( 'https://example.com' );
+        WP_Mock::userFunction( 'add_option' )->andReturn( true );                      // outbox lock
+        WP_Mock::userFunction( 'update_option' )->andReturn( true );                   // bypass token list
+        WP_Mock::userFunction( 'delete_option' )->with( 'drspeed_aias_outbox' )->once()->andReturn( true );
+        WP_Mock::userFunction( 'delete_option' )->with( 'drspeed_aias_outbox_lock' )->once()->andReturn( true );
+        WP_Mock::userFunction( 'wp_clear_scheduled_hook' )->with( 'drspeed_aias_outbox_replay' )->once()->andReturn( 1 );
+
+        $releaseUrl = null; $releaseAuth = null; $releaseBody = null;
+        WP_Mock::userFunction( 'wp_remote_post' )->once()->andReturnUsing( function ( string $url, array $args = [] ) use ( &$releaseUrl, &$releaseAuth, &$releaseBody ) {
+            $releaseUrl  = $url;
+            $releaseAuth = $args['headers']['Authorization'] ?? null;
+            $releaseBody = json_decode( (string) ( $args['body'] ?? '' ), true );
+            return [ 'response' => [ 'code' => 200 ], 'body' => '{}' ];
+        } );
+        WP_Mock::userFunction( 'wp_remote_retrieve_response_code' )->andReturn( 200 );
+        WP_Mock::userFunction( 'wp_remote_retrieve_body' )->andReturn( '{}' );
+
+        WP_Mock::userFunction( 'delete_transient' )->never();                           // nothing dispatched
+        WP_Mock::userFunction( 'wp_send_json_error' )->never();
+        $captured = null;
+        WP_Mock::userFunction( 'wp_send_json_success' )->once()->andReturnUsing( function ( $data ) use ( &$captured ) { $captured = $data; } );
+
+        ( new ScannerAjax() )->cancel_job();
+
+        $this->assertConditionsMet();
+        $this->assertStringContainsString( '/credits/release', (string) $releaseUrl );
+        $this->assertSame( 'Bearer TOK-QUEUED', $releaseAuth, 'release is token-authed with the queued entry\'s token' );
+        $this->assertSame( 'TOK-QUEUED', $releaseBody['job_token'] ?? null );
+        $this->assertTrue( $captured['queued_cancelled'] ?? false );
+        $this->assertSame( 0, $captured['pages_completed'] ?? null );
+    }
+
+    public function test_cancel_job_reports_no_active_scan_when_nothing_is_queued_either(): void {
+        $this->mockCheck();
+        WP_Mock::userFunction( 'get_current_user_id' )->andReturn( 5 );
+        WP_Mock::userFunction( 'get_transient' )->with( 'drspeed_aias_job_5' )->andReturn( false );
+        WP_Mock::userFunction( 'get_option' )->with( 'drspeed_aias_outbox' )->andReturn( false );
+        WP_Mock::userFunction( 'wp_remote_post' )->never();
+        WP_Mock::userFunction( 'wp_send_json_success' )->never();
+        $captured = null;
+        WP_Mock::userFunction( 'wp_send_json_error' )->once()->andReturnUsing( function ( $data ) use ( &$captured ) { $captured = $data; } );
+
+        ( new ScannerAjax() )->cancel_job();
+
+        $this->assertConditionsMet();
+        $this->assertSame( 'No active scan', $captured );
+    }
+
     public function test_friendly_error_maps_409_to_scan_already_active(): void {
         // Group C: a 409 (gate / SaaS reserve "scan_already_active") → friendly message +
         // machine code + non-retryable. Any other status → the fallback detail string +

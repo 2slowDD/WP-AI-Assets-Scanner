@@ -1312,7 +1312,24 @@ class ScannerAjax {
         $this->check();
         $user_id = get_current_user_id();
         $state   = get_transient( 'drspeed_aias_job_' . $user_id );
-        if ( ! $state ) { wp_send_json_error( 'No active scan' ); return; }
+        if ( ! $state ) {
+            // FU-AAS-OUTBOX-CANNOT-BE-CANCELLED: no worker job, but the scan may be queued
+            // LOCALLY (a submit that could not reach the worker). Cancel then means: drop the
+            // outbox entry, release the reservation it holds, unschedule the replay cron.
+            // Outbox::discard() refuses (false) while a cron replay holds the lock — the
+            // entry stays and the user is told to retry, never told it was cancelled.
+            $outbox = \DrSpeedAIAS\Scanner\Outbox::outbox_state_for_user( (int) $user_id );
+            if ( 'queued' === ( $outbox['state'] ?? '' ) ) {
+                if ( \DrSpeedAIAS\Scanner\Outbox::discard() ) {
+                    wp_send_json_success( [ 'pages_completed' => 0, 'queued_cancelled' => true ] );
+                    return;
+                }
+                wp_send_json_error( [ 'message' => 'Could not cancel the queued scan — please try again.', 'retryable' => true ] );
+                return;
+            }
+            wp_send_json_error( 'No active scan' );
+            return;
+        }
 
         $settings = $this->settings();
         // Railway's cancel route now owns credit release — no need to call release_credits here.

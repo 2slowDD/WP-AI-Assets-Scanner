@@ -121,5 +121,17 @@
         "fix_own_generic": "A plugin or server rule on this site is removing them. Allow these parameters in its settings: %s, or temporarily deactivate it. Then scan again before applying these rules.",
         "fix_external_yoast": "If you run this site: this looks like Yoast SEO's URL cleanup. Add these to \"Additional URL parameters to allow\": %s. Or turn off \"Remove unregistered URL parameters\" while you scan. Then scan again before applying these rules.",
         "fix_external_generic": "If you run this site: a plugin or server rule on it is removing them. Allow these parameters in its settings: %s, or temporarily deactivate it. Then scan again before applying these rules."
+    },
+    "step3_bypass": {
+        "pending_label": "Checking…",
+        "pending_copy": "Detected bypass rules are applied per URL when available.",
+        "requested_label": "Requested",
+        "requested_copy": "Bypass parameters were added. Confirming each page received them…",
+        "applied_label": "Applied",
+        "applied_copy": "Confirmed on at least one finished page.",
+        "lost_label": "Lost — optimizer stayed on",
+        "lost_copy": "This site removed the bypass from at least one page. Details follow when the scan finishes.",
+        "none_label": "Not applied (N\/A)",
+        "none_copy": "No optimizer bypass was needed for the URLs in this scan."
     }
 }

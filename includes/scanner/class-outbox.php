@@ -320,6 +320,44 @@ class Outbox {
         return 'failed';
     }
 
+    /**
+     * User cancel of a locally queued scan (FU-AAS-OUTBOX-CANNOT-BE-CANCELLED).
+     *
+     * Drops the pending entry, releases the reservation it holds (best-effort: the SaaS
+     * answers 409 for a token already released/finalised, and the user asked for the scan
+     * to stop either way), clears bypass tokens and unschedules the replay cron — so no
+     * later cron pass can re-reserve and resubmit a scan the user believes cancelled.
+     *
+     * Takes the dispatch lock first: a cron replay mid-flight owns the entry, and deleting
+     * it underneath that pass would let its crash-safe checkpoint re-create the entry with a
+     * fresh reservation. In that case nothing is touched and false is returned so the caller
+     * can tell the user to retry in a moment.
+     *
+     * @param array $deps Optional dep-name => callable overrides (same seam as dispatch()).
+     * @return bool True when a pending entry was discarded; false when there was none, the
+     *              entry is not pending (a failed entry already released its token), or a
+     *              dispatch pass holds the lock.
+     */
+    public static function discard( array $deps = [] ): bool {
+        $entry = self::load();
+        if ( ! $entry || ( $entry['status'] ?? '' ) !== 'pending' ) {
+            return false;
+        }
+        if ( ! self::acquire_lock() ) {
+            return false;
+        }
+        try {
+            if ( ! empty( $entry['job_token'] ) ) { // M2: never strand a reservation
+                try { self::call( $deps, 'release', [ $entry['job_token'] ] ); } catch ( \Throwable $e ) {} // best-effort
+            }
+            try { self::call( $deps, 'clear_bypass', [] ); } catch ( \Throwable $e ) {}
+            self::done();
+            return true;
+        } finally {
+            self::release_lock();
+        }
+    }
+
     /** Successful dispatch: drop the entry + cron. */
     private static function done(): void {
         delete_option( self::OPTION_KEY );

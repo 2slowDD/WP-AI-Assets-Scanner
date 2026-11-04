@@ -562,6 +562,19 @@ class DRSPEED_AIAS_Broken_Banner {
 				/* translators: %s: comma-separated query parameters */
 				'fix_external_generic' => __( 'If you run this site: a plugin or server rule on it is removing them. Allow these parameters in its settings: %s, or temporarily deactivate it. Then scan again before applying these rules.', 'dr-speed-ai-assets-scanner' ),
 			],
+			// FU-STEP3-BYPASS-LABEL-OVERCLAIMS (spec 2026-11-04 §4): the Step-3 "Optimizer bypass" row. Copy approved by the operator, 2026-11-04.
+			'step3_bypass'       => [
+				'pending_label'   => __( 'Checking…', 'dr-speed-ai-assets-scanner' ),
+				'pending_copy'    => __( 'Detected bypass rules are applied per URL when available.', 'dr-speed-ai-assets-scanner' ),
+				'requested_label' => __( 'Requested', 'dr-speed-ai-assets-scanner' ),
+				'requested_copy'  => __( 'Bypass parameters were added. Confirming each page received them…', 'dr-speed-ai-assets-scanner' ),
+				'applied_label'   => __( 'Applied', 'dr-speed-ai-assets-scanner' ),
+				'applied_copy'    => __( 'Confirmed on at least one finished page.', 'dr-speed-ai-assets-scanner' ),
+				'lost_label'      => __( 'Lost — optimizer stayed on', 'dr-speed-ai-assets-scanner' ),
+				'lost_copy'       => __( 'This site removed the bypass from at least one page. Details follow when the scan finishes.', 'dr-speed-ai-assets-scanner' ),
+				'none_label'      => __( 'Not applied (N/A)', 'dr-speed-ai-assets-scanner' ),
+				'none_copy'       => __( 'No optimizer bypass was needed for the URLs in this scan.', 'dr-speed-ai-assets-scanner' ),
+			],
 		];
 	}
 
