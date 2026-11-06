@@ -1658,7 +1658,14 @@
             )) {
                 return;
             }
+        }
 
+        // FU-SITE-DENIAL Part C — access gate for every selected host (own site + external),
+        // after the external confirm (which must precede any request to an external host)
+        // and before the probe and before drspeed_aias_reserve_job. Fails open on any fault.
+        if ((await runAccessGate(selectedUrls)) !== 'proceed') return;
+
+        if (externalUrls.length > 0) {
             const spinnerCtl = showInlineSpinner('Detecting target stack…');
             let probeResult;
             try {
@@ -2614,6 +2621,9 @@
                 alert('No remaining pages to re-queue.');
                 return;
             }
+
+            // FU-SITE-DENIAL Part C — same access gate before this path's credit reserve.
+            if ((await runAccessGate(requeueUrls)) !== 'proceed') return;   // finally{} resets _inFlight
 
             // Reserve credits for N pages (no extra-time on re-queue).
             var resRes;
