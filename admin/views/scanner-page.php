@@ -235,6 +235,7 @@
                     </div>
                     <span class="cu-live-state">In progress</span>
                 </div>
+                <div id="cu-access-notice" aria-live="polite"></div>
                 <div id="cu-target-stack-notice"></div>
                 <div class="cu-scan-validation-list">
                     <div class="cu-scan-validation-row"><span class="cu-validation-icon">&#10003;</span><div><strong>Access checks</strong><small>Connectivity and reserved scan access validated.</small></div><span>Ready</span></div>

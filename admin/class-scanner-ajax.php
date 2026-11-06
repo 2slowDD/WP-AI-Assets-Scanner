@@ -9,6 +9,7 @@ use DrSpeedAIAS\Api\WpserviceClient;
 use DrSpeedAIAS\Api\RailwayClient;
 use DrSpeedAIAS\Scanner\PageDiscovery;
 use DrSpeedAIAS\Scanner\PluginDetector;
+use DrSpeedAIAS\Scanner\ScannerAccessCheck;
 use DrSpeedAIAS\Scanner\BypassManager;
 use DrSpeedAIAS\Scanner\CuJsonBuilder;
 use DrSpeedAIAS\Scanner\EventEmitter;
@@ -35,6 +36,7 @@ class ScannerAjax {
             'drspeed_aias_export_history',
             'drspeed_aias_delete_history',
             'drspeed_aias_probe_target_stack',
+            'drspeed_aias_check_scanner_access',
             'drspeed_aias_get_badge_state',
             'drspeed_aias_outbox_enqueue',
             'drspeed_aias_outbox_tick',
@@ -2255,6 +2257,54 @@ class ScannerAjax {
                 ],
             ],
         ] );
+    }
+
+    /**
+     * FU-SITE-DENIAL Part C — does the selected sites' firewall refuse our scanner by name?
+     * Request:  POST { action: drspeed_aias_check_scanner_access, _wpnonce, urls: [string,...] }
+     * Response: { success: true, data: { hosts: [ {host, own_site, verdict, requests, status, reference_label, reference} ], denied } }
+     * Runs BEFORE drspeed_aias_reserve_job; never returns or logs the Scanner Secret / staging login.
+     */
+    public function check_scanner_access(): void {
+        if ( ! check_ajax_referer( 'drspeed_aias_nonce', '_wpnonce', false ) ) {
+            wp_send_json( [ 'ok' => false, 'error' => 'nonce_invalid' ], 403 );
+            return;
+        }
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json( [ 'ok' => false, 'error' => 'permission_denied' ], 403 );
+            return;
+        }
+        $urls_raw = [];
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce checked above before processing input.
+        if ( isset( $_POST['urls'] ) ) {
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Nonce checked above; each URL is sanitized with esc_url_raw() and scheme-allowlisted below.
+            $urls_raw = wp_unslash( $_POST['urls'] );
+        }
+        if ( ! is_array( $urls_raw ) ) {
+            wp_send_json( [ 'ok' => false, 'error' => 'urls_must_be_array' ], 400 );
+            return;
+        }
+        // Keep at most MAX_URLS valid http(s) URLs with a host, in order; nested arrays,
+        // empties, other schemes and hostless URLs are dropped and do not count.
+        $urls = [];
+        foreach ( $urls_raw as $u ) {
+            if ( ! is_scalar( $u ) ) {
+                continue;
+            }
+            $clean  = esc_url_raw( (string) $u );
+            $scheme = strtolower( (string) wp_parse_url( $clean, PHP_URL_SCHEME ) );
+            $host   = (string) wp_parse_url( $clean, PHP_URL_HOST );
+            if ( '' === $clean || '' === $host || ( 'http' !== $scheme && 'https' !== $scheme ) ) {
+                continue;
+            }
+            $urls[] = $clean;
+            if ( count( $urls ) >= ScannerAccessCheck::MAX_URLS ) {
+                break;
+            }
+        }
+        $settings = $this->settings();
+        $check    = new ScannerAccessCheck( $settings->get_scanner_secret(), $settings->get_http_auth(), (string) home_url() );
+        wp_send_json_success( $check->check_groups( self::group_urls_by_host( $urls ) ) );
     }
 
     /** Group input URLs by host (parsed via wp_parse_url). Strips www. prefix for consistent grouping. */
