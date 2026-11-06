@@ -279,11 +279,20 @@
         // runs from step 1, but the FU-SITE-DENIAL access check also runs from the step-4
         // Re-queue button — a host left in hidden step 1 would hide the spinner and its Cancel.
         // showStep() sets display:none on every other .cu-step. Fallback: step-1, then body.
+        // In step 4 the Re-queue button sits in #cu-banner-area, a direct child of the step
+        // (its first), so the host goes directly after that banner, not below the whole
+        // results shell. Elsewhere (step 1 / the probe) it is appended to the step, as before.
         const visibleStep = Array.prototype.find.call(
             document.querySelectorAll('.cu-step'),
             function (el) { return el && el.style && el.style.display !== 'none'; }
         );
-        (visibleStep || document.getElementById('step-1') || document.body).appendChild(host);
+        const mountTarget = visibleStep || document.getElementById('step-1') || document.body;
+        const bannerArea = document.getElementById('cu-banner-area');
+        if (bannerArea && bannerArea.parentNode === mountTarget) {
+            mountTarget.insertBefore(host, bannerArea.nextSibling);
+        } else {
+            mountTarget.appendChild(host);
+        }
 
         host.innerHTML = '';
         host.className = 'cu-probe-spinner';

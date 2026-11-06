@@ -162,15 +162,40 @@ test('denied Start (external): Esc stops before the probe and the reserve', asyn
 // Test-side stub: the base harness returns [] for document.querySelectorAll, so showStep()
 // toggles nothing. Model the four .cu-step containers (step-1 visible, the rest display:none,
 // as in admin/views/scanner-page.php) so showStep() and the spinner's visible-step mount run
-// against real elements.
+// against real elements. Step 4 gets its first three children in markup order —
+// #cu-banner-area, #cu-bypass-lost-panel, .cu-results-shell — with a nextSibling getter
+// (the base stub has none) so "insert right after the banner" can be observed.
+function withNextSibling(el) {
+  Object.defineProperty(el, 'nextSibling', {
+    configurable: true,
+    get() {
+      const sibs = this.parentNode ? this.parentNode.children : [];
+      const i = sibs.indexOf(this);
+      return i === -1 ? null : (sibs[i + 1] || null);
+    },
+  });
+  return el;
+}
 function stepsQuerySelectorAll(selector, els) {
   if (selector !== '.cu-step') return [];
   return [1, 2, 3, 4].map(function (i) {
     const id = 'step-' + i;
     if (!els[id]) els[id] = makeEl(id, 'div');
     if (els[id].style.display === undefined) els[id].style.display = i === 1 ? '' : 'none';
+    if (i === 4 && !els[id]._stubbedKids) {
+      els[id]._stubbedKids = true;
+      const shell = makeEl('', 'div');
+      shell.className = 'cu-results-shell';
+      els[id].appendChild(withNextSibling(els['cu-banner-area']));
+      els[id].appendChild(els['cu-bypass-lost-panel']);
+      els[id].appendChild(shell);
+    }
     return els[id];
   });
+}
+// Ids/classes of step 4's direct children, in order.
+function step4Order(f) {
+  return f.h.els['step-4'].children.map(function (c) { return c.id || c.className; });
 }
 function requeueHarness(answers, extra) {
   return flowHarness(answers, Object.assign({
@@ -242,7 +267,7 @@ test('Start: while the check is held, the spinner and its Cancel sit in visible 
   held.resolve(OK); await settle();
 });
 
-test('Re-queue: while the check is held, the spinner and its Cancel sit in visible step 4', async function () {
+test('Re-queue: while the check is held, the spinner and its Cancel sit in visible step 4, right under the banner', async function () {
   const held = deferred();
   const f = requeueHarness({ [CHECK]: function () { return held.promise; }, [RESERVE]: RESERVE_STOP },
     { querySelectorAll: stepsQuerySelectorAll });
@@ -253,6 +278,9 @@ test('Re-queue: while the check is held, the spinner and its Cancel sit in visib
   assert.strictEqual(count(f, CHECK), 1, 'check in flight');
   const host = spinnerHost(f);
   assert.strictEqual(host.parentNode, f.h.els['step-4'], 'spinner host mounted in visible step-4, not hidden step-1');
+  assert.deepStrictEqual(step4Order(f),
+    ['cu-banner-area', 'cu-probe-spinner-host', 'cu-bypass-lost-panel', 'cu-results-shell'],
+    'spinner host directly after #cu-banner-area (the Re-queue button), before the results shell');
   assert.strictEqual(host.style.display, 'flex', 'spinner shown');
   assert.ok(hasCancel(host), 'Cancel control rendered in the host');
   held.resolve(OK); await settle();
@@ -271,6 +299,9 @@ test('Re-queue: a spinner host created on demand is created inside visible step 
   };
   assert.strictEqual(inStep(4).length, 1, 'created host appended to step-4');
   assert.strictEqual(inStep(1).length, 0, 'nothing appended to hidden step-1');
+  assert.deepStrictEqual(step4Order(f),
+    ['cu-banner-area', 'cu-probe-spinner-host', 'cu-bypass-lost-panel', 'cu-results-shell'],
+    'spinner host directly after #cu-banner-area (the Re-queue button), before the results shell');
   assert.ok(hasCancel(inStep(4)[0]), 'Cancel control rendered in the host');
   held.resolve(OK); await settle();
 });
