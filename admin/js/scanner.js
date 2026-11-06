@@ -1592,7 +1592,13 @@
         });
     })();
 
+    // FU-SITE-DENIAL Part C — true only while the Start handler awaits runAccessGate. Step 1
+    // (and both Start buttons) stays clickable behind the inline spinner, so without this a
+    // second click would run a second check and a second drspeed_aias_reserve_job.
+    let startAccessGateInFlight = false;
+
     document.getElementById('cu-btn-next-1').addEventListener('click', async function () {
+        if (startAccessGateInFlight) return;
         // Clear any prior scan's target-stack notice so it never lingers into a
         // warning-path or no-external scan (FU-AAS-CACHE-STACK-NOTICE-MISSING).
         renderTargetStackNotice(null);
@@ -1663,7 +1669,14 @@
         // FU-SITE-DENIAL Part C — access gate for every selected host (own site + external),
         // after the external confirm (which must precede any request to an external host)
         // and before the probe and before drspeed_aias_reserve_job. Fails open on any fault.
-        if ((await runAccessGate(selectedUrls)) !== 'proceed') return;
+        startAccessGateInFlight = true;
+        let accessGate;
+        try {
+            accessGate = await runAccessGate(selectedUrls);
+        } finally {
+            startAccessGateInFlight = false;
+        }
+        if (accessGate !== 'proceed') return;
 
         if (externalUrls.length > 0) {
             const spinnerCtl = showInlineSpinner('Detecting target stack…');

@@ -11,15 +11,20 @@ async function settle(n) { for (let i = 0; i < (n || 12); i++) await flush(); }
 
 // `actions` records every AJAX action posted through fetch, plus a 'confirm' marker each
 // time the external-host window.confirm is shown, so the ordering assertions can see it.
+// `bodies[action]` keeps each request's serialised FormData body, in order. An answer may be
+// a function returning a Promise, which lets a test hold a response back.
 function flowHarness(answers, extra) {
   const actions = [];
+  const bodies = {};
   const h = createHarness(Object.assign({
     drspeedAias: { ajaxUrl: '', nonce: 'n', siteUrl: 'https://example.com', settingsUrl: '/s', outbox: { state: 'none' } },
     confirm: function () { actions.push('confirm'); return true; },
     fetch: function (url, opt) {
-      const m = /action=([a-z_]+)/.exec(String(opt && opt.body));
+      const body = String(opt && opt.body);
+      const m = /action=([a-z_]+)/.exec(body);
       const action = m ? m[1] : '?';
       actions.push(action);
+      (bodies[action] = bodies[action] || []).push(body);
       const a = answers[action];
       const payload = typeof a === 'function' ? a() : (a || {});
       return Promise.resolve({ ok: true, json: function () { return Promise.resolve(payload); } });
@@ -27,7 +32,23 @@ function flowHarness(answers, extra) {
   }, extra || {}));
   h.els['cu-access-notice'] = makeEl('cu-access-notice');
   h.sandbox.scrollTo = function () {};
-  return { h: h, actions: actions };
+  return { h: h, actions: actions, bodies: bodies };
+}
+// The `urls` list one request posted (post() serialises arrays as urls[0]=…&urls[1]=…).
+function postedUrls(f, action, i) {
+  const body = (f.bodies[action] || [])[i || 0];
+  assert.ok(body !== undefined, 'request ' + (i || 0) + ' of ' + action + ' was sent');
+  const out = [];
+  body.split('&').forEach(function (pair) {
+    const m = /^urls\[(\d+)\]=(.*)$/.exec(pair);
+    if (m) out[Number(m[1])] = decodeURIComponent(m[2]);
+  });
+  return out;
+}
+function deferred() {
+  let resolve;
+  const promise = new Promise(function (r) { resolve = r; });
+  return { promise: promise, resolve: resolve };
 }
 const GATE_SEQ = /^(confirm|drspeed_aias_check_scanner_access|drspeed_aias_probe_target_stack|drspeed_aias_reserve_job)$/;
 function seqOf(f) { return f.actions.filter(function (a) { return GATE_SEQ.test(a); }); }
@@ -61,6 +82,39 @@ test('external Start: confirm → check → probe → reserve', async function (
   f.h.els['cu-included-urls'].value = 'https://example.net/a';
   f.h.els['cu-btn-next-1'].click(); await settle();
   assert.deepStrictEqual(seqOf(f), ['confirm', CHECK, 'drspeed_aias_probe_target_stack', RESERVE]);
+});
+
+test('mixed Start: the check posts every selected URL, own site and external', async function () {
+  const f = flowHarness({ [CHECK]: OK, drspeed_aias_probe_target_stack: PROBE_CLEAN, [RESERVE]: RESERVE_STOP });
+  f.h.els['cu-included-urls'].value = 'https://example.com/a\nhttps://example.net/a';
+  f.h.els['cu-btn-next-1'].click(); await settle();
+  assert.deepStrictEqual(seqOf(f), ['confirm', CHECK, 'drspeed_aias_probe_target_stack', RESERVE]);
+  assert.deepStrictEqual(postedUrls(f, CHECK), ['https://example.com/a', 'https://example.net/a']);
+  assert.ok(f.bodies[CHECK][0].includes('urls[0]=https%3A%2F%2Fexample.com%2Fa'), 'own-site URL in the check body');
+});
+
+test('own-site Start: a second click while the check is pending sends no second check or reserve', async function () {
+  const held = deferred();
+  const f = flowHarness({ [CHECK]: function () { return held.promise; }, [RESERVE]: RESERVE_STOP });
+  f.h.els['cu-included-urls'].value = 'https://example.com/a';
+  f.h.els['cu-btn-next-1'].click(); await settle();
+  f.h.els['cu-btn-next-1'].click(); await settle();
+  f.h.els['cu-btn-next-1-top'].click(); await settle();   // the top button shares the handler
+  assert.strictEqual(count(f, CHECK), 1, 'one check while the first is pending');
+  held.resolve(OK); await settle();
+  assert.strictEqual(count(f, CHECK), 1, 'exactly one check');
+  assert.strictEqual(count(f, RESERVE), 1, 'exactly one reserve');
+});
+
+test('denied Start: after Close, a new Start click runs a new check', async function () {
+  const f = flowHarness({ [CHECK]: DENIED, [RESERVE]: RESERVE_STOP });
+  f.h.els['cu-included-urls'].value = 'https://example.com/a';
+  f.h.els['cu-btn-next-1'].click(); await settle();
+  f.h.body.querySelector('.cu-access-denied-dialog').querySelector('.cu-access-close').click(); await settle();
+  f.h.els['cu-btn-next-1'].click(); await settle();
+  assert.strictEqual(count(f, CHECK), 2, 'the in-flight flag was reset after Close');
+  assert.ok(f.h.body.querySelector('.cu-access-denied-dialog'), 'stop dialog shown again');
+  assert.strictEqual(count(f, RESERVE), 0);
 });
 
 test('external Start: declining the external confirm sends nothing', async function () {
@@ -148,4 +202,5 @@ test('Re-queue allowed: check runs before reserve', async function () {
   await settle();
   f.h.els['cu-partial-requeue-btn'].click(); await settle();
   assert.deepStrictEqual(seqOf(f), [CHECK, RESERVE]);
+  assert.deepStrictEqual(postedUrls(f, CHECK), ['https://example.com/a'], 'the check carries the remainder URL');
 });
