@@ -84,7 +84,7 @@ class VersionLockstepTest extends TestCase {
         $badge  = $this->capture_one( self::BADGE_RE, $readme, 'README.md shields.io VERSION badge' );
         $stable = $this->capture_one( self::STABLE_TAG_RE, $this->read_repo_file( 'readme.txt' ), 'readme.txt Stable tag' );
 
-        $this->assertSame( '1.9.10', $header, '1.9.10 — scans reach the worker via scanner.wpservice.pro with failover (FU-WORKER-CLOUDFLARE-FRONT)' );
+        $this->assertSame( '1.9.11', $header, '1.9.11 — scans stop before they start when a site\'s firewall blocks the scanner by name (pre-scan access check)' );
 
         // Shape first: without it, three empty captures would "agree" and pass.
         foreach ( [ 'plugin header' => $header, 'DRSPEED_AIAS_VERSION define' => $define, 'README badge' => $badge, 'readme.txt Stable tag' => $stable ] as $where => $v ) {
