@@ -137,8 +137,10 @@ final class JsCacheBustDriftTest extends TestCase {
 		// Re-pinned in place 2026-11-04 before 1.9.9 shipped (never served): Cancel discards a
 		// locally queued scan (FU-AAS-OUTBOX-CANNOT-BE-CANCELLED).
 		'1.9.9' => 'db15dfccb4378a92af20c54e61853277ffa6139bc07c6793840325ad476cfd2c',
-		// 1.9.11 — pre-scan access check: Start / Re-queue gate, blocked dialog, own-site notice.
-		'1.9.11' => '737ad4265dab69fbfe583d106f71c55723aa7c761a6a645faaa9ec59598aa98e',
+		// 1.9.11 — pre-scan access check: Start / Re-queue gate, blocked dialog, own-site notice;
+		// the checking / probe status bar fixed to the bottom of the screen (PF29). Unreleased,
+		// so the row is re-pinned rather than a new one added.
+		'1.9.11' => '2410a34dfd157b407a6678ac3d94d2b6595cf34e4daa488ac1a358061b98aea5',
 	);
 
 	/**

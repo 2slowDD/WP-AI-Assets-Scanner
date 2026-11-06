@@ -865,18 +865,39 @@
     .cu-probe-toast { transition: none; }
 }
 
-/* FU-NEW-2 Phase 6 — Inline spinner during target stack probe (spec §9). */
+/* FU-NEW-2 Phase 6 — Inline spinner during target stack probe (spec §9).
+   PF29 — pinned to the bottom of the screen as a floating status bar, so the
+   "Checking that the site lets our scanner in…" / "Detecting target stack…" line and
+   its Cancel stay in view on a long page list (the host is still mounted inside the
+   visible step by showInlineSpinner; fixed positioning takes it out of the flow).
+   z-index matches .cu-probe-toast, just above #wpadminbar (99999).
+   width: max-content — with left: 50% a fixed box would otherwise shrink-to-fit into
+   the remaining 50vw and wrap at half the screen; max-width caps it at the gutter. */
 .cu-probe-spinner {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100000;
+    width: max-content;
+    max-width: calc(100vw - 32px);
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     gap: 10px;
-    margin: 12px 0;
+    margin: 0;
     padding: 10px 14px;
     border: 1px solid #c3c4c7;
     border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
     background: #f6f7f7;
     color: #1d2327;
     font-size: 14px;
+    overflow-wrap: anywhere;
+}
+.cu-probe-spinner-icon,
+.cu-probe-spinner .cu-probe-spinner-cancel {
+    flex-shrink: 0;
 }
 .cu-probe-spinner-icon {
     display: inline-block;
