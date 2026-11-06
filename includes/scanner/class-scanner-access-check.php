@@ -104,16 +104,20 @@ final class ScannerAccessCheck {
     public static function extract_reference( string $body ): ?array {
         $text = wp_strip_all_tags( str_replace( '<', ' <', substr( $body, 0, self::BODY_SCAN_BYTES ) ) );
         $text = preg_replace( '/\s+/', ' ', (string) $text );
-        if ( ! is_string( $text ) || ! preg_match( self::REFERENCE_RE, $text, $m ) ) {
+        if ( ! is_string( $text ) || ! preg_match_all( self::REFERENCE_RE, $text, $all, PREG_SET_ORDER ) ) {
             return null;
         }
-        if ( ! preg_match( '/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/', $m[2] ) ) {
-            return null;
+        // First candidate whose value carries a digit: prose such as "quote this reference when …" is skipped.
+        foreach ( $all as $m ) {
+            if ( ! preg_match( '/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/', $m[2] ) || ! preg_match( '/\d/', $m[2] ) ) {
+                continue;
+            }
+            $key = strtolower( (string) preg_replace( '/\s+/', ' ', $m[1] ) );
+            if ( ! isset( self::REFERENCE_LABELS[ $key ] ) ) {
+                continue;
+            }
+            return [ 'label' => self::REFERENCE_LABELS[ $key ], 'value' => $m[2] ];
         }
-        $key = strtolower( (string) preg_replace( '/\s+/', ' ', $m[1] ) );
-        if ( ! isset( self::REFERENCE_LABELS[ $key ] ) ) {
-            return null;
-        }
-        return [ 'label' => self::REFERENCE_LABELS[ $key ], 'value' => $m[2] ];
+        return null;
     }
 }

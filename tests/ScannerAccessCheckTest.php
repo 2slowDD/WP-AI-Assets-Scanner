@@ -90,6 +90,20 @@ class ScannerAccessCheckTest extends TestCase {
         $this->assertSame( [ 'label' => 'Reference ID', 'value' => 'WAF-425' ], ScannerAccessCheck::extract_reference( $split ) );
     }
 
+    /** PF18 / E10: a candidate value must contain a digit, so prose "reference" never becomes the code. */
+    public function test_extract_reference_skips_prose_reference_before_real_code(): void {
+        $r = ScannerAccessCheck::extract_reference( '<p>Please quote this reference when contacting support. Reference ID: WAF-425</p>' );
+        $this->assertSame( [ 'label' => 'Reference ID', 'value' => 'WAF-425' ], $r );
+    }
+
+    public function test_extract_reference_prose_only_returns_null(): void {
+        $this->assertNull( ScannerAccessCheck::extract_reference( '<p>Your reference number is shown below.</p>' ) );
+    }
+
+    public function test_extract_reference_plural_ids_prose_returns_null(): void {
+        $this->assertNull( ScannerAccessCheck::extract_reference( '<p>Reference IDs are logged.</p>' ) );
+    }
+
     public function test_extract_reference_normalises_label(): void {
         $r = ScannerAccessCheck::extract_reference( '<p>support   id: ABC123.x</p>' );
         $this->assertSame( [ 'label' => 'Support ID', 'value' => 'ABC123.x' ], $r );
