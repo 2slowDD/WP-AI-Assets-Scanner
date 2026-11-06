@@ -273,11 +273,17 @@
             || (function () {
                 const h = document.createElement('div');
                 h.id = 'cu-probe-spinner-host';
-                // Append to step-1 container so it lives near the scanning UI.
-                const step1 = document.getElementById('step-1') || document.body;
-                step1.appendChild(h);
                 return h;
             })();
+        // Mount (or move) the host into the step that is visible NOW, on every call. The probe
+        // runs from step 1, but the FU-SITE-DENIAL access check also runs from the step-4
+        // Re-queue button — a host left in hidden step 1 would hide the spinner and its Cancel.
+        // showStep() sets display:none on every other .cu-step. Fallback: step-1, then body.
+        const visibleStep = Array.prototype.find.call(
+            document.querySelectorAll('.cu-step'),
+            function (el) { return el && el.style && el.style.display !== 'none'; }
+        );
+        (visibleStep || document.getElementById('step-1') || document.body).appendChild(host);
 
         host.innerHTML = '';
         host.className = 'cu-probe-spinner';

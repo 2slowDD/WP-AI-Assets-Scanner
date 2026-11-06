@@ -159,14 +159,27 @@ test('denied Start (external): Esc stops before the probe and the reserve', asyn
 // Re-queue arrange: seed the persisted partial payload BEFORE scanner.js loads, so the
 // load-time restorePartialBanner() sets currentPartialInfo and wires #cu-partial-requeue-btn
 // to reQueueRemainder — the same path a page reload takes in production.
-function requeueHarness(answers) {
-  return flowHarness(answers, {
+// Test-side stub: the base harness returns [] for document.querySelectorAll, so showStep()
+// toggles nothing. Model the four .cu-step containers (step-1 visible, the rest display:none,
+// as in admin/views/scanner-page.php) so showStep() and the spinner's visible-step mount run
+// against real elements.
+function stepsQuerySelectorAll(selector, els) {
+  if (selector !== '.cu-step') return [];
+  return [1, 2, 3, 4].map(function (i) {
+    const id = 'step-' + i;
+    if (!els[id]) els[id] = makeEl(id, 'div');
+    if (els[id].style.display === undefined) els[id].style.display = i === 1 ? '' : 'none';
+    return els[id];
+  });
+}
+function requeueHarness(answers, extra) {
+  return flowHarness(answers, Object.assign({
     localStorage: {
       drspeed_aias_partial: JSON.stringify({
         status: 'user_cancel', completed: 1, total: 2, remainder_urls: ['https://example.com/a'],
       }),
     },
-  });
+  }, extra || {}));
 }
 
 test('Re-queue denied: no reserve, _inFlight cleared after each Close', async function () {
@@ -203,4 +216,61 @@ test('Re-queue allowed: check runs before reserve', async function () {
   f.h.els['cu-partial-requeue-btn'].click(); await settle();
   assert.deepStrictEqual(seqOf(f), [CHECK, RESERVE]);
   assert.deepStrictEqual(postedUrls(f, CHECK), ['https://example.com/a'], 'the check carries the remainder URL');
+});
+
+// PF25 — the spinner (and its Cancel) mounts in the step that is VISIBLE when the check runs.
+// Re-queue runs from step 4 (#cu-banner-area); a host left in hidden step 1 would show nothing
+// for up to 20 s. The base harness pre-creates #cu-probe-spinner-host detached, so these tests
+// exercise the reuse/move path; the last one deletes it to exercise the create path.
+function spinnerHost(f) { return f.h.els['cu-probe-spinner-host']; }
+function hasCancel(host) {
+  return host.children.some(function (c) { return c && String(c.className || '').includes('cu-probe-spinner-cancel'); });
+}
+
+test('Start: while the check is held, the spinner and its Cancel sit in visible step 1', async function () {
+  const held = deferred();
+  const f = flowHarness({ [CHECK]: function () { return held.promise; }, [RESERVE]: RESERVE_STOP },
+    { querySelectorAll: stepsQuerySelectorAll });
+  f.h.els['cu-included-urls'].value = 'https://example.com/a';
+  f.h.els['cu-btn-next-1'].click(); await settle();
+  assert.strictEqual(count(f, CHECK), 1, 'check in flight');
+  const host = spinnerHost(f);
+  assert.strictEqual(host.parentNode, f.h.els['step-1'], 'spinner host mounted in step-1');
+  assert.notStrictEqual(f.h.els['step-1'].style.display, 'none', 'step-1 is the visible step');
+  assert.strictEqual(host.style.display, 'flex', 'spinner shown');
+  assert.ok(hasCancel(host), 'Cancel control rendered in the host');
+  held.resolve(OK); await settle();
+});
+
+test('Re-queue: while the check is held, the spinner and its Cancel sit in visible step 4', async function () {
+  const held = deferred();
+  const f = requeueHarness({ [CHECK]: function () { return held.promise; }, [RESERVE]: RESERVE_STOP },
+    { querySelectorAll: stepsQuerySelectorAll });
+  await settle();
+  assert.strictEqual(f.h.els['step-4'].style.display, 'block', 'restored banner shows step 4');
+  assert.strictEqual(f.h.els['step-1'].style.display, 'none', 'step 1 is hidden');
+  f.h.els['cu-partial-requeue-btn'].click(); await settle();
+  assert.strictEqual(count(f, CHECK), 1, 'check in flight');
+  const host = spinnerHost(f);
+  assert.strictEqual(host.parentNode, f.h.els['step-4'], 'spinner host mounted in visible step-4, not hidden step-1');
+  assert.strictEqual(host.style.display, 'flex', 'spinner shown');
+  assert.ok(hasCancel(host), 'Cancel control rendered in the host');
+  held.resolve(OK); await settle();
+});
+
+test('Re-queue: a spinner host created on demand is created inside visible step 4', async function () {
+  const held = deferred();
+  const f = requeueHarness({ [CHECK]: function () { return held.promise; }, [RESERVE]: RESERVE_STOP },
+    { querySelectorAll: stepsQuerySelectorAll });
+  delete f.h.els['cu-probe-spinner-host'];   // no host in the page yet → showInlineSpinner creates it
+  await settle();
+  f.h.els['cu-partial-requeue-btn'].click(); await settle();
+  assert.strictEqual(count(f, CHECK), 1, 'check in flight');
+  const inStep = function (n) {
+    return f.h.els['step-' + n].children.filter(function (c) { return c && c.id === 'cu-probe-spinner-host'; });
+  };
+  assert.strictEqual(inStep(4).length, 1, 'created host appended to step-4');
+  assert.strictEqual(inStep(1).length, 0, 'nothing appended to hidden step-1');
+  assert.ok(hasCancel(inStep(4)[0]), 'Cancel control rendered in the host');
+  held.resolve(OK); await settle();
 });

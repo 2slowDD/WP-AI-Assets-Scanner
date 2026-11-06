@@ -9,7 +9,7 @@ use WP_Mock\Tools\TestCase;
 
 /** FU-SITE-DENIAL spec §3.2 "Entry" + AC-12 — drspeed_aias_check_scanner_access handler. */
 class CheckScannerAccessEndpointTest extends TestCase {
-    private const SECRET     = 'SECRETzq81x7Kp';
+    private const FIXTURE_SECRET = 'SECRETzq81x7Kp';
     private const STAGE_USER = 'stageUSERq4';
     private const STAGE_PASS = 'STAGEpassW93v';
 
@@ -54,7 +54,7 @@ class CheckScannerAccessEndpointTest extends TestCase {
         WP_Mock::userFunction( 'current_user_can' )->andReturn( true );
         WP_Mock::userFunction( 'esc_url_raw' )->andReturnUsing( fn( $u ) => $u );
         WP_Mock::userFunction( 'home_url' )->andReturn( $home );
-        WP_Mock::userFunction( 'get_option' )->andReturnUsing( fn( $k, $d = false ) => 'drspeed_aias_secret' === $k ? self::SECRET : $d );
+        WP_Mock::userFunction( 'get_option' )->andReturnUsing( fn( $k, $d = false ) => 'drspeed_aias_secret' === $k ? self::FIXTURE_SECRET : $d );
         WP_Mock::userFunction( 'wp_safe_remote_get' )->andReturnUsing( function ( $url ) use ( &$seen ) {
             $seen[] = $url;
             return [ 'response' => [ 'code' => 200 ], 'headers' => [], 'body' => '' ];
@@ -102,7 +102,7 @@ class CheckScannerAccessEndpointTest extends TestCase {
         $this->assertSame( [ 'example.net' ], array_column( $this->sent['data']['data']['hosts'], 'host' ), 'non-http URLs form no host row' );
         $this->assertSame( [ 'hosts', 'denied' ], array_keys( $this->sent['data']['data'] ) );
         $this->assertFalse( $this->sent['data']['data']['denied'] );
-        $this->assertStringNotContainsString( self::SECRET, (string) json_encode( $this->sent['data'] ) );
+        $this->assertStringNotContainsString( self::FIXTURE_SECRET, (string) json_encode( $this->sent['data'] ) );
     }
 
     public function test_hostless_empty_and_nested_elements_are_skipped(): void {
@@ -171,7 +171,7 @@ class CheckScannerAccessEndpointTest extends TestCase {
         WP_Mock::userFunction( 'home_url' )->andReturn( 'https://example.com' );
         WP_Mock::userFunction( 'get_option' )->andReturnUsing( function ( $k, $d = false ) use ( &$blob ) {
             if ( 'drspeed_aias_secret' === $k ) {
-                return self::SECRET;
+                return self::FIXTURE_SECRET;
             }
             return 'drspeed_aias_http_auth' === $k ? $blob : $d;
         } );
@@ -192,14 +192,14 @@ class CheckScannerAccessEndpointTest extends TestCase {
         $secret_went = false;
         $auth_went   = '';
         foreach ( $headers_sent as $h ) {
-            $secret_went = $secret_went || ( $h['x-cu-scanner'] ?? '' ) === self::SECRET;
+            $secret_went = $secret_went || ( $h['x-cu-scanner'] ?? '' ) === self::FIXTURE_SECRET;
             $auth_went   = $h['Authorization'] ?? $auth_went;
         }
         $this->assertTrue( $secret_went, 'precondition: the secret was in play' );
         $this->assertSame( 'Basic ' . base64_encode( self::STAGE_USER . ':' . self::STAGE_PASS ), $auth_went, 'precondition: the staging login was in play' );
 
         $json = (string) json_encode( $this->sent['data'] );
-        foreach ( [ self::SECRET, self::STAGE_USER, self::STAGE_PASS, base64_encode( self::STAGE_USER . ':' . self::STAGE_PASS ) ] as $needle ) {
+        foreach ( [ self::FIXTURE_SECRET, self::STAGE_USER, self::STAGE_PASS, base64_encode( self::STAGE_USER . ':' . self::STAGE_PASS ) ] as $needle ) {
             $this->assertStringNotContainsString( $needle, $json );
         }
     }
@@ -214,7 +214,7 @@ class CheckScannerAccessEndpointTest extends TestCase {
         WP_Mock::userFunction( 'current_user_can' )->andReturn( true );
         WP_Mock::userFunction( 'esc_url_raw' )->andReturnUsing( fn( $u ) => $u );
         WP_Mock::userFunction( 'home_url' )->andReturn( 'https://example.com' );
-        WP_Mock::userFunction( 'get_option' )->andReturnUsing( fn( $k, $d = false ) => 'drspeed_aias_secret' === $k ? self::SECRET : $d );
+        WP_Mock::userFunction( 'get_option' )->andReturnUsing( fn( $k, $d = false ) => 'drspeed_aias_secret' === $k ? self::FIXTURE_SECRET : $d );
         WP_Mock::userFunction( 'wp_safe_remote_get' )->andReturn( new \WP_Error( 'http_request_failed', 'A valid URL was not provided.' ) );
         $_POST['urls'] = [ 'http://127.0.0.1/a', 'http://10.0.0.5/b' ];
         $this->call();

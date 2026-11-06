@@ -138,7 +138,7 @@ final class JsCacheBustDriftTest extends TestCase {
 		// locally queued scan (FU-AAS-OUTBOX-CANNOT-BE-CANCELLED).
 		'1.9.9' => 'db15dfccb4378a92af20c54e61853277ffa6139bc07c6793840325ad476cfd2c',
 		// 1.9.11 — pre-scan access check: Start / Re-queue gate, blocked dialog, own-site notice.
-		'1.9.11' => '791d9c2d324ec262fcc2df62d27431ecc556717921013b8b1a1eb899738f8f1b',
+		'1.9.11' => 'b2ee3a14e43dedc8a3f146d610771480d51bfc9d5bcb14b600d7df07a591c6b4',
 	);
 
 	/**
@@ -206,7 +206,7 @@ final class JsCacheBustDriftTest extends TestCase {
 		// Re-pinned in place 2026-11-04 before 1.9.9 shipped (never served): queued-scan Cancel branch.
 		'1.0.11.19' => '8997f4ecd7ae887396514d746934253c90695a729e8c84775878425e3daa1ebb',
 		// 1.0.11.20 — pre-scan access check gate before reserve (Start + Re-queue), dialog and notice.
-		'1.0.11.20' => 'f1e6dc19e8437b46529699efa488b54526eb0ddc462592810d37f893537c2078',
+		'1.0.11.20' => 'bcc3573ba778a3b03954aa19d35bc275ca762bbb038031ef034562efa2ad3afe',
 	);
 
 	private function root(): string {
