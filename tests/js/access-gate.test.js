@@ -123,6 +123,7 @@ test('AC-9(c) recheck: denied → still blocked; error → message, not passing;
     ok([DENIED_OWN], true),
     'REJECT',   // rejected lazily below, so no unhandled rejection exists before it is awaited
     { success: false, data: { hosts: [], denied: false } },
+    { success: true, data: 'x' },   // malformed success: data not an object
     ok([{ host: 'example.com', own_site: true, verdict: 'ok', requests: 2 }], false),
   ];
   let i = 0; const posted = [];
@@ -141,11 +142,15 @@ test('AC-9(c) recheck: denied → still blocked; error → message, not passing;
   dlg.querySelector('.cu-access-recheck').click(); await flush(); await flush();
   assert.match(dlg.innerHTML, /Couldn(?:'|&#39;)t check again/, 'success !== true is a failure too');
   assert.strictEqual(settled, false);
+  dlg.querySelector('.cu-access-recheck').click(); await flush(); await flush();
+  assert.match(dlg.innerHTML, /Couldn(?:'|&#39;)t check again — try again in a moment\./, 'success with non-object data is a failure');
+  assert.strictEqual(settled, false, 'a malformed success re-check is not treated as passing');
+  assert.ok(h.body.querySelector('.cu-access-denied-dialog'), 'dialog stays open');
   assert.strictEqual(dlg.querySelector('.cu-access-recheck').disabled, false, 'buttons re-enabled after a failure');
   dlg.querySelector('.cu-access-recheck').click(); await flush(); await flush();
   assert.strictEqual(await p, 'proceed');
   assert.strictEqual(h.body.querySelector('.cu-access-denied-dialog'), null);
-  assert.strictEqual(posted.length, 5);
+  assert.strictEqual(posted.length, 6);
   posted.forEach(function (a) { assert.strictEqual(a, 'drspeed_aias_check_scanner_access', 'every recheck is a fresh POST'); });
 });
 
