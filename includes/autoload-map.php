@@ -24,6 +24,7 @@ return [
     'DrSpeedAIAS\\MenuBadge'           => 'includes/class-menu-badge.php',
     'DrSpeedAIAS\\Scanner\\PageDiscovery'   => 'includes/scanner/class-page-discovery.php',
     'DrSpeedAIAS\\Scanner\\PluginDetector'  => 'includes/scanner/class-plugin-detector.php',
+    'DrSpeedAIAS\\Scanner\\ScannerAccessCheck' => 'includes/scanner/class-scanner-access-check.php',
     'DrSpeedAIAS\\Scanner\\BypassManager'   => 'includes/scanner/class-bypass-manager.php',
     'DrSpeedAIAS\\Scanner\\OptimizerState'  => 'includes/scanner/class-optimizer-state.php',
     'DrSpeedAIAS\\Scanner\\BypassHandler'   => 'includes/scanner/class-bypass-handler.php',
