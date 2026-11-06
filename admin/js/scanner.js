@@ -675,6 +675,185 @@
             + '</div>';
     }
 
+    // --- FU-SITE-DENIAL Part C — scanner access gate (spec Rev 3.1 §3.3-§4) ---
+    // Runs before the probe and before ANY credit reserve. Fails open on every fault:
+    // only a clean `denied` verdict from the server stops a scan.
+    const ACCESS_TITLE_OWN = 'Your site\'s firewall is blocking our scanner';
+    const ACCESS_TITLE_EXTERNAL = 'This site\'s firewall is blocking our scanner';
+    const ACCESS_TITLE_EXTERNAL_MANY = 'These sites\' firewalls are blocking our scanner'; // plan E5 (provisional)
+    const ACCESS_BOT_LINK = '<a href="https://wpservice.pro/bot" target="_blank" rel="noopener">wpservice.pro/bot</a>';
+    // Key suffix = the server row's `host`, verbatim (no client-side URL parsing or folding).
+    const ACCESS_NOTICE_KEY = 'cu_suppress_access_notice:';
+
+    function accessVal(v) {
+        return (v === null || v === undefined) ? '' : esc(v);
+    }
+    function accessRef(h) {
+        return (h.reference && h.reference_label) ? ', ' + esc(h.reference_label) + ' ' + esc(h.reference) : '';
+    }
+    function accessSettingsLink() {
+        const url = (typeof drspeedAias === 'object' && drspeedAias && drspeedAias.settingsUrl) ? drspeedAias.settingsUrl : '';
+        return url ? '<a href="' + esc(url) + '">AI Assets Scanner settings</a>' : 'AI Assets Scanner settings';
+    }
+    function accessObjects(list) {
+        return (Array.isArray(list) ? list : []).filter(function (h) { return !!h && typeof h === 'object'; });
+    }
+    function accessHostsOf(data) {
+        return accessObjects(data && typeof data === 'object' ? data.hosts : null);
+    }
+
+    function buildAccessDeniedHtml(hostList, extraLine) {
+        const hosts = accessObjects(hostList);
+        const anyOwn = hosts.some(function (h) { return !!h.own_site; });
+        const anyRef = hosts.some(function (h) { return accessRef(h) !== ''; });
+        const one = hosts.length <= 1;
+        const title = anyOwn ? ACCESS_TITLE_OWN : (one ? ACCESS_TITLE_EXTERNAL : ACCESS_TITLE_EXTERNAL_MANY);
+        const ownFix = '<p>To fix it, ask whoever manages your firewall or hosting to allow requests that carry the <code>x-cu-scanner</code> header'
+            + ' with your Scanner Secret (shown in ' + accessSettingsLink() + '). We sent this header with the check, so if you already have such a rule,'
+            + ' it isn\'t reaching the firewall that blocked us. If your firewall can\'t match headers, ask them instead to remove the rule that blocks'
+            + ' user agents containing <code>CU-Scanner</code>.</p>';
+        let html = '<h2>' + esc(title) + '</h2>';
+        if (one) {
+            const h = hosts[0] || {};
+            html += '<p>' + accessVal(h.host) + ' refused our scanner on every page we checked (HTTP ' + accessVal(h.status) + accessRef(h)
+                + '), while letting an ordinary browser request through — so the block is on our scanner\'s name.'
+                + ' A scan would fail, so it hasn\'t started. Nothing has been reserved or charged for these pages.</p>';
+            html += h.own_site ? ownFix
+                : '<p>This site\'s owner would need to stop blocking user agents containing <code>CU-Scanner</code>.</p>';
+        } else {
+            html += '<ul class="cu-access-host-list">' + hosts.map(function (h) {
+                return '<li>' + accessVal(h.host) + ' — HTTP ' + accessVal(h.status) + accessRef(h) + '</li>';
+            }).join('') + '</ul>';
+            html += '<p>Remove these sites from the selection, or ask their owners to stop blocking our scanner, then start again.</p>';
+            if (anyOwn) html += ownFix;
+        }
+        if (anyRef) html += '<p>Send them the reference above.</p>';
+        html += '<p>More about our scanner: ' + ACCESS_BOT_LINK + '</p>';
+        html += '<p>Then click &quot;Check again and start scan&quot;.</p>';
+        if (extraLine) html += '<p class="cu-access-extra">' + esc(extraLine) + '</p>';
+        return html;
+    }
+
+    // Resolves { choice: 'proceed', data } after a passing re-check, else { choice: 'stop' }.
+    // (Key is `choice`, not `action`: AjaxActionParityTest reads `action: '…'` as an AJAX action.)
+    function showAccessDeniedDialog(hosts, opts) {
+        const o = opts || {};
+        const now = o.now || function () { return new Date(); };
+        return new Promise(function (resolve) {
+            const dialog = document.createElement('dialog');
+            dialog.className = 'cu-access-denied-dialog';
+            let settled = false;
+            function done(value) {
+                if (settled) return;
+                settled = true;
+                resolve(value);
+                if (dialog.open) dialog.close();
+                dialog.remove();
+            }
+            function render(list, extra) {
+                dialog.innerHTML = '<div class="cu-access-dialog-body">' + buildAccessDeniedHtml(list, extra) + '</div>'
+                    + '<div class="cu-access-dialog-actions">'
+                    + '<button type="button" class="button button-primary cu-access-recheck">Check again and start scan</button>'
+                    + '<button type="button" class="button button-secondary cu-access-close">Close</button>'
+                    + '</div>';
+                const recheckBtn = dialog.querySelector('.cu-access-recheck');
+                const closeBtn = dialog.querySelector('.cu-access-close');
+                closeBtn.addEventListener('click', function () { done({ choice: 'stop' }); });
+                recheckBtn.addEventListener('click', async function () {
+                    recheckBtn.disabled = true;
+                    closeBtn.disabled = true;
+                    recheckBtn.textContent = 'Checking…';
+                    let r = null;
+                    try { r = await o.recheck(); } catch (e) { r = null; }
+                    if (settled) return;   // closed (Esc) while the re-check ran
+                    if (r && r.state === 'ok') { done({ choice: 'proceed', data: r.data }); return; }
+                    if (r && r.state === 'denied') {
+                        const d = now();
+                        const hhmm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+                        render(r.hosts, 'Still blocked (checked at ' + hhmm + ').');
+                        return;
+                    }
+                    render(list, 'Couldn\'t check again — try again in a moment.');
+                });
+            }
+            render(hosts, '');
+            // Esc and any programmatic close fire `close` — both mean Close.
+            dialog.addEventListener('close', function () { done({ choice: 'stop' }); });
+            document.body.appendChild(dialog);
+            dialog.showModal();
+        });
+    }
+
+    function accessNoticeSuppressed(host) {
+        try { return window.localStorage.getItem(ACCESS_NOTICE_KEY + String(host)) === '1'; } catch (e) { return false; }
+    }
+
+    // R8 — own-site `refused_general` notice in the scan view. null/empty clears it.
+    function renderAccessNotice(hosts) {
+        const el = document.getElementById('cu-access-notice');
+        if (!el) return;
+        const list = accessObjects(hosts).filter(function (h) {
+            return h.host !== null && h.host !== undefined && !accessNoticeSuppressed(h.host);
+        });
+        if (!list.length) { el.innerHTML = ''; return; }
+        el.innerHTML = '<div class="notice notice-warning inline cu-access-notice">'
+            + '<p>Your site refused a test request from this server, for reasons not specific to our scanner.'
+            + ' If this scan fails, see the firewall and CDN steps in ' + accessSettingsLink() + '.</p>'
+            + '<p><button type="button" class="button-link cu-access-notice-dismiss">Don\'t show this again for this site</button></p>'
+            + '</div>';
+        const btn = el.querySelector('.cu-access-notice-dismiss');
+        if (!btn) return;
+        btn.addEventListener('click', function () {
+            list.forEach(function (h) {
+                try { window.localStorage.setItem(ACCESS_NOTICE_KEY + String(h.host), '1'); } catch (e) {}
+            });
+            el.innerHTML = '';
+        });
+    }
+
+    async function runAccessGate(urls, deps) {
+        const d = Object.assign({
+            post: post, spinner: showInlineSpinner, openDialog: showAccessDeniedDialog,
+            renderNotice: renderAccessNotice, now: function () { return new Date(); },
+        }, deps || {});
+        const isValid = function (r) { return !!r && r.success === true && !!r.data && typeof r.data === 'object'; };
+        const deniedOf = function (data) { return accessHostsOf(data).filter(function (h) { return h.verdict === 'denied'; }); };
+        const showGeneral = function (data) {
+            d.renderNotice(accessHostsOf(data).filter(function (h) { return h.verdict === 'refused_general' && !!h.own_site; }));
+        };
+        d.renderNotice(null);   // a new scan clears the previous scan's notice
+        const spin = d.spinner('Checking that the site lets our scanner in…');
+        let res;
+        try {
+            res = await d.post('drspeed_aias_check_scanner_access', { urls: urls }, { signal: spin.signal });
+        } catch (err) {
+            spin.hide();
+            if (err && err.name === 'AbortError') return 'abort';
+            console.warn('[AAS] access check failed; continuing', err);
+            return 'proceed';
+        }
+        spin.hide();
+        if (!isValid(res)) {
+            console.warn('[AAS] access check returned no result; continuing');
+            return 'proceed';
+        }
+        const denied = deniedOf(res.data);
+        if (!denied.length) { showGeneral(res.data); return 'proceed'; }
+        const outcome = await d.openDialog(denied, {
+            now: d.now,
+            recheck: async function () {
+                try {
+                    const r = await d.post('drspeed_aias_check_scanner_access', { urls: urls });
+                    if (!isValid(r)) return { state: 'error' };
+                    const den = deniedOf(r.data);
+                    return den.length ? { state: 'denied', hosts: den } : { state: 'ok', data: r.data };
+                } catch (e) { return { state: 'error' }; }
+            },
+        });
+        if (outcome && outcome.choice === 'proceed') { showGeneral(outcome.data); return 'proceed'; }
+        return 'stop';
+    }
+
     // --- Step 1: Plugin detection ---
 
     let readinessStats = { critical: 0, warnings: 0, bypasses: 0 };
@@ -4657,6 +4836,11 @@
                         bannerCopyDefaults: BANNER_COPY_DEFAULTS,
                         step3BypassCopy: cuStep3BypassCopy,
                         showProbeOutcomeDialog: showProbeOutcomeDialog,
+                        runAccessGate: runAccessGate,
+                        buildAccessDeniedHtml: buildAccessDeniedHtml,
+                        showAccessDeniedDialog: showAccessDeniedDialog,
+                        renderAccessNotice: renderAccessNotice,
+                        isExternalUrl: isExternalUrl,
                         buildSummaryLine: buildSummaryLine, buildSummaryParts: buildSummaryParts,
                         buildSyncCopy: buildSyncCopy,
                         buildRefundLine: buildRefundLine, buildNextStepCopy: buildNextStepCopy,

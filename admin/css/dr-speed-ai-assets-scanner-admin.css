@@ -767,6 +767,56 @@
     min-width: 90px;
 }
 
+/* FU-SITE-DENIAL Part C — scanner access stop dialog + own-site notice (spec §3.3).
+   Same box as the probe dialog; long hosts/references break, buttons stack (Rule 40). */
+.cu-access-denied-dialog {
+    max-width: 640px;
+    width: calc(100% - 32px);
+    box-sizing: border-box;
+    padding: 20px 24px;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.04);
+    background: #fff;
+    color: #1d2327;
+    font-size: 14px;
+    line-height: 1.5;
+}
+.cu-access-denied-dialog::backdrop {
+    background: rgba(0,0,0,0.45);
+}
+.cu-access-denied-dialog h2 {
+    margin: 0 0 12px;
+    font-size: 18px;
+    font-weight: 600;
+}
+.cu-access-denied-dialog p {
+    margin: 8px 0;
+}
+.cu-access-denied-dialog h2,
+.cu-access-denied-dialog p,
+.cu-access-denied-dialog li,
+.cu-access-notice p {
+    overflow-wrap: anywhere;
+}
+.cu-access-denied-dialog ul.cu-access-host-list {
+    margin: 8px 0 16px 20px;
+    padding: 0;
+    list-style: disc;
+}
+.cu-access-dialog-actions {
+    margin-top: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+.cu-access-dialog-actions .button {
+    max-width: 100%;
+    white-space: normal;
+    height: auto;
+}
+
 /* FDEG Plan B Task 4 — non-blocking outcome toast (clean case: no security stack
    detected, so nothing to bail on). Same copy as .cu-probe-outcome-dialog above, but
    fixed top-right instead of modal. scanner.js adds .cu-probe-toast-hide ~400ms
