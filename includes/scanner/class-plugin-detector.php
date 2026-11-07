@@ -148,6 +148,11 @@ class PluginDetector {
      */
     private const ALLOWED_SCHEMES = [ 'http', 'https' ];
 
+    /** Probe identity; also request A of ScannerAccessCheck (FU-SITE-DENIAL). Changing it changes what sites see. */
+    public const PROBE_USER_AGENT = 'CU-Scanner-Probe/1.0 (target-stack-detection)';
+    /** Browser-style Accept shared by the probe and ScannerAccessCheck. */
+    public const PROBE_ACCEPT = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+
     /**
      * AC-T2-6 hoist-preservation instrumentation. Tests reset + read this counter
      * to verify extract_non_text_zones is invoked at most once per single_probe_attempt.
@@ -986,10 +991,10 @@ class PluginDetector {
         }
 
         $request_headers = [
-            'User-Agent' => 'CU-Scanner-Probe/1.0 (target-stack-detection)',
+            'User-Agent' => self::PROBE_USER_AGENT,
             // Browser-style Accept. Some origin WAFs return 415 to requests with no Accept (or
             // Accept: */*); sending a real Accept yields a usable response instead of a reject.
-            'Accept'     => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept'     => self::PROBE_ACCEPT,
         ];
         if ( $use_range ) {
             $request_headers['Range'] = 'bytes=0-32767';

@@ -137,6 +137,10 @@ final class JsCacheBustDriftTest extends TestCase {
 		// Re-pinned in place 2026-11-04 before 1.9.9 shipped (never served): Cancel discards a
 		// locally queued scan (FU-AAS-OUTBOX-CANNOT-BE-CANCELLED).
 		'1.9.9' => 'db15dfccb4378a92af20c54e61853277ffa6139bc07c6793840325ad476cfd2c',
+		// 1.9.11 — pre-scan access check: Start / Re-queue gate, blocked dialog, own-site notice;
+		// the checking / probe status bar fixed to the bottom of the screen (PF29). Unreleased,
+		// so the row is re-pinned rather than a new one added.
+		'1.9.11' => 'a2585a0c1f900f09398321b919fe6517112743d044abf19216006d3f8a871f7d',
 	);
 
 	/**
@@ -203,6 +207,8 @@ final class JsCacheBustDriftTest extends TestCase {
 		// 1.0.11.19 — Step-3 bypass row: copy-map strings; rank-based states incl. Lost (FU-STEP3-BYPASS-LABEL-OVERCLAIMS).
 		// Re-pinned in place 2026-11-04 before 1.9.9 shipped (never served): queued-scan Cancel branch.
 		'1.0.11.19' => '8997f4ecd7ae887396514d746934253c90695a729e8c84775878425e3daa1ebb',
+		// 1.0.11.20 — pre-scan access check gate before reserve (Start + Re-queue), dialog and notice.
+		'1.0.11.20' => 'aa12c3d2b9ea8150f12ae08fa62f136951889341d03df3ff6db14ab49502616b',
 	);
 
 	private function root(): string {

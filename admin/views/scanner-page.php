@@ -235,6 +235,7 @@
                     </div>
                     <span class="cu-live-state">In progress</span>
                 </div>
+                <div id="cu-access-notice" aria-live="polite"></div>
                 <div id="cu-target-stack-notice"></div>
                 <div class="cu-scan-validation-list">
                     <div class="cu-scan-validation-row"><span class="cu-validation-icon">&#10003;</span><div><strong>Access checks</strong><small>Connectivity and reserved scan access validated.</small></div><span>Ready</span></div>
@@ -267,6 +268,7 @@
     <!-- Step 4: Output -->
     <div id="step-4" class="cu-step cu-body" style="display:none">
         <div id="cu-banner-area"></div>
+        <div id="cu-access-notice-end"></div>
         <div id="cu-bypass-lost-panel"></div>
         <div class="cu-results-shell">
             <div class="cu-results-primary">

@@ -4,7 +4,7 @@ Tags: performance, dequeue, unload unused css, optimize javascript, page speed
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.9.10
+Stable tag: 1.9.11
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -134,6 +134,8 @@ This plugin connects to two services run by WPservice.pro. Nothing is sent until
 * When you start a scan: the page URLs, your API key, a one-time scan token, the scanner secret the plugin generates for CDN rules, a summary of detected caching or optimization plugins, and the plugin version. If you entered an HTTP Basic Auth login for a staging site in Settings, that login is sent too, so the worker can open protected pages.
 * The worker then loads those pages from your site in a headless browser, the same way a visitor would.
 
+**Checks from your server before a scan.** When you start a scan, the plugin itself sends requests from your WordPress server: to detect caching, CDN and firewall setups on other sites you scan, and to check that each site's firewall lets the scanner in. These requests go only to the sites you chose to scan: the pages you selected and, at most, each site's root address. The caching check follows up to three redirects from those pages, which can lead to another address, and sends no credentials. The requests identify themselves with a user agent containing "CU-Scanner", except one comparison request per site with an ordinary browser user agent, sent only when that site has already refused the named ones. For your own site only, the firewall check carries your Scanner Secret header, and your staging login if you set one. Nothing is sent to WPservice.pro by these checks.
+
 The **Buy credits** button opens wpservice.pro with your free key and domain in the address, so the purchase is linked to your site.
 
 Service terms: [https://wpservice.pro/terms-and-conditions/](https://wpservice.pro/terms-and-conditions/)
@@ -148,6 +150,11 @@ Privacy policy:[https://wpservice.pro/privacy-policy/](https://wpservice.pro/pri
 5. Settings - Validate your key before scanning (get a free API key)
 
 == Changelog ==
+
+= 1.9.11 =
+* Added: before a scan starts, the plugin checks whether the site's firewall blocks the scanner by name; if so the scan does not start and a dialog explains what to allow.
+* Added: if your own site refuses the test for reasons not specific to the scanner, a notice points to the firewall and CDN steps in Settings; the scan still runs.
+* Changed: the "Checking…" and "Detecting target stack…" status lines stay pinned at the bottom of the screen while they run.
 
 = 1.9.10 =
 * Fixed: scans work again on hosts that block the scanner's address. Some hosting providers block the shared network addresses the scanner runs on. The plugin now reaches the scanner through scanner.wpservice.pro first and falls back to the previous address only when the first cannot be reached at all. Nothing to configure.

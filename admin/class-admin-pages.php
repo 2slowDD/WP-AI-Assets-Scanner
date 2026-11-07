@@ -43,6 +43,7 @@ class AdminPages {
                 'ajaxUrl'          => admin_url( 'admin-ajax.php' ),
                 'nonce'            => wp_create_nonce( 'drspeed_aias_nonce' ),
                 'siteUrl'          => get_home_url(),
+                'settingsUrl'      => admin_url( 'admin.php?page=drspeed-aias-settings' ),
                 'outbox'           => \DrSpeedAIAS\Scanner\Outbox::outbox_state_for_user( get_current_user_id() ),
                 'lastPushSyncUndo' => ( new LastPushSyncUndo() )->state_for_ui(),
             ] );

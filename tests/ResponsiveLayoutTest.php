@@ -78,4 +78,23 @@ final class ResponsiveLayoutTest extends TestCase {
     public function test_the_balance_row_wraps_instead_of_overlapping(): void {
         $this->assertStringContainsString( '.cu-admin-page .cu-balance-widget { display: flex; flex-wrap: wrap;', $this->css() );
     }
+
+    /**
+     * PF29: the "Checking that the site lets our scanner in…" / "Detecting target stack…" line
+     * was rendered inline at the end of step 1, far below Start Scan on a long page list. It is
+     * now a status bar fixed to the bottom of the screen. Source-text pin: it catches the rule
+     * being deleted or reverted to inline, not whether it looks right (the live check is the
+     * operator's).
+     */
+    public function test_the_checking_status_bar_rule_stays_fixed_to_the_bottom_and_wraps(): void {
+        $this->assertSame( 1, preg_match( '/^\.cu-probe-spinner \{([^}]*)\}/m', $this->css(), $m ),
+            'the .cu-probe-spinner rule must be findable' );
+        $rule = $m[1];
+        $this->assertStringContainsString( 'position: fixed;', $rule );
+        $this->assertMatchesRegularExpression( '/\bbottom:\s*\d+px;/', $rule );
+        // Rule 40: fits a 360px screen, text wraps instead of overflowing.
+        $this->assertStringContainsString( 'max-width: calc(100vw - 32px);', $rule );
+        $this->assertStringContainsString( 'overflow-wrap: anywhere;', $rule );
+        $this->assertStringNotContainsString( 'nowrap', $rule );
+    }
 }
