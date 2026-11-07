@@ -697,8 +697,6 @@
     const ACCESS_TITLE_EXTERNAL = 'This site\'s firewall is blocking our scanner';
     const ACCESS_TITLE_EXTERNAL_MANY = 'These sites\' firewalls are blocking our scanner'; // plan E5 (provisional)
     const ACCESS_BOT_LINK = '<a href="https://wpservice.pro/bot" target="_blank" rel="noopener">wpservice.pro/bot</a>';
-    // Key suffix = the server row's `host`, verbatim (no client-side URL parsing or folding).
-    const ACCESS_NOTICE_KEY = 'cu_suppress_access_notice:';
 
     function accessVal(v) {
         return (v === null || v === undefined) ? '' : esc(v);
@@ -799,31 +797,27 @@
         });
     }
 
-    function accessNoticeSuppressed(host) {
-        try { return window.localStorage.getItem(ACCESS_NOTICE_KEY + String(host)) === '1'; } catch (e) { return false; }
-    }
-
-    // R8 — own-site `refused_general` notice in the scan view. null/empty clears it.
+    // R8 — own-site `refused_general` notice. null/empty clears it. PF30: the same notice goes
+    // into two slots — #cu-access-notice in step 3 and #cu-access-notice-end in step 4 (a short
+    // scan leaves step 3 within seconds). One markup string, no ids in it; every clear empties
+    // BOTH. PF31: no dismiss control and no suppression — it shows on every check that returns
+    // an own-site `refused_general`. Neither slot is inside #cu-banner-area or the spinner
+    // host, so the banner writers and showInlineSpinner never overwrite them.
+    const ACCESS_NOTICE_SLOT_IDS = ['cu-access-notice', 'cu-access-notice-end'];
     function renderAccessNotice(hosts) {
-        const el = document.getElementById('cu-access-notice');
-        if (!el) return;
+        const slots = ACCESS_NOTICE_SLOT_IDS.map(function (id) { return document.getElementById(id); })
+            .filter(function (el) { return !!el; });
+        if (!slots.length) return;
+        const clearAll = function () { slots.forEach(function (el) { el.innerHTML = ''; }); };
         const list = accessObjects(hosts).filter(function (h) {
-            return h.host !== null && h.host !== undefined && !accessNoticeSuppressed(h.host);
+            return h.host !== null && h.host !== undefined;
         });
-        if (!list.length) { el.innerHTML = ''; return; }
-        el.innerHTML = '<div class="notice notice-warning inline cu-access-notice">'
+        if (!list.length) { clearAll(); return; }
+        const html = '<div class="notice notice-warning inline cu-access-notice">'
             + '<p>Your site refused a test request from this server, for reasons not specific to our scanner.'
             + ' If this scan fails, see the firewall and CDN steps in ' + accessSettingsLink() + '.</p>'
-            + '<p><button type="button" class="button-link cu-access-notice-dismiss">Don\'t show this again for this site</button></p>'
             + '</div>';
-        const btn = el.querySelector('.cu-access-notice-dismiss');
-        if (!btn) return;
-        btn.addEventListener('click', function () {
-            list.forEach(function (h) {
-                try { window.localStorage.setItem(ACCESS_NOTICE_KEY + String(h.host), '1'); } catch (e) {}
-            });
-            el.innerHTML = '';
-        });
+        slots.forEach(function (el) { el.innerHTML = html; });
     }
 
     async function runAccessGate(urls, deps) {

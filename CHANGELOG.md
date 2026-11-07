@@ -8,7 +8,7 @@ All notable changes to AI Assets Scanner are documented here.
 
 ### Added
 - **Scans now stop before they start when a site's firewall blocks the scanner by name.** Before reserving credits, the plugin checks from your server whether the site refuses requests identified as our scanner while still serving an ordinary browser. If it does, the scan does not start (nothing is reserved or charged) and a dialog explains what to allow — the `x-cu-scanner` header with your Scanner Secret, or removing the rule that blocks user agents containing `CU-Scanner` — with a "Check again and start scan" button. Also applies to "Re-queue the remaining pages".
-- When your own site refuses the test request for reasons not specific to the scanner, a dismissible notice points to the firewall and CDN steps in Settings; the scan still runs.
+- When your own site refuses the test request for reasons not specific to the scanner, a notice points to the firewall and CDN steps in Settings; the scan still runs.
 
 ## 1.9.10 — 2026-11-04
 

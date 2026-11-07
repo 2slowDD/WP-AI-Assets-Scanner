@@ -31,6 +31,9 @@ function flowHarness(answers, extra) {
     },
   }, extra || {}));
   h.els['cu-access-notice'] = makeEl('cu-access-notice');
+  // PF30 step-4 slot. The step stub below may already have created it at load (showStep runs while
+  // scanner.js loads); keep that node so it stays a step-4 child.
+  if (!h.els['cu-access-notice-end']) h.els['cu-access-notice-end'] = makeEl('cu-access-notice-end');
   h.sandbox.scrollTo = function () {};
   return { h: h, actions: actions, bodies: bodies };
 }
@@ -162,8 +165,8 @@ test('denied Start (external): Esc stops before the probe and the reserve', asyn
 // Test-side stub: the base harness returns [] for document.querySelectorAll, so showStep()
 // toggles nothing. Model the four .cu-step containers (step-1 visible, the rest display:none,
 // as in admin/views/scanner-page.php) so showStep() and the spinner's visible-step mount run
-// against real elements. Step 4 gets its first three children in markup order —
-// #cu-banner-area, #cu-bypass-lost-panel, .cu-results-shell — with a nextSibling getter
+// against real elements. Step 4 gets its first four children in markup order —
+// #cu-banner-area, #cu-access-notice-end, #cu-bypass-lost-panel, .cu-results-shell — with a nextSibling getter
 // (the base stub has none) so "insert right after the banner" can be observed.
 function withNextSibling(el) {
   Object.defineProperty(el, 'nextSibling', {
@@ -187,6 +190,8 @@ function stepsQuerySelectorAll(selector, els) {
       const shell = makeEl('', 'div');
       shell.className = 'cu-results-shell';
       els[id].appendChild(withNextSibling(els['cu-banner-area']));
+      if (!els['cu-access-notice-end']) els['cu-access-notice-end'] = makeEl('cu-access-notice-end');
+      els[id].appendChild(els['cu-access-notice-end']);
       els[id].appendChild(els['cu-bypass-lost-panel']);
       els[id].appendChild(shell);
     }
@@ -279,7 +284,7 @@ test('Re-queue: while the check is held, the spinner and its Cancel sit in visib
   const host = spinnerHost(f);
   assert.strictEqual(host.parentNode, f.h.els['step-4'], 'spinner host mounted in visible step-4, not hidden step-1');
   assert.deepStrictEqual(step4Order(f),
-    ['cu-banner-area', 'cu-probe-spinner-host', 'cu-bypass-lost-panel', 'cu-results-shell'],
+    ['cu-banner-area', 'cu-probe-spinner-host', 'cu-access-notice-end', 'cu-bypass-lost-panel', 'cu-results-shell'],
     'spinner host directly after #cu-banner-area (the Re-queue button), before the results shell');
   assert.strictEqual(host.style.display, 'flex', 'spinner shown');
   assert.ok(hasCancel(host), 'Cancel control rendered in the host');
@@ -300,8 +305,67 @@ test('Re-queue: a spinner host created on demand is created inside visible step 
   assert.strictEqual(inStep(4).length, 1, 'created host appended to step-4');
   assert.strictEqual(inStep(1).length, 0, 'nothing appended to hidden step-1');
   assert.deepStrictEqual(step4Order(f),
-    ['cu-banner-area', 'cu-probe-spinner-host', 'cu-bypass-lost-panel', 'cu-results-shell'],
+    ['cu-banner-area', 'cu-probe-spinner-host', 'cu-access-notice-end', 'cu-bypass-lost-panel', 'cu-results-shell'],
     'spinner host directly after #cu-banner-area (the Re-queue button), before the results shell');
   assert.ok(hasCancel(inStep(4)[0]), 'Cancel control rendered in the host');
   held.resolve(OK); await settle();
+});
+
+// PF30 — the own-site refusal notice also lands in step 4's #cu-access-notice-end, driven through
+// the real Start / Re-queue clicks (no injected deps: the production renderAccessNotice runs).
+const GENERAL = { success: true, data: { hosts: [{ host: 'example.com', own_site: true, verdict: 'refused_general', requests: 5 }], denied: false } };
+function slotHtml(f, id) { return String(f.h.els[id].innerHTML || ''); }
+function sequence(list) { let i = 0; return function () { return list[Math.min(i++, list.length - 1)]; }; }
+
+test('PF30/PF31 Start: own-site refused_general → notice in both slots, no dismiss; a second Start shows it again', async function () {
+  const f = flowHarness({ [CHECK]: GENERAL, [RESERVE]: RESERVE_STOP });
+  f.h.els['cu-included-urls'].value = 'https://example.com/a';
+  f.h.els['cu-btn-next-1'].click(); await settle();
+  assert.deepStrictEqual(seqOf(f), [CHECK, RESERVE], 'the gate proceeded to reserve');
+  assert.match(slotHtml(f, 'cu-access-notice'), /Your site refused a test request from this server, for reasons not specific to our scanner\./);
+  assert.match(slotHtml(f, 'cu-access-notice-end'), /Your site refused a test request from this server, for reasons not specific to our scanner\./);
+  assert.strictEqual(slotHtml(f, 'cu-access-notice-end'), slotHtml(f, 'cu-access-notice'), 'same markup in both slots');
+  assert.doesNotMatch(slotHtml(f, 'cu-access-notice-end'), /show this again|<button/i, 'PF31: no dismiss control');
+  f.h.els['cu-btn-next-1'].click(); await settle();
+  assert.strictEqual(count(f, CHECK), 2, 'second check ran');
+  assert.match(slotHtml(f, 'cu-access-notice'), /refused a test request/, 'shown again in step 3');
+  assert.match(slotHtml(f, 'cu-access-notice-end'), /refused a test request/, 'shown again in step 4');
+});
+
+test('PF30 Start: a later check clears both slots', async function () {
+  const f = flowHarness({ [CHECK]: sequence([GENERAL, OK]), [RESERVE]: RESERVE_STOP });
+  f.h.els['cu-included-urls'].value = 'https://example.com/a';
+  f.h.els['cu-btn-next-1'].click(); await settle();
+  assert.match(slotHtml(f, 'cu-access-notice-end'), /refused a test request/);
+  f.h.els['cu-btn-next-1'].click(); await settle();
+  assert.strictEqual(count(f, CHECK), 2, 'second check ran');
+  assert.strictEqual(slotHtml(f, 'cu-access-notice'), '', 'step-3 slot cleared');
+  assert.strictEqual(slotHtml(f, 'cu-access-notice-end'), '', 'end slot cleared');
+});
+
+test('PF30 Start: external-only refused_general → both slots empty', async function () {
+  const ext = { success: true, data: { hosts: [{ host: 'example.net', own_site: false, verdict: 'refused_general', requests: 5 }], denied: false } };
+  const f = flowHarness({ [CHECK]: ext, drspeed_aias_probe_target_stack: PROBE_CLEAN, [RESERVE]: RESERVE_STOP });
+  f.h.els['cu-included-urls'].value = 'https://example.net/a';
+  f.h.els['cu-btn-next-1'].click(); await settle();
+  assert.strictEqual(count(f, CHECK), 1);
+  assert.strictEqual(slotHtml(f, 'cu-access-notice'), '');
+  assert.strictEqual(slotHtml(f, 'cu-access-notice-end'), '');
+});
+
+test('PF30 Re-queue: spinner host and end notice are separate step-4 nodes; neither overwrites the other', async function () {
+  const held = deferred();
+  const f = requeueHarness({ [CHECK]: function () { return held.promise; }, [RESERVE]: RESERVE_STOP },
+    { querySelectorAll: stepsQuerySelectorAll });
+  await settle();
+  f.h.els['cu-partial-requeue-btn'].click(); await settle();
+  const host = spinnerHost(f);
+  assert.deepStrictEqual(step4Order(f),
+    ['cu-banner-area', 'cu-probe-spinner-host', 'cu-access-notice-end', 'cu-bypass-lost-panel', 'cu-results-shell']);
+  held.resolve(GENERAL); await settle();
+  assert.strictEqual(host.style.display, 'none', 'spinner hidden after the check');
+  assert.match(slotHtml(f, 'cu-access-notice-end'), /refused a test request/, 'end notice rendered on the results screen');
+  assert.doesNotMatch(String(host.innerHTML || ''), /refused a test request/, 'notice not written into the spinner host');
+  assert.ok(f.h.els['cu-partial-requeue-btn'], 'banner area untouched');
+  assert.strictEqual(f.h.els['step-4'].children.indexOf(f.h.els['cu-access-notice-end']), 2, 'end slot still a step-4 child after the banner + spinner');
 });

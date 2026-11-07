@@ -140,7 +140,7 @@ final class JsCacheBustDriftTest extends TestCase {
 		// 1.9.11 — pre-scan access check: Start / Re-queue gate, blocked dialog, own-site notice;
 		// the checking / probe status bar fixed to the bottom of the screen (PF29). Unreleased,
 		// so the row is re-pinned rather than a new one added.
-		'1.9.11' => '2410a34dfd157b407a6678ac3d94d2b6595cf34e4daa488ac1a358061b98aea5',
+		'1.9.11' => 'a2585a0c1f900f09398321b919fe6517112743d044abf19216006d3f8a871f7d',
 	);
 
 	/**
@@ -208,7 +208,7 @@ final class JsCacheBustDriftTest extends TestCase {
 		// Re-pinned in place 2026-11-04 before 1.9.9 shipped (never served): queued-scan Cancel branch.
 		'1.0.11.19' => '8997f4ecd7ae887396514d746934253c90695a729e8c84775878425e3daa1ebb',
 		// 1.0.11.20 — pre-scan access check gate before reserve (Start + Re-queue), dialog and notice.
-		'1.0.11.20' => '568ad88c9ade2f2ee1cb4d5a6b01eb4638e6f087e431b7f0cc7f9e97f6c2a84b',
+		'1.0.11.20' => 'aa12c3d2b9ea8150f12ae08fa62f136951889341d03df3ff6db14ab49502616b',
 	);
 
 	private function root(): string {

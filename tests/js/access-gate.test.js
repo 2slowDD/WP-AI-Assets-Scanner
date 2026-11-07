@@ -14,6 +14,7 @@ function harness(extra) {
     drspeedAias: { ajaxUrl: '', nonce: 'n', siteUrl: 'https://example.com', settingsUrl: '/wp-admin/admin.php?page=drspeed-aias-settings', outbox: { state: 'none' } },
   }, extra || {}));
   h.els['cu-access-notice'] = makeEl('cu-access-notice');
+  h.els['cu-access-notice-end'] = makeEl('cu-access-notice-end');   // PF30 step-4 slot
   return h;
 }
 function spinnerStub() {
@@ -21,10 +22,7 @@ function spinnerStub() {
   return { s: s, fn: function (msg) { s.shown++; s.messages.push(msg); return { signal: s.signal, hide: function () { s.hidden++; } }; } };
 }
 function noticeHtml(h) { return String(h.els['cu-access-notice'].innerHTML || '').trim(); }
-function throwingStorage() {
-  const boom = function () { throw new Error('SecurityError: storage blocked'); };
-  return { getItem: boom, setItem: boom, removeItem: boom, key: boom, get length() { return boom(); } };
-}
+function endHtml(h) { return String(h.els['cu-access-notice-end'].innerHTML || '').trim(); }
 const DENIED_OWN = { host: 'example.com', own_site: true, verdict: 'denied', requests: 5, status: 425, reference_label: 'Reference ID', reference: 'WAF-425' };
 const DENIED_EXT = { host: 'example.net', own_site: false, verdict: 'denied', requests: 5, status: 403, reference_label: null, reference: null };
 const GENERAL_OWN = { host: 'www.example.com', own_site: true, verdict: 'refused_general', requests: 5 };
@@ -185,26 +183,17 @@ test('AC-9(d) spinner cancel → abort', async function () {
   assert.strictEqual(noticeHtml(h), '');
 });
 
-test('AC-9(e) own-site refused_general → proceed + notice; dismiss persists per host (verbatim key)', async function () {
+test('AC-9(e) own-site refused_general → proceed + notice, no dismiss control (PF31)', async function () {
   const h = harness(); const T = h.sandbox.window.__cuTest;
   const post = function () { return Promise.resolve(ok([GENERAL_OWN, GENERAL_EXT], false)); };
   assert.strictEqual(await T.runAccessGate(['https://example.com/'], { post: post, spinner: spinnerStub().fn }), 'proceed');
-  const el = h.els['cu-access-notice'];
   const html = noticeHtml(h);
-  assert.match(html, /class="notice notice-warning inline cu-access-notice"/);
-  assert.match(html, /Your site refused a test request from this server, for reasons not specific to our scanner\. If this scan fails, see the firewall and CDN steps in <a href="\/wp-admin\/admin\.php\?page=drspeed-aias-settings">AI Assets Scanner settings<\/a>\./);
-  assert.match(html, /Don(?:'|&#39;)t show this again for this site/);
+  assert.strictEqual(html, '<div class="notice notice-warning inline cu-access-notice">'
+    + '<p>Your site refused a test request from this server, for reasons not specific to our scanner.'
+    + ' If this scan fails, see the firewall and CDN steps in <a href="/wp-admin/admin.php?page=drspeed-aias-settings">AI Assets Scanner settings</a>.</p>'
+    + '</div>', 'exact notice markup: the copy and the Settings link, nothing else');
   assert.doesNotMatch(html, /x-cu-scanner|CU-Scanner/, 'no header / user-agent advice in the R8 notice');
-  el.querySelector('.cu-access-notice-dismiss').click();
-  assert.strictEqual(noticeHtml(h), '', 'dismiss clears the notice');
-  assert.strictEqual(h.sandbox.localStorage.getItem('cu_suppress_access_notice:www.example.com'), '1', 'key = server host verbatim');
-  assert.strictEqual(h.sandbox.localStorage.getItem('cu_suppress_access_notice:example.net'), null, 'external host never stored');
-  await T.runAccessGate(['https://example.com/'], { post: post, spinner: spinnerStub().fn });
-  assert.strictEqual(noticeHtml(h), '', 'dismissed for this host');
-  // A different host string is a different site: no www folding on the client.
-  const post2 = function () { return Promise.resolve(ok([{ host: 'example.com', own_site: true, verdict: 'refused_general', requests: 5 }], false)); };
-  await T.runAccessGate(['https://example.com/'], { post: post2, spinner: spinnerStub().fn });
-  assert.match(noticeHtml(h), /refused a test request/);
+  assert.doesNotMatch(html, /show this again|dismiss|<button/i, 'PF31: no dismiss control');
 });
 
 test('AC-9(e) a later check replaces the notice; a stop or fail-open run clears it', async function () {
@@ -229,22 +218,6 @@ test('PF8: external-only refused_general stays silent', async function () {
   const post = function () { return Promise.resolve(ok([GENERAL_EXT], false)); };
   assert.strictEqual(await T.runAccessGate(['https://example.net/'], { post: post, spinner: spinnerStub().fn }), 'proceed');
   assert.strictEqual(noticeHtml(h), '');
-});
-
-test('PF6: blocked storage still shows the notice and nothing throws', async function () {
-  const post = function () { return Promise.resolve(ok([GENERAL_OWN], false)); };
-  // (1) every storage method throws
-  const h1 = harness(); const T1 = h1.sandbox.window.__cuTest;
-  h1.sandbox.localStorage = throwingStorage();
-  assert.strictEqual(await T1.runAccessGate(['https://example.com/'], { post: post, spinner: spinnerStub().fn }), 'proceed');
-  assert.match(noticeHtml(h1), /refused a test request/);
-  assert.doesNotThrow(function () { h1.els['cu-access-notice'].querySelector('.cu-access-notice-dismiss').click(); });
-  // (2) merely touching window.localStorage throws (SecurityError in a sandboxed frame)
-  const h2 = harness(); const T2 = h2.sandbox.window.__cuTest;
-  Object.defineProperty(h2.sandbox, 'localStorage', { configurable: true, get: function () { throw new Error('SecurityError'); } });
-  assert.strictEqual(await T2.runAccessGate(['https://example.com/'], { post: post, spinner: spinnerStub().fn }), 'proceed');
-  assert.match(noticeHtml(h2), /refused a test request/);
-  assert.doesNotThrow(function () { h2.els['cu-access-notice'].querySelector('.cu-access-notice-dismiss').click(); });
 });
 
 test('AC-11 copy: one own-site host, reference present', function () {
@@ -311,4 +284,62 @@ test('AC-16 (JS side): isExternalUrl agrees with the PHP own-site rule', functio
   assert.strictEqual(T.isExternalUrl('https://shop.example.com/x'), true);
   assert.strictEqual(T.isExternalUrl('https://example.com:8443/x'), true);
   assert.strictEqual(T.isExternalUrl('http://example.com/x'), false);
+});
+
+// PF30 — the same notice on the results screen: one markup string into #cu-access-notice (step 3)
+// AND #cu-access-notice-end (step 4); every clear empties both. PF31 — no dismiss, no suppression.
+test('PF30: own-site refused_general → the identical notice in BOTH slots, no ids inside', async function () {
+  const h = harness(); const T = h.sandbox.window.__cuTest;
+  const post = function () { return Promise.resolve(ok([GENERAL_OWN, GENERAL_EXT], false)); };
+  assert.strictEqual(await T.runAccessGate(['https://example.com/'], { post: post, spinner: spinnerStub().fn }), 'proceed');
+  assert.match(endHtml(h), /Your site refused a test request from this server, for reasons not specific to our scanner\. If this scan fails, see the firewall and CDN steps in <a href="\/wp-admin\/admin\.php\?page=drspeed-aias-settings">AI Assets Scanner settings<\/a>\./);
+  assert.strictEqual(endHtml(h), noticeHtml(h), 'byte-identical markup in both slots');
+  assert.doesNotMatch(endHtml(h), /\sid=/, 'no element ids inside the notice (they would be duplicated across the slots)');
+});
+
+test('PF31: neither slot has "Don\'t show this again" text or a dismiss control', async function () {
+  const h = harness(); const T = h.sandbox.window.__cuTest;
+  await T.runAccessGate(['https://example.com/'], { post: function () { return Promise.resolve(ok([GENERAL_OWN], false)); }, spinner: spinnerStub().fn });
+  for (const id of ['cu-access-notice', 'cu-access-notice-end']) {
+    const html = String(h.els[id].innerHTML || '');
+    assert.match(html, /refused a test request/, id + ' shows the notice');
+    assert.doesNotMatch(html, /show this again/i, id + ': no "Don\'t show this again" copy');
+    assert.doesNotMatch(html, /<button|<a [^>]*href="#|dismiss/i, id + ': no dismiss control');
+    assert.strictEqual(h.els[id].querySelector('button'), null, id + ': no button element');
+  }
+});
+
+test('PF31: two consecutive own-site refused_general checks both render the notice in both slots', async function () {
+  const h = harness(); const T = h.sandbox.window.__cuTest;
+  const post = function () { return Promise.resolve(ok([GENERAL_OWN], false)); };
+  for (let run = 1; run <= 2; run++) {
+    await T.runAccessGate(['https://example.com/'], { post: post, spinner: spinnerStub().fn });
+    assert.match(noticeHtml(h), /refused a test request/, 'step-3 slot, run ' + run);
+    assert.match(endHtml(h), /refused a test request/, 'end slot, run ' + run);
+  }
+  assert.strictEqual(h.sandbox.localStorage.getItem('cu_suppress_access_notice:www.example.com'), null, 'no suppression key written');
+});
+
+test('PF30: a later check clears both slots (fail-open, stop, no-notice result)', async function () {
+  const h = harness(); const T = h.sandbox.window.__cuTest;
+  const general = function () { return Promise.resolve(ok([GENERAL_OWN], false)); };
+  const both = function () { return [noticeHtml(h), endHtml(h)]; };
+  await T.runAccessGate(['https://example.com/'], { post: general, spinner: spinnerStub().fn });
+  assert.match(endHtml(h), /refused a test request/);
+  await T.runAccessGate(['https://example.com/'], { post: function () { return Promise.reject(new Error('x')); }, spinner: spinnerStub().fn });
+  assert.deepStrictEqual(both(), ['', ''], 'fail-open run clears both');
+  await T.runAccessGate(['https://example.com/'], { post: general, spinner: spinnerStub().fn });
+  await T.runAccessGate(['https://example.com/'], { post: function () { return Promise.resolve(ok([GENERAL_OWN, DENIED_EXT], true)); }, spinner: spinnerStub().fn,
+    openDialog: function () { return Promise.resolve({ choice: 'stop' }); } });
+  assert.deepStrictEqual(both(), ['', ''], 'stop clears both');
+  await T.runAccessGate(['https://example.com/'], { post: general, spinner: spinnerStub().fn });
+  await T.runAccessGate(['https://example.com/'], { post: function () { return Promise.resolve(ok([{ host: 'example.com', own_site: true, verdict: 'ok', requests: 1 }], false)); }, spinner: spinnerStub().fn });
+  assert.deepStrictEqual(both(), ['', ''], 'a passing check with no notice clears both');
+});
+
+test('PF30: external-only refused_general leaves both slots empty', async function () {
+  const h = harness(); const T = h.sandbox.window.__cuTest;
+  assert.strictEqual(await T.runAccessGate(['https://example.net/'], { post: function () { return Promise.resolve(ok([GENERAL_EXT], false)); }, spinner: spinnerStub().fn }), 'proceed');
+  assert.strictEqual(noticeHtml(h), '');
+  assert.strictEqual(endHtml(h), '');
 });

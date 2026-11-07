@@ -153,7 +153,7 @@ Privacy policy:[https://wpservice.pro/privacy-policy/](https://wpservice.pro/pri
 
 = 1.9.11 =
 * Added: before a scan starts, the plugin checks whether the site's firewall blocks the scanner by name; if so the scan does not start and a dialog explains what to allow.
-* Added: if your own site refuses the test for reasons not specific to the scanner, a dismissible notice points to the firewall and CDN steps in Settings; the scan still runs.
+* Added: if your own site refuses the test for reasons not specific to the scanner, a notice points to the firewall and CDN steps in Settings; the scan still runs.
 
 = 1.9.10 =
 * Fixed: scans work again on hosts that block the scanner's address. Some hosting providers block the shared network addresses the scanner runs on. The plugin now reaches the scanner through scanner.wpservice.pro first and falls back to the previous address only when the first cannot be reached at all. Nothing to configure.

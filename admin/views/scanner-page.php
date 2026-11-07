@@ -268,6 +268,7 @@
     <!-- Step 4: Output -->
     <div id="step-4" class="cu-step cu-body" style="display:none">
         <div id="cu-banner-area"></div>
+        <div id="cu-access-notice-end"></div>
         <div id="cu-bypass-lost-panel"></div>
         <div class="cu-results-shell">
             <div class="cu-results-primary">

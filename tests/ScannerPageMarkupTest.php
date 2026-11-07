@@ -64,18 +64,39 @@ class ScannerPageMarkupTest extends TestCase {
 	 * FU-AAS-BYPASS-STRIPPED-AWARENESS — renderBypassLostPanel returns silently when its node is missing,
 	 * and the Node harness pre-creates ids by NAME, so only this test notices the view losing it. It must
 	 * stay a sibling of the banner area: the banner writers replace #cu-banner-area wholesale, which would
-	 * wipe a panel nested inside it.
+	 * wipe a panel nested inside it. PF30 puts the step-4 access-notice slot between the two; both
+	 * stay siblings of the banner area.
 	 */
 	public function test_bypass_lost_panel_node_directly_follows_the_banner_area(): void {
 		$markup = file_get_contents( dirname( __DIR__ ) . '/admin/views/scanner-page.php' );
 
 		$this->assertIsString( $markup );
 		$this->assertMatchesRegularExpression(
-			'#<div id="cu-banner-area"></div>\s*<div id="cu-bypass-lost-panel"></div>#',
+			'#<div id="cu-banner-area"></div>\s*<div id="cu-access-notice-end"></div>\s*<div id="cu-bypass-lost-panel"></div>#',
 			$markup,
-			'the panel node must exist as the next sibling of the banner area, never inside it'
+			'the panel node must exist as a sibling right after the banner area (and the end notice slot), never inside it'
 		);
 		$this->assertSame( 1, substr_count( $markup, 'id="cu-bypass-lost-panel"' ), 'exactly one panel node' );
+	}
+
+	/**
+	 * PF30 — the own-site refusal notice is also rendered on the results screen, into an empty
+	 * #cu-access-notice-end slot right after #cu-banner-area in step 4. renderAccessNotice skips a
+	 * missing slot silently and the Node harness creates ids by NAME, so only this test notices the
+	 * view losing it. A sibling, not a child, of the banner area: the banner writers replace
+	 * #cu-banner-area wholesale, and showInlineSpinner inserts its host as a separate node.
+	 */
+	public function test_step4_access_notice_end_slot_directly_follows_the_banner_area(): void {
+		$markup = file_get_contents( dirname( __DIR__ ) . '/admin/views/scanner-page.php' );
+
+		$this->assertIsString( $markup );
+		$this->assertMatchesRegularExpression(
+			'#<div id="step-4"[^>]*>\s*<div id="cu-banner-area"></div>\s*<div id="cu-access-notice-end"></div>#',
+			$markup,
+			'the end notice slot must be an empty sibling right after the step-4 banner area'
+		);
+		$this->assertSame( 1, substr_count( $markup, 'id="cu-access-notice-end"' ), 'exactly one end notice slot' );
+		$this->assertSame( 1, substr_count( $markup, 'id="cu-access-notice"' ), 'the step-3 slot is still there, once' );
 	}
 
 	/**
