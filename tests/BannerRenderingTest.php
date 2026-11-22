@@ -391,6 +391,15 @@ class BannerRenderingTest extends TestCase {
 			'1 page hit the scanner\'s time limit and wasn\'t finished. Re-scan it later.',
 			DRSPEED_AIAS_Broken_Banner::compose_body( $this->base( [ 'pages_errored' => [ 'count' => 1, 'reasons' => [ 'page_time_limit' => 1 ] ] ] ), $map )
 		);
+		// Stage-2 spec §5.2 (D-OP10, approved copy): redirected pages, singular and plural.
+		$this->assertSame(
+			'1 page wasn\'t scanned: it redirected the scanner to another page. No rules were made and no credit was used.',
+			DRSPEED_AIAS_Broken_Banner::compose_body( $this->base( [ 'pages_errored' => [ 'count' => 1, 'reasons' => [ 'redirected' => 1 ] ] ] ), $map )
+		);
+		$this->assertSame(
+			'2 pages weren\'t scanned: they redirected the scanner to other pages. No rules were made and no credit was used.',
+			DRSPEED_AIAS_Broken_Banner::compose_body( $this->base( [ 'pages_errored' => [ 'count' => 2, 'reasons' => [ 'redirected' => 2 ] ] ] ), $map )
+		);
 		$this->assertSame(
 			'Desktop scanner blocked on 1 of 3 pages. (Cloudflare challenge) Your bot protection denied the desktop scanner. For desktop rules too, temporarily disable bot protection during scans and re-scan. Behind Cloudflare or another CDN? Set up the scanner exemption so future scans aren\'t blocked — ' . $link . '. Rules from the device that got through are ready to Push or Sync.',
 			DRSPEED_AIAS_Broken_Banner::compose_body( $this->base( [ 'pages_blocked' => [ 'desktop' => 1, 'mobile' => 0 ], 'blocked_reasons' => [ 'tier2_cf_challenge' => 1 ], 'pages_one_device' => 1, 'pages_one_device_with_rules' => 1 ] ), $map )

@@ -899,6 +899,14 @@ class ScannerAjax {
         ];
         foreach ( $pages_raw as $idx => $page ) {
             if ( ! is_array( $page ) ) { continue; }
+            // P-R (stage-2 spec §5.1): a redirected page is errored, never blocked, whatever its
+            // broken_devices say — counted before the blocked-entry branch so it lands in no
+            // pages_blocked / blocked_reasons / blocked_stacks / pages_one_device count.
+            if ( 'redirected' === \DRSPEED_AIAS_Scan_Status::error_kind( $page ) ) {
+                $f['pages_errored']['count']++;
+                $f['pages_errored']['reasons']['redirected'] = ( $f['pages_errored']['reasons']['redirected'] ?? 0 ) + 1;
+                continue;
+            }
             $entries = \DRSPEED_AIAS_Scan_Status::blocked_entries( $page );
             if ( [] !== $entries ) {
                 foreach ( $entries as $device => $entry ) {
