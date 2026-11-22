@@ -154,6 +154,7 @@ Privacy policy:[https://wpservice.pro/privacy-policy/](https://wpservice.pro/pri
 = 1.9.12 =
 * Added: a page that redirects the scanner to another page or site reads "Not scanned: redirected to …" in the results, and the banner says no rules were made and no credit was used.
 * Changed: partial rows that still delivered rules and used a credit are light green instead of yellow.
+* Changed: long status text in the results table wraps instead of widening the column.
 
 = 1.9.11 =
 * Added: before a scan starts, the plugin checks whether the site's firewall blocks the scanner by name; if so the scan does not start and a dialog explains what to allow.
