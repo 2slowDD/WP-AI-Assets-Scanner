@@ -142,8 +142,8 @@ final class JsCacheBustDriftTest extends TestCase {
 		// so the row is re-pinned rather than a new one added.
 		'1.9.11' => 'a2585a0c1f900f09398321b919fe6517112743d044abf19216006d3f8a871f7d',
 		// 1.9.12 — redirected pages named ("Not scanned: redirected to …") + banner kind; partial
-		// rows that delivered rules and used a credit are light green; long status text wraps. Re-pinned in place 2026-11-22 before 1.9.12 shipped (never served): operator picked #eef6dc for the light green.
-		'1.9.12' => '6da913c90bed687a88936331f6a8ef35e90184e117999b2da9a689acdd36a7f4',
+		// rows that delivered rules and used a credit are light green; long status text wraps. Re-pinned in place 2026-11-22 before 1.9.12 shipped (never served): operator picked #eef6dc for the light green; then the Step-3 live row says "Not scanned: redirected".
+		'1.9.12' => 'ca40e8ad530ec78854eece38d6fd0a6ac5289539a6bbc57f6f3bce0bd1582728',
 	);
 
 	/**
@@ -212,8 +212,9 @@ final class JsCacheBustDriftTest extends TestCase {
 		'1.0.11.19' => '8997f4ecd7ae887396514d746934253c90695a729e8c84775878425e3daa1ebb',
 		// 1.0.11.20 — pre-scan access check gate before reserve (Start + Re-queue), dialog and notice.
 		'1.0.11.20' => 'aa12c3d2b9ea8150f12ae08fa62f136951889341d03df3ff6db14ab49502616b',
-		// 1.0.11.21 — errored.redirected banner default; cu-row-partial-delivered row class.
-		'1.0.11.21' => '78cb291d1c1215eabf48a27c504f16ba6a97b1f2f2d0b6b6393dbf905cca5e67',
+		// 1.0.11.21 — errored.redirected banner default; cu-row-partial-delivered row class; Step-3 live
+		// "Not scanned: redirected" (re-pinned in place 2026-11-22, unreleased).
+		'1.0.11.21' => '48078ee6a071a277b6cb87aa9cc01580932edc8995550923bf0b95de772e0567',
 	);
 
 	private function root(): string {

@@ -7,7 +7,7 @@ All notable changes to AI Assets Scanner are documented here.
 ## 1.9.12 — 2026-11-22
 
 ### Added
-- **Pages that redirect the scanner elsewhere are named, not just "Error".** When a page's own address sends the scanner to a different page or site (for example an empty-cart Checkout that redirects to Cart), its row reads "Not scanned: redirected to /cart/" and the banner explains that no rules were made and no credit was used.
+- **Pages that redirect the scanner elsewhere are named, not just "Error".** When a page's own address sends the scanner to a different page or site (for example an empty-cart Checkout that redirects to Cart), its row reads "Not scanned: redirected to /cart/" and the banner explains that no rules were made and no credit was used. While the scan runs, its live row already says "Not scanned: redirected".
 
 ### Changed
 - Partial rows (one device blocked) that still delivered rules and used a credit are now light green instead of yellow.

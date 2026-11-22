@@ -2078,7 +2078,12 @@
             // Use idx directly — lastPageIndex offset caused duplicate rows after first poll.
             const globalIdx   = idx;
             const existing    = document.getElementById('cu-row-' + globalIdx);
-            const statusLabel = page.status === 'done' ? '\u2713 Done' : page.status === 'error' ? '\u2717 Error' : '\u2026';
+            // FU-AAS-STEP3-REDIRECTED-LIVE-LABEL \u2014 a page the worker did not scan because its document
+            // redirected elsewhere says so live. Fixed text: the redirect path is untrusted worker input
+            // and is shown (validated + escaped) only on the results screen (DRSPEED_AIAS_Scan_Status).
+            const statusLabel = page.status === 'done' ? '\u2713 Done'
+                : page.status === 'error' ? ( page.error_reason === 'redirected' ? '\u2717 Not scanned: redirected' : '\u2717 Error' )
+                : '\u2026';
             // FU-AAS-UNDEFINED-URL (1.7.53b) \u2014 a pending (not-yet-started) page comes back
             // without a `url` (worker returns {status:'pending'} for indices beyond
             // PAGE_CONCURRENCY at 0/N), so page.url was undefined \u2192 esc(undefined) printed the

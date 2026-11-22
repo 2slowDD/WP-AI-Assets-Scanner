@@ -152,7 +152,7 @@ Privacy policy:[https://wpservice.pro/privacy-policy/](https://wpservice.pro/pri
 == Changelog ==
 
 = 1.9.12 =
-* Added: a page that redirects the scanner to another page or site reads "Not scanned: redirected to …" in the results, and the banner says no rules were made and no credit was used.
+* Added: a page that redirects the scanner to another page or site reads "Not scanned: redirected to …" in the results, and the banner says no rules were made and no credit was used; during the scan its live row reads "Not scanned: redirected".
 * Changed: partial rows that still delivered rules and used a credit are light green instead of yellow.
 * Changed: long status text in the results table wraps instead of widening the column.
 
