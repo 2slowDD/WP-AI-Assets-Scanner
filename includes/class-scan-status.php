@@ -10,7 +10,7 @@ class DRSPEED_AIAS_Scan_Status {
 	/** Security stacks the worker names on a zero-byte broken entry (namedSecurityStack enum, minus 'none'). */
 	const STACKS = [ 'cloudflare', 'akamai', 'imperva', 'siteground', 'sucuri', 'aws_waf', 'waf_generic' ];
 	/** Worker error_reason values the plugin understands. Anything else → 'unknown'. */
-	const ERROR_REASONS = [ 'page_time_limit', 'analysis_failed' ];
+	const ERROR_REASONS = [ 'page_time_limit', 'analysis_failed', 'redirected' ];
 
 	/**
 	 * Devices the worker marked blocked: first entry per device with a non-empty string reason.
@@ -37,9 +37,12 @@ class DRSPEED_AIAS_Scan_Status {
 	/**
 	 * Why a reason-less error page failed. TOTAL: '' unless the page is status 'error' with no blocked entry.
 	 * Precedence off_site > extra_time_lost > error_reason (allowlisted) > unknown. Spec §3.2.1.
+	 * Exception P-R (stage-2 spec §5.1): a redirected page reads 'redirected' even with a blocked entry.
 	 */
 	public static function error_kind( array $page ): string {
-		if ( 'error' !== (string) ( $page['status'] ?? '' ) || [] !== self::blocked_entries( $page ) ) { return ''; }
+		if ( 'error' !== (string) ( $page['status'] ?? '' ) ) { return ''; }
+		if ( 'redirected' === ( $page['error_reason'] ?? null ) ) { return 'redirected'; }
+		if ( [] !== self::blocked_entries( $page ) ) { return ''; }
 		if ( 'free_off_site' === (string) ( $page['site_lock'] ?? '' ) ) { return 'off_site'; }
 		if ( ! empty( $page['extra_time_lost'] ) ) { return 'extra_time_lost'; }
 		$reason = $page['error_reason'] ?? null;
@@ -50,6 +53,28 @@ class DRSPEED_AIAS_Scan_Status {
 	public static function stack_of( array $entry ): string {
 		$s = $entry['stack'] ?? null;
 		return ( is_string( $s ) && in_array( $s, self::STACKS, true ) ) ? $s : '';
+	}
+
+	/**
+	 * Row label for a redirected page (stage-2 spec §5.1). redirected_to / redirected_off_site are
+	 * untrusted Railway input (Rule 1): the path is allowlisted, length-capped and shown decoded
+	 * only when the decoded text is valid UTF-8 with no control or format character (bidi
+	 * overrides included). The label is escaped at its one sink (scanner.js cuEscHtml).
+	 */
+	private static function redirected_label( array $page ): string {
+		if ( 1 === ( $page['redirected_off_site'] ?? null ) ) {
+			return __( 'Not scanned: redirected to another site', 'dr-speed-ai-assets-scanner' );
+		}
+		$path = $page['redirected_to'] ?? null;
+		if ( is_string( $path ) && strlen( $path ) <= 200 && 1 === preg_match( '~^/[A-Za-z0-9\-._\~!$&\'()*+,;=:@%/]*$~', $path ) ) {
+			$shown = rawurldecode( $path );
+			if ( '' === wp_check_invalid_utf8( $shown ) || 1 === preg_match( '/[\p{Cc}\p{Cf}]/u', $shown ) ) {
+				$shown = $path;
+			}
+			/* translators: %s: the path the page redirected the scanner to, e.g. /cart/ */
+			return sprintf( __( 'Not scanned: redirected to %s', 'dr-speed-ai-assets-scanner' ), $shown );
+		}
+		return __( 'Not scanned: redirected to another page', 'dr-speed-ai-assets-scanner' );
 	}
 
 	/**
@@ -76,6 +101,12 @@ class DRSPEED_AIAS_Scan_Status {
 		// Base done-credit: 1 for any completed page (ok/partial/blocked), 0 for error (origin_unavailable
 		// already returned above). Final per-URL credit = base + ET.
 		$credits = ( 'error' === $status ) ? $et_credit : ( 1 + $et_credit );
+
+		// P-R (stage-2 spec §5.1): the worker did not scan this page because its document landed
+		// elsewhere — say so, before any blocked entry (a rate-limited desktop leg is not the story).
+		if ( 'error' === $status && 'redirected' === ( $page['error_reason'] ?? null ) ) {
+			return [ 'class' => 'error', 'label' => self::redirected_label( $page ), 'credits' => $credits, 'survivor_device' => '' ];
+		}
 
 		$entries = self::blocked_entries( $page );
 
