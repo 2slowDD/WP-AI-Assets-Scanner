@@ -49,7 +49,7 @@ async function run() {
 
   const css = fs.readFileSync(path.join(__dirname, '../../admin/css/dr-speed-ai-assets-scanner-admin.css'), 'utf8');
   const yellow = (css.match(/tr\.cu-row-partial,/g) || []).length;
-  const green = (css.match(/tr\.cu-row-partial\.cu-row-partial-delivered\s*\{[^}]*#f6fbee/g) || []).length;
+  const green = (css.match(/tr\.cu-row-partial\.cu-row-partial-delivered\s*\{[^}]*#eef6dc/g) || []).length;
   assert.ok(yellow >= 3, 'three yellow layers expected, got ' + yellow);
   assert.strictEqual(green, yellow, 'every layer that paints partial yellow also paints partial-delivered green');
   assert.match(css, /\.cu-url-table \.cu-row-status\s*\{[^}]*overflow-wrap:\s*anywhere/, 'status cell wraps a long path');

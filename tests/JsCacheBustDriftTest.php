@@ -142,8 +142,8 @@ final class JsCacheBustDriftTest extends TestCase {
 		// so the row is re-pinned rather than a new one added.
 		'1.9.11' => 'a2585a0c1f900f09398321b919fe6517112743d044abf19216006d3f8a871f7d',
 		// 1.9.12 — redirected pages named ("Not scanned: redirected to …") + banner kind; partial
-		// rows that delivered rules and used a credit are light green; long status text wraps.
-		'1.9.12' => 'eabd75064f8671a852a9a8ee1ecb71ef001b9eff74818dc0a63bb6b39bf51e2c',
+		// rows that delivered rules and used a credit are light green; long status text wraps. Re-pinned in place 2026-11-22 before 1.9.12 shipped (never served): operator picked #eef6dc for the light green.
+		'1.9.12' => '6da913c90bed687a88936331f6a8ef35e90184e117999b2da9a689acdd36a7f4',
 	);
 
 	/**
