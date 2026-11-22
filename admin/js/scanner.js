@@ -3721,7 +3721,11 @@
                 // First placeholder only, `%s` or positional `%1$s` (a translator may write either).
                 statusHtml = tpl.replace( /%(?:1\$)?s/, function () { return devWord; } ) + '<br>' + statusHtml;
             }
-            return '<tr class="cu-row-' + cuEscHtml( p.status_class ) + ( noopt ? ' cu-row-noopt' : '' ) + '">'
+            // D-OP6 (stage-2 spec §5.3): a partial row that still delivered rules and cost a credit is
+            // light green, not the yellow of rows that got nothing. Displayed values only (effSafe /
+            // effAgg and the all_already-aware credit), the same numbers this row shows.
+            var partialDelivered = p.status_class === 'partial' && ( effSafe + effAgg ) > 0 && Number( allAlready ? 0 : p.credits ) >= 1;
+            return '<tr class="cu-row-' + cuEscHtml( p.status_class ) + ( noopt ? ' cu-row-noopt' : '' ) + ( partialDelivered ? ' cu-row-partial-delivered' : '' ) + '">'
                 + '<td data-label="#">' + cuEscHtml( p.n ) + '</td>'
                 + '<td class="cu-url-cell" data-label="URL">' + urlCell + '</td>'
                 + '<td data-label="Status"><span class="cu-row-status cu-row-status--' + esc( p.status_class ) + '">' + statusHtml + '</span></td>'
