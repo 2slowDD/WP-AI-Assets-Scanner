@@ -141,6 +141,9 @@ final class JsCacheBustDriftTest extends TestCase {
 		// the checking / probe status bar fixed to the bottom of the screen (PF29). Unreleased,
 		// so the row is re-pinned rather than a new one added.
 		'1.9.11' => 'a2585a0c1f900f09398321b919fe6517112743d044abf19216006d3f8a871f7d',
+		// 1.9.12 — redirected pages named ("Not scanned: redirected to …") + banner kind; partial
+		// rows that delivered rules and used a credit are light green; long status text wraps.
+		'1.9.12' => 'eabd75064f8671a852a9a8ee1ecb71ef001b9eff74818dc0a63bb6b39bf51e2c',
 	);
 
 	/**
@@ -209,6 +212,8 @@ final class JsCacheBustDriftTest extends TestCase {
 		'1.0.11.19' => '8997f4ecd7ae887396514d746934253c90695a729e8c84775878425e3daa1ebb',
 		// 1.0.11.20 — pre-scan access check gate before reserve (Start + Re-queue), dialog and notice.
 		'1.0.11.20' => 'aa12c3d2b9ea8150f12ae08fa62f136951889341d03df3ff6db14ab49502616b',
+		// 1.0.11.21 — errored.redirected banner default; cu-row-partial-delivered row class.
+		'1.0.11.21' => '78cb291d1c1215eabf48a27c504f16ba6a97b1f2f2d0b6b6393dbf905cca5e67',
 	);
 
 	private function root(): string {
