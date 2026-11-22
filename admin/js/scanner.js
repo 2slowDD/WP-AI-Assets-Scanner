@@ -3863,6 +3863,10 @@
                 'Extra Time for %d page couldn\'t be completed and wasn\'t charged. Re-scan it later.',
                 'Extra Time for %d pages couldn\'t be completed and wasn\'t charged. Re-scan them later.',
             ],
+            redirected: [
+                '%d page wasn\'t scanned: it redirected the scanner to another page. No rules were made and no credit was used.',
+                '%d pages weren\'t scanned: they redirected the scanner to other pages. No rules were made and no credit was used.',
+            ],
             unknown: [
                 '%d page couldn\'t be finished. Re-scan it later.',
                 '%d pages couldn\'t be finished. Re-scan them later.',

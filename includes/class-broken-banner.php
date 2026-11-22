@@ -526,6 +526,13 @@ class DRSPEED_AIAS_Broken_Banner {
 					/* translators: %d: page count */
 					_n( 'Extra Time for %d page couldn\'t be completed and wasn\'t charged. Re-scan it later.', 'Extra Time for %d pages couldn\'t be completed and wasn\'t charged. Re-scan them later.', 2, 'dr-speed-ai-assets-scanner' ),
 				],
+				// Stage-2 spec §5.2 (D-OP10): no rescan advice — scanning the target gives no rules for the requested page.
+				'redirected'      => [
+					/* translators: %d: page count */
+					_n( '%d page wasn\'t scanned: it redirected the scanner to another page. No rules were made and no credit was used.', '%d pages weren\'t scanned: they redirected the scanner to other pages. No rules were made and no credit was used.', 1, 'dr-speed-ai-assets-scanner' ),
+					/* translators: %d: page count */
+					_n( '%d page wasn\'t scanned: it redirected the scanner to another page. No rules were made and no credit was used.', '%d pages weren\'t scanned: they redirected the scanner to other pages. No rules were made and no credit was used.', 2, 'dr-speed-ai-assets-scanner' ),
+				],
 				'unknown'         => [
 					/* translators: %d: page count */
 					_n( '%d page couldn\'t be finished. Re-scan it later.', '%d pages couldn\'t be finished. Re-scan them later.', 1, 'dr-speed-ai-assets-scanner' ),

@@ -113,6 +113,23 @@ class BuildResultErroredPagesTest extends TestCase {
 		$this->assertSame( [ 'off_site' => 1 ],        $this->build_payload_for( [ $this->page( [ 'site_lock' => 'free_off_site', 'error_reason' => 'page_time_limit' ] ) ] )['pages_errored']['reasons'] );
 		$this->assertSame( [ 'extra_time_lost' => 1 ], $this->build_payload_for( [ $this->page( [ 'extra_time_lost' => true ] ) ] )['pages_errored']['reasons'] );
 	}
+	// Stage-2 spec §5.1 P-R + AC-P aggregator arm: the live shape (scan ff22158c5e7a) — a redirected
+	// page whose desktop leg was rate-limited — is ONE errored 'redirected' page, never a blocked one.
+	public function test_t8_redirected_live_shape_is_errored_not_blocked(): void {
+		WP_Mock::userFunction( 'wp_check_invalid_utf8' )->andReturnUsing( static fn ( $s ) => 1 === preg_match( '//u', (string) $s ) ? (string) $s : '' );
+		$p = $this->build_payload_for( [ $this->page( [
+			'error_reason'   => 'redirected',
+			'redirected_to'  => '/cart/',
+			'broken_devices' => [ [ 'device' => 'desktop', 'reason' => 'tier1_http_rate_limit' ] ],
+		] ) ] );
+		$this->assertSame( [ 'count' => 1, 'reasons' => [ 'redirected' => 1 ] ], $p['pages_errored'] );
+		$this->assertSame( [ 'desktop' => 0, 'mobile' => 0 ], $p['pages_blocked'] );
+		$this->assertSame( [], $p['blocked_reasons'] );
+		$this->assertSame( 0, $p['pages_one_device'] );
+		$this->assertNull( $p['rate_limit_attribution'] ); // r2 m1: the inert fourth reader stays inert
+		$this->assertSame( 'Not scanned: redirected to /cart/', $p['pages'][0]['status_label'] );
+		$this->assertSame( 0, $p['pages'][0]['credits'] );
+	}
 	public function test_t4_mixed_one_device_block_plus_errored_page(): void {
 		$p = $this->build_payload_for( [
 			$this->done_page_with_rules( 'https://site.test/a/', [ [ 'device' => 'desktop', 'reason' => 'tier2_cf_challenge' ] ] ),
