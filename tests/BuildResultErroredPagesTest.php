@@ -113,10 +113,9 @@ class BuildResultErroredPagesTest extends TestCase {
 		$this->assertSame( [ 'off_site' => 1 ],        $this->build_payload_for( [ $this->page( [ 'site_lock' => 'free_off_site', 'error_reason' => 'page_time_limit' ] ) ] )['pages_errored']['reasons'] );
 		$this->assertSame( [ 'extra_time_lost' => 1 ], $this->build_payload_for( [ $this->page( [ 'extra_time_lost' => true ] ) ] )['pages_errored']['reasons'] );
 	}
-	// Stage-2 spec §5.1 P-R + AC-P aggregator arm: the live shape (scan ff22158c5e7a) — a redirected
+	// Stage-2 spec §5.1 P-R + AC-P aggregator arm: the live shape seen in production — a redirected
 	// page whose desktop leg was rate-limited — is ONE errored 'redirected' page, never a blocked one.
 	public function test_t8_redirected_live_shape_is_errored_not_blocked(): void {
-		WP_Mock::userFunction( 'wp_check_invalid_utf8' )->andReturnUsing( static fn ( $s ) => 1 === preg_match( '//u', (string) $s ) ? (string) $s : '' );
 		$p = $this->build_payload_for( [ $this->page( [
 			'error_reason'   => 'redirected',
 			'redirected_to'  => '/cart/',

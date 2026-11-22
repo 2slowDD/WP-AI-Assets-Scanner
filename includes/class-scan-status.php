@@ -57,18 +57,20 @@ class DRSPEED_AIAS_Scan_Status {
 
 	/**
 	 * Row label for a redirected page (stage-2 spec §5.1). redirected_to / redirected_off_site are
-	 * untrusted Railway input (Rule 1): the path is allowlisted, length-capped and shown decoded
-	 * only when the decoded text is valid UTF-8 with no control or format character (bidi
-	 * overrides included). The label is escaped at its one sink (scanner.js cuEscHtml).
+	 * untrusted Railway input (Rule 1): the path is allowlisted (\z, so no trailing newline),
+	 * length-capped and shown decoded only when the decoded text is valid UTF-8 with no control,
+	 * format, private-use, unassigned or line/paragraph-separator character (bidi overrides
+	 * included). The check fails closed on its own — preg's /u rejects invalid UTF-8 whatever the
+	 * site's blog_charset, unlike wp_check_invalid_utf8(). Escaped at its one sink (scanner.js cuEscHtml).
 	 */
 	private static function redirected_label( array $page ): string {
 		if ( 1 === ( $page['redirected_off_site'] ?? null ) ) {
 			return __( 'Not scanned: redirected to another site', 'dr-speed-ai-assets-scanner' );
 		}
 		$path = $page['redirected_to'] ?? null;
-		if ( is_string( $path ) && strlen( $path ) <= 200 && 1 === preg_match( '~^/[A-Za-z0-9\-._\~!$&\'()*+,;=:@%/]*$~', $path ) ) {
+		if ( is_string( $path ) && strlen( $path ) <= 200 && 1 === preg_match( '~^/[A-Za-z0-9\-._\~!$&\'()*+,;=:@%/]*\z~', $path ) ) {
 			$shown = rawurldecode( $path );
-			if ( '' === wp_check_invalid_utf8( $shown ) || 1 === preg_match( '/[\p{Cc}\p{Cf}]/u', $shown ) ) {
+			if ( 1 !== preg_match( '/^[^\p{C}\p{Zl}\p{Zp}]*\z/u', $shown ) ) {
 				$shown = $path;
 			}
 			/* translators: %s: the path the page redirected the scanner to, e.g. /cart/ */

@@ -16,8 +16,9 @@ class ScanStatusRedirectedTest extends TestCase {
 		parent::setUp();
 		WP_Mock::setUp();
 		WP_Mock::userFunction( '__' )->andReturnArg( 0 );
-		// Core's behaviour: '' for invalid UTF-8, the string otherwise.
-		WP_Mock::userFunction( 'wp_check_invalid_utf8' )->andReturnUsing( static fn ( $s ) => 1 === preg_match( '//u', (string) $s ) ? (string) $s : '' );
+		// Final-review I1: on a site whose blog_charset is not UTF-8, core's wp_check_invalid_utf8()
+		// returns its input unchanged — the display check must not depend on it. Emulate that site.
+		WP_Mock::userFunction( 'wp_check_invalid_utf8' )->andReturnArg( 0 );
 	}
 
 	public function tearDown(): void {
@@ -70,6 +71,14 @@ class ScanStatusRedirectedTest extends TestCase {
 		$this->assertSame( 'Not scanned: redirected to /%FF/', $this->label( [ 'redirected_to' => '/%FF/' ] ) );              // invalid UTF-8
 		$this->assertSame( 'Not scanned: redirected to /a%0Ab/', $this->label( [ 'redirected_to' => '/a%0Ab/' ] ) );          // control char
 		$this->assertSame( 'Not scanned: redirected to /%E2%80%AEx/', $this->label( [ 'redirected_to' => '/%E2%80%AEx/' ] ) ); // bidi override (Cf)
+	}
+
+	// Final-review I1 / M1 / M2: the display check fails closed whatever the site charset.
+	public function test_display_check_fails_closed(): void {
+		$this->assertSame( 'Not scanned: redirected to /caf%E9/', $this->label( [ 'redirected_to' => '/caf%E9/' ] ) );            // Latin-1 byte, non-UTF-8 site
+		$this->assertSame( 'Not scanned: redirected to /a%E2%80%A8b/', $this->label( [ 'redirected_to' => '/a%E2%80%A8b/' ] ) );  // U+2028 line separator
+		$this->assertSame( 'Not scanned: redirected to another page', $this->label( [ 'redirected_to' => "/cart/\n" ] ) );         // raw trailing newline
+		$this->assertSame( 'Not scanned: redirected to /商品/ ok', $this->label( [ 'redirected_to' => '/%E5%95%86%E5%93%81/%20ok' ] ) ); // CJK + space stay decoded
 	}
 
 	public function test_et_credit_kept(): void {
